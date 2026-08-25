@@ -15,10 +15,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app import auth, cert_service, crl_push, pki, reconcile
+import datetime
+import urllib.request
+
+from app import auth, cert_service, crl_health, crl_push, pki, reconcile
 from app.config import Settings, load_settings
 from app.db import init_db, make_engine, make_session_factory
 from app.routes.certs import get_router as get_certs_router
+from app.routes.health import get_router as get_health_router
 
 logger = logging.getLogger("certmanager")
 
@@ -77,19 +81,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def take_pending_bundle(serial: str):
         return pending_bundles.pop(serial, None)
 
+    def _alert(message: str) -> None:
+        logger.error("ALERT: %s", message)
+        if not settings.alert_webhook_url:
+            return
+        try:
+            req = urllib.request.Request(
+                settings.alert_webhook_url,
+                data=message.encode(),
+                headers={"Content-Type": "text/plain"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=10)
+        except Exception:
+            logger.exception("failed to deliver alert webhook")
+
     def regenerate_and_push_crl() -> None:
         session = session_factory()
         pem = cert_service.regenerate_crl(
             session, settings.pki_path, inter_cert, inter_key, settings.crl_validity_days
         )
-        result = crl_push.push_crl(
-            settings.pki_path / "crl.pem",
-            settings.radius_host,
-            settings.radius_ssh_user,
-            settings.radius_ssh_key,
+        next_update = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+            days=settings.crl_validity_days
         )
-        if not result.ok:
-            logger.error("CRL push failed: %s", result.detail)
+        crl_health.record_generation(session, next_update)
+
+        def _push():
+            return crl_push.push_crl(
+                settings.pki_path / "crl.pem",
+                settings.radius_host,
+                settings.radius_ssh_user,
+                settings.radius_ssh_key,
+            )
+
+        crl_health.push_with_retry(session, _push, alert_fn=_alert)
 
     deps = RouteDeps(
         require_admin=require_admin,
@@ -106,6 +131,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="RADIUS Certificate Manager")
     app.include_router(get_certs_router(deps))
+    app.include_router(get_health_router(deps))
+    app.state.regenerate_and_push_crl = regenerate_and_push_crl
 
     @app.exception_handler(Exception)
     async def catch_all(request: Request, exc: Exception):
