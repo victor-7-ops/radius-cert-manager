@@ -1,0 +1,20 @@
+{
+  "name": "certmanager",
+  "version": "1.0.0",
+  "description": "Internal admin tool for issuing/suspending/revoking client certificates used in EAP-TLS WiFi authentication. See the handoff document for full design rationale and Phase A/F–I work not yet built.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  },
+  "dependencies": {
+    "htmx.org": "^1.9.12"
+  }
+}

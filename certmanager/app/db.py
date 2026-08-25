@@ -85,7 +85,11 @@ class Certificate(Base):
 
     def is_expired(self, now: datetime.datetime | None = None) -> bool:
         now = now or _now()
-        return self.expires_at < now
+        expires_at = self.expires_at
+        if expires_at.tzinfo is None:
+            # SQLite drops tzinfo on round-trip; treat naive values as UTC.
+            expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
+        return expires_at < now
 
 
 class Admin(Base):

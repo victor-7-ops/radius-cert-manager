@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Certificate ready — Certificate Manager{% endblock %}
+{% block content %}
+<div class="max-w-lg mx-auto">
+  <h1 class="text-lg font-semibold text-slate-900 mb-1">Certificate issued: {{ cn }}</h1>
+  <p class="text-sm text-slate-500 mb-6">
+    This page shows the export password once. It cannot be shown again — if you lose it, reissue the certificate.
+  </p>
+
+  <div class="bg-white border border-slate-200 rounded-lg p-6 space-y-5">
+    <div>
+      <div class="text-sm font-medium text-slate-700 mb-1">Export password</div>
+      <div class="flex items-center gap-2">
+        <code id="export-password" class="flex-1 font-mono text-lg bg-slate-100 rounded px-3 py-2 select-all">{{ export_password }}</code>
+        <button id="copy-btn" type="button"
+                class="min-h-[44px] px-4 rounded border border-slate-300 text-sm font-medium hover:bg-slate-50">
+          Copy
+        </button>
+      </div>
+      <div id="clipboard-status" class="mt-2 text-xs text-slate-500"></div>
+    </div>
+
+    <a href="/certs/{{ serial }}/bundle" id="download-link"
+       class="block text-center min-h-[44px] flex items-center justify-center rounded bg-slate-900 text-white text-sm font-medium hover:bg-slate-800">
+      Download .p12
+    </a>
+
+    <p class="text-sm text-slate-600">
+      Install this on the device, then delete the downloaded file. The password protects the
+      file at rest and in transit to the device — it is not protection against anyone who could
+      read this page.
+    </p>
+
+    <label class="flex items-start gap-2 text-sm text-slate-700">
+      <input type="checkbox" id="saved-confirm" class="mt-1">
+      I've saved this password and the file.
+    </label>
+
+    <button id="leave-btn" disabled
+            onclick="window.location.href='/certs'"
+            class="w-full min-h-[44px] rounded border border-slate-300 text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50">
+      Back to certificates
+    </button>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const savedConfirm = document.getElementById('saved-confirm');
+    const leaveBtn = document.getElementById('leave-btn');
+    savedConfirm.addEventListener('change', () => { leaveBtn.disabled = !savedConfirm.checked; });
+
+    let leavingIntentionally = false;
+    leaveBtn.addEventListener('click', () => { leavingIntentionally = true; });
+    document.getElementById('download-link').addEventListener('click', () => { leavingIntentionally = true; });
+    window.addEventListener('beforeunload', (e) => {
+      if (!leavingIntentionally && !savedConfirm.checked) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+
+    const copyBtn = document.getElementById('copy-btn');
+    const status = document.getElementById('clipboard-status');
+    let remaining = 60;
+    let timer = null;
+
+    copyBtn.addEventListener('click', async () => {
+      const pw = document.getElementById('export-password').textContent;
+      try {
+        await navigator.clipboard.writeText(pw);
+      } catch (e) {
+        status.textContent = 'Could not access clipboard — select and copy manually.';
+        return;
+      }
+      remaining = 60;
+      status.textContent = `Copied. Clipboard will clear in ${remaining}s.`;
+      if (timer) clearInterval(timer);
+      timer = setInterval(async () => {
+        remaining -= 1;
+        if (remaining <= 0) {
+          clearInterval(timer);
+          try {
+            const current = await navigator.clipboard.readText();
+            if (current === pw) await navigator.clipboard.writeText('');
+          } catch (e) { /* clipboard read may be blocked; nothing more we can do */ }
+          status.textContent = 'Clipboard cleared.';
+        } else {
+          status.textContent = `Copied. Clipboard will clear in ${remaining}s.`;
+        }
+      }, 1000);
+    });
+  })();
+</script>
+{% endblock %}

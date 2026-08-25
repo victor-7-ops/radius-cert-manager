@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Certificate Manager{% endblock %}</title>
+  <link rel="stylesheet" href="/static/tailwind.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body class="h-full text-slate-800 antialiased">
+  {% if crl_critical %}
+  <div role="alert" class="w-full bg-red-600 text-white text-sm font-medium px-4 py-3 text-center">
+    CRL is stale or the last push failed — authentication may be affected.
+    <a href="/dashboard" class="underline">View details</a>
+  </div>
+  {% endif %}
+
+  {% if admin %}
+  <nav class="border-b border-slate-200 bg-white">
+    <div class="max-w-6xl mx-auto px-4 flex items-center justify-between h-14">
+      <div class="flex items-center gap-6">
+        <a href="/dashboard" class="font-semibold text-slate-900">Certificate Manager</a>
+        <a href="/certs" class="text-sm text-slate-600 hover:text-slate-900 min-h-[44px] flex items-center">Certificates</a>
+        {% if admin.role.value == "super_admin" %}
+        <a href="/admins" class="text-sm text-slate-600 hover:text-slate-900 min-h-[44px] flex items-center">Admins</a>
+        {% endif %}
+        <a href="/activity" class="text-sm text-slate-600 hover:text-slate-900 min-h-[44px] flex items-center">Activity</a>
+      </div>
+      <form method="post" action="/auth/logout" class="flex items-center gap-3">
+        <span class="text-sm text-slate-500">{{ admin.username }}</span>
+        <button class="text-sm text-slate-600 hover:text-slate-900 min-h-[44px] px-2">Log out</button>
+      </form>
+    </div>
+  </nav>
+  {% endif %}
+
+  <main class="max-w-6xl mx-auto px-4 py-6">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

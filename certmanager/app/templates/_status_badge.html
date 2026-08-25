@@ -1,0 +1,19 @@
+{% macro status_badge(status) %}
+  {% if status == "active" %}
+  <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-green-50 text-green-700">
+    <span class="w-1.5 h-1.5 rounded-full bg-green-600"></span> Active
+  </span>
+  {% elif status == "suspended" %}
+  <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700">
+    <span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Suspended
+  </span>
+  {% elif status == "revoked" %}
+  <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-red-50 text-red-700">
+    <span class="w-1.5 h-1.5 rounded-full bg-red-600"></span> Revoked
+  </span>
+  {% else %}
+  <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-slate-100 text-slate-600">
+    <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Expired
+  </span>
+  {% endif %}
+{% endmacro %}

@@ -13,6 +13,8 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 import datetime
@@ -23,6 +25,10 @@ from app.config import Settings, load_settings
 from app.db import init_db, make_engine, make_session_factory
 from app.routes.certs import get_router as get_certs_router
 from app.routes.health import get_router as get_health_router
+from app.routes.web import get_router as get_web_router
+from app.routes.web_auth import get_router as get_web_auth_router
+
+BASE_DIR = Path(__file__).resolve().parent
 
 logger = logging.getLogger("certmanager")
 
@@ -41,7 +47,11 @@ class RouteDeps:
     client_cert_days: int
     store_pending_bundle: callable
     take_pending_bundle: callable
+    store_pending_password: callable
+    take_pending_password: callable
     regenerate_and_push_crl: callable
+    secret_key: str
+    root_cert: object | None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -53,6 +63,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     inter_cert = pki.load_cert_pem(settings.pki_path / "intermediate.crt")
     inter_key = pki.load_key_pem(settings.pki_path / "private" / "intermediate.key")
+    ca_chain_path = settings.pki_path / "ca-chain.pem"
+    root_cert = pki.load_cert_pem(ca_chain_path) if ca_chain_path.exists() else None
 
     # First-run import, then reconciliation (handoff §5.8) — import runs
     # first so pre-existing certs are recorded rather than flagged.
@@ -80,6 +92,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def take_pending_bundle(serial: str):
         return pending_bundles.pop(serial, None)
+
+    # Export password shown once on the delivery screen (handoff §6.4) —
+    # never persisted, never logged, consumed alongside the bundle.
+    pending_passwords: dict[str, str] = {}
+
+    def store_pending_password(serial: str, password: str) -> None:
+        pending_passwords[serial] = password
+
+    def take_pending_password(serial: str):
+        return pending_passwords.pop(serial, None)
 
     def _alert(message: str) -> None:
         logger.error("ALERT: %s", message)
@@ -126,13 +148,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         client_cert_days=settings.client_cert_days,
         store_pending_bundle=store_pending_bundle,
         take_pending_bundle=take_pending_bundle,
+        store_pending_password=store_pending_password,
+        take_pending_password=take_pending_password,
         regenerate_and_push_crl=regenerate_and_push_crl,
+        secret_key=settings.secret_key,
+        root_cert=root_cert,
     )
 
+    templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
     app = FastAPI(title="RADIUS Certificate Manager")
+    app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
     app.include_router(get_certs_router(deps))
     app.include_router(get_health_router(deps))
+    app.include_router(get_web_auth_router(deps, templates))
+    app.include_router(get_web_router(deps, templates))
     app.state.regenerate_and_push_crl = regenerate_and_push_crl
+
+    from fastapi import HTTPException
+    from fastapi.responses import RedirectResponse
+
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        if exc.status_code == 401 and not request.url.path.startswith("/api"):
+            return RedirectResponse("/login", status_code=303)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": {"code": "error", "message": str(exc.detail), "correlation_id": None}},
+        )
 
     @app.exception_handler(Exception)
     async def catch_all(request: Request, exc: Exception):

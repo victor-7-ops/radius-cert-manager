@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% import "_status_badge.html" as badge %}
+{% block title %}{{ cert.cn }} — Certificate Manager{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h1 class="text-lg font-semibold text-slate-900">{{ cert.cn }}</h1>
+    <div class="mt-1">{{ badge.status_badge(cert.status) }}</div>
+  </div>
+  <div class="flex gap-2">
+    {% if cert.status == "active" and can_suspend %}
+    <button hx-post="/certs/{{ cert.serial }}/suspend" hx-prompt="Reason for suspending {{ cert.cn }}?"
+            hx-confirm="Suspend {{ cert.cn }}?"
+            class="min-h-[44px] px-4 rounded border border-amber-300 text-amber-700 text-sm font-medium hover:bg-amber-50">
+      Suspend
+    </button>
+    {% endif %}
+    {% if cert.status == "suspended" and can_unsuspend %}
+    <button hx-post="/certs/{{ cert.serial }}/unsuspend" hx-confirm="Unsuspend {{ cert.cn }}?"
+            class="min-h-[44px] px-4 rounded border border-green-300 text-green-700 text-sm font-medium hover:bg-green-50">
+      Unsuspend
+    </button>
+    {% endif %}
+    {% if cert.status != "revoked" and can_revoke %}
+    <button hx-post="/certs/{{ cert.serial }}/revoke" hx-prompt="Reason for revoking {{ cert.cn }}? (permanent)"
+            hx-confirm="Revoke {{ cert.cn }}? This is permanent."
+            class="min-h-[44px] px-4 rounded border border-red-300 text-red-700 text-sm font-medium hover:bg-red-50">
+      Revoke
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <section class="bg-white border border-slate-200 rounded-lg p-4">
+    <h2 class="font-medium text-slate-900 mb-3">Metadata</h2>
+    <dl class="text-sm space-y-2">
+      <div class="flex justify-between"><dt class="text-slate-500">Serial</dt><dd class="font-mono">{{ cert.serial }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">Issued</dt><dd>{{ cert.issued_at }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">Expires</dt><dd>{{ cert.expires_at }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">Issued by</dt><dd>{{ cert.issued_by }}</dd></div>
+      {% if cert.note %}<div class="flex justify-between"><dt class="text-slate-500">Note</dt><dd>{{ cert.note }}</dd></div>{% endif %}
+      {% if cert.supersedes_cn %}
+      <div class="flex justify-between"><dt class="text-slate-500">Supersedes</dt>
+        <dd><a href="/certs/{{ cert.supersedes_serial }}" class="text-slate-700 hover:underline">{{ cert.supersedes_cn }}</a></dd></div>
+      {% endif %}
+      {% if cert.superseded_by_cn %}
+      <div class="flex justify-between"><dt class="text-slate-500">Superseded by</dt>
+        <dd><a href="/certs/{{ cert.superseded_by_serial }}" class="text-slate-700 hover:underline">{{ cert.superseded_by_cn }}</a></dd></div>
+      {% endif %}
+    </dl>
+  </section>
+
+  <section class="bg-white border border-slate-200 rounded-lg p-4">
+    <h2 class="font-medium text-slate-900 mb-3">Status history</h2>
+    {% if history %}
+    <ul class="text-sm divide-y divide-slate-100">
+      {% for h in history %}
+      <li class="py-2">
+        <span class="font-medium text-slate-700">{{ h.action }}</span>
+        <span class="text-slate-500">by {{ h.actor }}</span>
+        {% if h.detail %}<div class="text-slate-500">{{ h.detail }}</div>{% endif %}
+        <div class="text-xs text-slate-400">{{ h.timestamp }}</div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-500">No history yet.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

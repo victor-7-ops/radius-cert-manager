@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% import "_status_badge.html" as badge %}
+{% block title %}Certificates — Certificate Manager{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+  <h1 class="text-lg font-semibold text-slate-900">Certificates</h1>
+  <a href="/certs/issue" class="min-h-[44px] flex items-center px-4 rounded bg-slate-900 text-white text-sm font-medium hover:bg-slate-800">
+    Issue certificate
+  </a>
+</div>
+
+<div class="flex flex-wrap gap-2 mb-4">
+  <input type="search" name="q" placeholder="Search by CN…" value="{{ q or '' }}"
+         hx-get="/certs" hx-trigger="input changed delay:300ms" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML"
+         hx-include="[name=status]"
+         class="min-h-[44px] flex-1 min-w-[200px] rounded border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
+  {% for s in ["active", "suspended", "revoked", "expired"] %}
+  <label class="min-h-[44px] flex items-center gap-1.5 px-3 rounded-full border text-sm cursor-pointer
+                {{ 'bg-slate-900 text-white border-slate-900' if status_filter == s else 'border-slate-300 text-slate-600' }}">
+    <input type="radio" name="status" value="{{ s }}" class="hidden"
+           hx-get="/certs" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML" hx-include="[name=q]"
+           {{ 'checked' if status_filter == s else '' }}>
+    {{ s | capitalize }}
+  </label>
+  {% endfor %}
+</div>
+
+<div id="cert-results">
+  {% if items %}
+
+  <div class="hidden md:block bg-white border border-slate-200 rounded-lg overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-left text-slate-500 border-b border-slate-200">
+        <tr>
+          <th class="px-4 py-3 font-medium">CN</th>
+          <th class="px-4 py-3 font-medium">Status</th>
+          <th class="px-4 py-3 font-medium">Issued</th>
+          <th class="px-4 py-3 font-medium text-right">Expires</th>
+          <th class="px-4 py-3 font-medium">Issued by</th>
+          <th class="px-4 py-3 font-medium"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        {% for c in items %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-4 py-3"><a href="/certs/{{ c.serial }}" class="text-slate-900 hover:underline">{{ c.cn }}</a></td>
+          <td class="px-4 py-3">{{ badge.status_badge(c.status) }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ c.issued_at }}</td>
+          <td class="px-4 py-3 text-right text-slate-600">{{ c.expires_relative }}</td>
+          <td class="px-4 py-3 text-slate-600">{{ c.issued_by }}</td>
+          <td class="px-4 py-3 text-right">
+            {% if c.status == "active" %}
+            <button hx-post="/certs/{{ c.serial }}/suspend" hx-prompt="Reason for suspending {{ c.cn }}?"
+                    hx-confirm="Suspend {{ c.cn }}?" hx-target="closest tr" hx-swap="outerHTML"
+                    class="text-amber-700 hover:underline min-h-[44px] px-2">Suspend</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="md:hidden space-y-3">
+    {% for c in items %}
+    <a href="/certs/{{ c.serial }}" class="block bg-white border border-slate-200 rounded-lg p-4">
+      <div class="flex items-center justify-between mb-2">
+        <span class="font-medium text-slate-900">{{ c.cn }}</span>
+        {{ badge.status_badge(c.status) }}
+      </div>
+      <div class="text-sm text-slate-500">Expires {{ c.expires_relative }}</div>
+      <div class="text-xs text-slate-400">issued by {{ c.issued_by }}</div>
+    </a>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="bg-white border border-slate-200 rounded-lg p-10 text-center text-slate-500">
+    No certificates match this filter.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

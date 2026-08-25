@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Log in — Certificate Manager{% endblock %}
+{% block content %}
+<div class="max-w-sm mx-auto mt-16">
+  <h1 class="text-lg font-semibold text-slate-900 mb-6 text-center">Certificate Manager</h1>
+  <div class="bg-white border border-slate-200 rounded-lg p-6">
+    {% if locked %}
+    <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+      Too many failed attempts. Try again in {{ lockout_minutes }} minutes.
+    </div>
+    {% elif error %}
+    <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+      Invalid username or password.
+    </div>
+    {% endif %}
+    <form method="post" action="/auth/login" class="space-y-4"
+          onsubmit="const b=this.querySelector('button'); b.disabled=true; b.innerText='Signing in…';">
+      <div>
+        <label for="username" class="block text-sm font-medium text-slate-700 mb-1">Username</label>
+        <input id="username" name="username" type="text" required autofocus
+               class="w-full min-h-[44px] rounded border border-slate-300 px-3 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500">
+      </div>
+      <div>
+        <label for="password" class="block text-sm font-medium text-slate-700 mb-1">Password</label>
+        <input id="password" name="password" type="password" required
+               class="w-full min-h-[44px] rounded border border-slate-300 px-3 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500">
+      </div>
+      <button type="submit"
+              class="w-full min-h-[44px] rounded bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50">
+        Sign in
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

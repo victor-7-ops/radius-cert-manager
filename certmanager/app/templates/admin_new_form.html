@@ -1,0 +1,17 @@
+<form hx-post="/admins" hx-target="#new-admin-slot" hx-swap="innerHTML"
+      class="bg-white border border-slate-200 rounded-lg p-4 space-y-3 max-w-sm">
+  <div>
+    <label class="block text-sm font-medium text-slate-700 mb-1">Username</label>
+    <input name="username" required class="w-full min-h-[44px] rounded border border-slate-300 px-3">
+  </div>
+  <div>
+    <label class="block text-sm font-medium text-slate-700 mb-1">Role</label>
+    <select name="role" class="w-full min-h-[44px] rounded border border-slate-300 px-3">
+      <option value="admin">Admin</option>
+      <option value="super_admin">Super Admin</option>
+    </select>
+  </div>
+  <button type="submit" class="min-h-[44px] px-4 rounded bg-slate-900 text-white text-sm font-medium hover:bg-slate-800">
+    Create (temporary password shown once)
+  </button>
+</form>

@@ -8,13 +8,18 @@ design rationale and Phase A/F–I work not yet built.
 
 Built: Phase B (pki.py), Phase C (db.py + first-run import), Phase D
 (auth.py — session cookie, roles, lockout), Phase E (cert routes —
-issue/list/detail/suspend/revoke, CRL regen). 29/29 tests pass against a
-throwaway PKI.
+issue/list/detail/suspend/revoke, CRL regen), Phase F (CRL health
+endpoint + push retry/backoff/alert), Phase G (Jinja2+HTMX+Tailwind web
+UI — login, dashboard, cert list/detail/issue, one-time `.p12` delivery
+screen, admin management, activity log). 36/36 tests pass against a
+throwaway PKI; the UI was walked through manually in a browser against
+a demo throwaway PKI (login → issue → delivery → list → detail).
 
-Not yet built: Phase F (CRL push automation scheduling + health
-endpoint), Phase G (web UI), Phase H (bulk issue), Phase I (polish).
-Phase A (static IPs, live PKI restructuring, host hardening) is a
-manual procedure on the real CA/RADIUS hosts — see handoff §3–§4.
+Not yet built: Phase H (bulk issue), Phase I (polish/a11y pass, dark
+mode explicitly out of scope). Phase A (static IPs, live PKI
+restructuring, host hardening) is a manual procedure on the real
+CA/RADIUS hosts — see handoff §3–§4 — and the `eapol_test` gates in §10
+can only be run against your real CM4/CA machine, not from here.
 
 ## Setup
 
@@ -22,6 +27,23 @@ manual procedure on the real CA/RADIUS hosts — see handoff §3–§4.
 python -m venv .venv
 .venv/Scripts/pip install -r requirements.txt
 cp .env.example .env   # fill in real values
+
+npm install                # tailwindcss + htmx.org (dev-time only)
+npx tailwindcss -i ./app/static/input.css -o ./app/static/tailwind.css --minify
+cp node_modules/htmx.org/dist/htmx.min.js app/static/htmx.min.js
+```
+
+`app/static/tailwind.css` and `htmx.min.js` are committed build artifacts — rerun
+the two commands above after editing templates or `tailwind.config.js`.
+
+## Run the app locally
+
+`demo_launch.py` seeds env vars for a quick local run against whatever PKI/DB
+`PKI_PATH`/`DB_PATH` point at — see the file. In production, `.env` (loaded by
+`app/config.py`) is the real config path.
+
+```bash
+.venv/Scripts/python -m uvicorn demo_launch:app --host 127.0.0.1 --port 8443
 ```
 
 ## Run tests
