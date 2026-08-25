@@ -27,6 +27,7 @@ from app.routes.certs import get_router as get_certs_router
 from app.routes.health import get_router as get_health_router
 from app.routes.web import get_router as get_web_router
 from app.routes.web_auth import get_router as get_web_auth_router
+from app.routes.bulk import get_router as get_bulk_router
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -52,6 +53,11 @@ class RouteDeps:
     regenerate_and_push_crl: callable
     secret_key: str
     root_cert: object | None
+    store_pending_preview: callable
+    take_pending_preview: callable
+    store_pending_batch: callable
+    take_pending_batch: callable
+    peek_pending_batch: callable
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -103,6 +109,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def take_pending_password(serial: str):
         return pending_passwords.pop(serial, None)
 
+    # Bulk issue (handoff §6.5): a preview token maps to the classified
+    # valid-identifier list, consumed on confirm so a resubmitted preview
+    # can't reissue the same batch twice. A batch entry (result + zip)
+    # is kept until its ZIP is downloaded once (410 after).
+    pending_previews: dict[str, list[str]] = {}
+    pending_batches: dict[str, tuple[object, bytes]] = {}
+
+    def store_pending_preview(token: str, identifiers: list[str]) -> None:
+        pending_previews[token] = identifiers
+
+    def take_pending_preview(token: str):
+        return pending_previews.pop(token, None)
+
+    def store_pending_batch(batch_id: str, result, zip_bytes: bytes) -> None:
+        pending_batches[batch_id] = (result, zip_bytes)
+
+    def peek_pending_batch(batch_id: str):
+        return pending_batches.get(batch_id)
+
+    def take_pending_batch(batch_id: str):
+        return pending_batches.pop(batch_id, None)
+
     def _alert(message: str) -> None:
         logger.error("ALERT: %s", message)
         if not settings.alert_webhook_url:
@@ -153,6 +181,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         regenerate_and_push_crl=regenerate_and_push_crl,
         secret_key=settings.secret_key,
         root_cert=root_cert,
+        store_pending_preview=store_pending_preview,
+        take_pending_preview=take_pending_preview,
+        store_pending_batch=store_pending_batch,
+        take_pending_batch=take_pending_batch,
+        peek_pending_batch=peek_pending_batch,
     )
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -162,6 +195,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(get_certs_router(deps))
     app.include_router(get_health_router(deps))
     app.include_router(get_web_auth_router(deps, templates))
+    app.include_router(get_bulk_router(deps, templates))
     app.include_router(get_web_router(deps, templates))
     app.state.regenerate_and_push_crl = regenerate_and_push_crl
 

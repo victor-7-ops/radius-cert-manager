@@ -11,12 +11,18 @@ Built: Phase B (pki.py), Phase C (db.py + first-run import), Phase D
 issue/list/detail/suspend/revoke, CRL regen), Phase F (CRL health
 endpoint + push retry/backoff/alert), Phase G (Jinja2+HTMX+Tailwind web
 UI — login, dashboard, cert list/detail/issue, one-time `.p12` delivery
-screen, admin management, activity log). 36/36 tests pass against a
-throwaway PKI; the UI was walked through manually in a browser against
-a demo throwaway PKI (login → issue → delivery → list → detail).
+screen, admin management, activity log), Phase H (bulk issue — paste/CSV,
+preview/classify before signing, shared batch password, ZIP + manifest.csv
+delivery, partial-failure handling, request_id idempotency per row).
+45/45 tests pass against a throwaway PKI; the UI was walked through
+manually in a browser (login, issue, delivery, list, detail), and the
+bulk flow is covered end-to-end through the real HTML routes in
+tests/test_bulk_e2e.py (browser-click automation against the live bulk
+form was unreliable in this environment, so that flow's correctness
+rests on the e2e test rather than a manual click-through).
 
-Not yet built: Phase H (bulk issue), Phase I (polish/a11y pass, dark
-mode explicitly out of scope). Phase A (static IPs, live PKI
+Not yet built: Phase I (polish/a11y pass, dark mode explicitly out of
+scope). Phase A (static IPs, live PKI
 restructuring, host hardening) is a manual procedure on the real
 CA/RADIUS hosts — see handoff §3–§4 — and the `eapol_test` gates in §10
 can only be run against your real CM4/CA machine, not from here.

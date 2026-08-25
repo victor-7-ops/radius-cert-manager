@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% import "_status_badge.html" as badge %}
+{% block title %}Bulk issue preview — Certificate Manager{% endblock %}
+{% block content %}
+<h1 class="text-lg font-semibold text-slate-900 mb-1">Bulk issue preview</h1>
+<p class="text-sm text-slate-500 mb-4">
+  Nothing is signed until you confirm. {{ valid_count }} of {{ rows|length }} identifiers are valid.
+</p>
+
+<div class="bg-white border border-slate-200 rounded-lg overflow-x-auto mb-6">
+  <table class="w-full text-sm">
+    <thead class="text-left text-slate-500 border-b border-slate-200">
+      <tr>
+        <th class="px-4 py-3 font-medium">Identifier</th>
+        <th class="px-4 py-3 font-medium">Classification</th>
+        <th class="px-4 py-3 font-medium">Reason</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for r in rows %}
+      <tr>
+        <td class="px-4 py-3 font-mono text-slate-900">{{ r.identifier }}</td>
+        <td class="px-4 py-3">
+          {% if r.classification == "valid" %}
+          <span class="text-green-700">Valid</span>
+          {% elif r.classification == "duplicate" %}
+          <span class="text-amber-700">Duplicate</span>
+          {% else %}
+          <span class="text-red-700">Malformed</span>
+          {% endif %}
+        </td>
+        <td class="px-4 py-3 text-slate-500">{{ r.reason or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if valid_count > 0 %}
+<div class="max-w-md bg-white border border-slate-200 rounded-lg p-6">
+  <form method="post" action="/certs/bulk/confirm" class="space-y-4"
+        onsubmit="const b=this.querySelector('button'); b.disabled=true; b.innerText='Issuing…';">
+    <input type="hidden" name="batch_token" value="{{ batch_token }}">
+    <div>
+      <label for="export_password" class="block text-sm font-medium text-slate-700 mb-1">
+        Export password for this batch
+      </label>
+      <input id="export_password" name="export_password" type="text" required minlength="12"
+             class="w-full min-h-[44px] rounded border border-slate-300 px-3 font-mono focus:outline-none focus:ring-2 focus:ring-slate-500">
+      <p class="mt-1 text-xs text-slate-500">One password protects every .p12 in this batch. Shown once, on the results page.</p>
+    </div>
+    <button type="submit"
+            class="w-full min-h-[44px] rounded bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50">
+      Issue {{ valid_count }} certificate{{ "s" if valid_count != 1 else "" }}
+    </button>
+  </form>
+</div>
+{% else %}
+<p class="text-sm text-slate-500">No valid identifiers to issue. Go back and fix the list.</p>
+{% endif %}
+{% endblock %}

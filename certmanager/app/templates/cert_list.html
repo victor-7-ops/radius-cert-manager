@@ -4,9 +4,14 @@
 {% block content %}
 <div class="flex items-center justify-between mb-4">
   <h1 class="text-lg font-semibold text-slate-900">Certificates</h1>
-  <a href="/certs/issue" class="min-h-[44px] flex items-center px-4 rounded bg-slate-900 text-white text-sm font-medium hover:bg-slate-800">
-    Issue certificate
-  </a>
+  <div class="flex gap-2">
+    <a href="/certs/bulk" class="min-h-[44px] flex items-center px-4 rounded border border-slate-300 text-sm font-medium hover:bg-slate-50">
+      Bulk issue
+    </a>
+    <a href="/certs/issue" class="min-h-[44px] flex items-center px-4 rounded bg-slate-900 text-white text-sm font-medium hover:bg-slate-800">
+      Issue certificate
+    </a>
+  </div>
 </div>
 
 <div class="flex flex-wrap gap-2 mb-4">

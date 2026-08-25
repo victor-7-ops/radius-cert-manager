@@ -8,7 +8,6 @@ template context entirely, not rendered-and-disabled.
 from __future__ import annotations
 
 import datetime
-import re
 import uuid
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
@@ -17,8 +16,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 
 from app import auth, cert_service, crl_health, db, reconcile
-
-CN_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$")
+from app.validation import CN_RE
 
 
 def _relative_expiry(expires_at: datetime.datetime) -> str:

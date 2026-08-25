@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Bulk issue — Certificate Manager{% endblock %}
+{% block content %}
+<h1 class="text-lg font-semibold text-slate-900 mb-4">Bulk issue</h1>
+
+<div class="max-w-lg bg-white border border-slate-200 rounded-lg p-6">
+  {% if error %}
+  <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+    {{ error }}
+  </div>
+  {% endif %}
+  <form method="post" action="/certs/bulk/preview" enctype="multipart/form-data" class="space-y-4">
+    <div>
+      <label for="identifiers_text" class="block text-sm font-medium text-slate-700 mb-1">
+        Paste identifiers, one per line
+      </label>
+      <textarea id="identifiers_text" name="identifiers_text" rows="8"
+                class="w-full rounded border border-slate-300 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                placeholder="alex-laptop&#10;jordan-phone&#10;taylor-tablet"></textarea>
+    </div>
+    <div class="text-center text-xs text-slate-400">— or —</div>
+    <div>
+      <label for="csv_file" class="block text-sm font-medium text-slate-700 mb-1">
+        Upload a single-column CSV
+      </label>
+      <input id="csv_file" name="csv_file" type="file" accept=".csv"
+             class="w-full min-h-[44px] text-sm">
+    </div>
+    <p class="text-xs text-slate-500">Up to 100 identifiers per batch.</p>
+    <button type="submit"
+            class="w-full min-h-[44px] rounded bg-slate-900 text-white font-medium hover:bg-slate-800">
+      Preview batch
+    </button>
+  </form>
+</div>
+{% endblock %}

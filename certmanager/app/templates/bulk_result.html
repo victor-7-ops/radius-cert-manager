@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Bulk issue results — Certificate Manager{% endblock %}
+{% block content %}
+<h1 class="text-lg font-semibold text-slate-900 mb-1">Bulk issue results</h1>
+<p class="text-sm text-slate-500 mb-4">
+  {{ result.succeeded|length }} succeeded, {{ result.failed|length }} failed.
+  The export password you set is not shown again — if you didn't save it, reissue the failed and re-download rows as a new batch.
+</p>
+
+<a href="/api/batches/{{ batch_id }}/bundle"
+   class="inline-block mb-6 min-h-[44px] flex items-center px-4 rounded bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 w-fit">
+  Download ZIP (.p12 files + manifest.csv)
+</a>
+
+{% if result.succeeded %}
+<h2 class="font-medium text-slate-900 mb-2">Succeeded</h2>
+<div class="bg-white border border-slate-200 rounded-lg overflow-x-auto mb-6">
+  <table class="w-full text-sm">
+    <thead class="text-left text-slate-500 border-b border-slate-200">
+      <tr><th class="px-4 py-3 font-medium">CN</th><th class="px-4 py-3 font-medium">Serial</th></tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for r in result.succeeded %}
+      <tr><td class="px-4 py-3 font-mono">{{ r.cn }}</td><td class="px-4 py-3 font-mono text-slate-500">{{ r.serial }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if result.failed %}
+<h2 class="font-medium text-slate-900 mb-2">Failed — not signed, retry as a new batch</h2>
+<div class="bg-white border border-red-200 rounded-lg overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="text-left text-slate-500 border-b border-slate-200">
+      <tr><th class="px-4 py-3 font-medium">CN</th><th class="px-4 py-3 font-medium">Reason</th></tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for r in result.failed %}
+      <tr><td class="px-4 py-3 font-mono">{{ r.cn }}</td><td class="px-4 py-3 text-red-700">{{ r.error }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
