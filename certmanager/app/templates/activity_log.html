@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Activity log — Certificate Manager{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-semibold text-slate-900 tracking-tight mb-6">Activity log</h1>
+<div class="mb-6">
+  <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Activity log</h1>
+  <p class="text-sm text-slate-500 mt-1">Every issue, suspend, revoke, and admin change, in order.</p>
+</div>
 
 <form method="get" action="/activity" class="flex flex-wrap gap-2 mb-5">
   <input type="text" name="actor" placeholder="Actor" value="{{ actor or '' }}" class="field-input sm:w-48">

@@ -20,8 +20,15 @@
       <label for="cn" class="field-label">Identifier (CN)</label>
       <input id="cn" name="cn" type="text" required autofocus
              hx-get="/certs/check-cn" hx-trigger="input changed delay:300ms" hx-target="#cn-status" hx-swap="innerHTML"
+             hx-indicator="#cn-spinner"
              class="field-input">
-      <div id="cn-status" class="mt-1.5 text-sm"></div>
+      <div class="mt-1.5 text-sm flex items-center gap-1.5">
+        <svg id="cn-spinner" class="w-3.5 h-3.5 text-slate-400 spinner htmx-indicator" viewBox="0 0 24 24" fill="none">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z"/>
+        </svg>
+        <div id="cn-status"></div>
+      </div>
     </div>
     <div>
       <label for="note" class="field-label">Note (optional)</label>

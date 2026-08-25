@@ -1,9 +1,13 @@
 {% extends "base.html" %}
 {% import "_status_badge.html" as badge %}
+{% import "_spinner.html" as spin %}
 {% block title %}Certificates — Certificate Manager{% endblock %}
 {% block content %}
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-  <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Certificates</h1>
+  <div>
+    <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Certificates</h1>
+    <p class="text-sm text-slate-500 mt-1">Search, filter, and manage issued client certificates.</p>
+  </div>
   <div class="flex gap-2">
     <a href="/certs/bulk" class="btn-secondary">
       <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4Z"/><path fill-rule="evenodd" d="M3 10a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6Zm4 2a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2H7Z" clip-rule="evenodd"/></svg>
@@ -19,10 +23,14 @@
 <div class="flex flex-wrap gap-2 mb-5">
   <div class="relative flex-1 min-w-[200px]">
     <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clip-rule="evenodd"/></svg>
+    <svg id="search-spinner" class="w-4 h-4 text-slate-400 spinner htmx-indicator absolute right-3 top-1/2 -translate-y-1/2" viewBox="0 0 24 24" fill="none">
+      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z"/>
+    </svg>
     <input type="search" name="q" placeholder="Search by CN…" value="{{ q or '' }}"
            hx-get="/certs" hx-trigger="input changed delay:300ms" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML"
-           hx-include="[name=status]"
-           class="field-input pl-9">
+           hx-include="[name=status]" hx-indicator="#search-spinner"
+           class="field-input pl-9 pr-9">
   </div>
   {% for s in ["active", "suspended", "revoked", "expired"] %}
   <label class="min-h-[44px] flex items-center gap-1.5 px-3.5 rounded-full border text-sm font-medium cursor-pointer transition-colors
@@ -62,7 +70,10 @@
             {% if c.status == "active" %}
             <button hx-post="/certs/{{ c.serial }}/suspend" hx-prompt="Reason for suspending {{ c.cn }}?"
                     hx-confirm="Suspend {{ c.cn }}?" hx-target="closest tr" hx-swap="outerHTML"
-                    class="text-amber-700 hover:underline text-sm font-medium min-h-[44px] px-2">Suspend</button>
+                    class="text-amber-700 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+              {{ spin.spinner() }}
+              <span class="htmx-hide-on-request">Suspend</span>
+            </button>
             {% endif %}
           </td>
         </tr>

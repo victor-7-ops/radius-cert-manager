@@ -78,4 +78,22 @@
   .table-shell td {
     @apply px-4 py-3;
   }
+
+  /* htmx puts the .htmx-request class on the element (or its
+     hx-indicator target) while a request is in flight — used to show a
+     spinner and hide the element's own icon without touching Python. */
+  .htmx-indicator {
+    @apply hidden;
+  }
+  .htmx-request.htmx-indicator,
+  .htmx-request .htmx-indicator {
+    @apply inline-flex;
+  }
+  .htmx-request .htmx-hide-on-request {
+    @apply hidden;
+  }
+
+  .spinner {
+    @apply animate-spin;
+  }
 }

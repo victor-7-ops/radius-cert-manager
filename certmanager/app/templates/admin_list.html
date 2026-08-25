@@ -1,10 +1,15 @@
 {% extends "base.html" %}
+{% import "_spinner.html" as spin %}
 {% block title %}Admins — Certificate Manager{% endblock %}
 {% block content %}
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-  <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Admin management</h1>
+  <div>
+    <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Admin management</h1>
+    <p class="text-sm text-slate-500 mt-1">Super Admin only — manage who can issue and revoke certificates.</p>
+  </div>
   <button hx-get="/admins/new-form" hx-target="#new-admin-slot" hx-swap="innerHTML" class="btn-primary">
-    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
+    {{ spin.spinner() }}
+    <svg class="w-4 h-4 htmx-hide-on-request" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
     New admin
   </button>
 </div>
@@ -57,12 +62,18 @@
             <span class="text-xs text-slate-400" title="Cannot deactivate the last active Super Admin">Protected</span>
             {% else %}
             <button hx-post="/admins/{{ a.id }}/deactivate" hx-confirm="Deactivate {{ a.username }}?"
-                    class="text-red-700 hover:underline text-sm font-medium min-h-[44px] px-2">Deactivate</button>
+                    class="text-red-700 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+              {{ spin.spinner() }}<span class="htmx-hide-on-request">Deactivate</span>
+            </button>
             {% endif %}
             <button hx-post="/admins/{{ a.id }}/reset-password" hx-confirm="Force a password reset for {{ a.username }}?"
-                    class="text-slate-600 hover:underline text-sm font-medium min-h-[44px] px-2">Reset password</button>
+                    class="text-slate-600 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+              {{ spin.spinner() }}<span class="htmx-hide-on-request">Reset password</span>
+            </button>
             <button hx-post="/admins/{{ a.id }}/force-logout" hx-confirm="Force logout for {{ a.username }}?"
-                    class="text-slate-600 hover:underline text-sm font-medium min-h-[44px] px-2">Force logout</button>
+                    class="text-slate-600 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+              {{ spin.spinner() }}<span class="htmx-hide-on-request">Force logout</span>
+            </button>
           {% endif %}
         </td>
       </tr>
