@@ -16,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 
 from app import auth, cert_service, crl_health, db, reconcile
-from app.validation import CN_RE
+from app.validation import CN_RE, normalize_mac
 
 
 def _relative_expiry(expires_at: datetime.datetime) -> str:
@@ -113,13 +113,21 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         request: Request,
         q: str | None = None,
         status: str | None = None,
+        employee: str | None = None,
         page: int = 1,
         admin: db.Admin = Depends(deps.require_admin),
     ):
         session = deps.get_db_session()
         stmt = select(db.Certificate)
         if q:
-            stmt = stmt.where(db.Certificate.cn.contains(q))
+            stmt = stmt.where(
+                db.Certificate.cn.contains(q) | db.Certificate.employee_name.contains(q)
+            )
+        if employee:
+            # Drill-down from an employee name elsewhere in the UI — all
+            # of that person's devices, any status, so it reads as their
+            # full device roster rather than just what's currently active.
+            stmt = stmt.where(db.Certificate.employee_name == employee)
         if status == "expired":
             # "Expired" isn't a stored status (handoff §5.2) — it's an
             # active cert whose expires_at has passed.
@@ -146,13 +154,24 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "issued_at": c.issued_at.date(),
                 "expires_relative": _relative_expiry(c.expires_at),
                 "issued_by": c.issued_by,
+                "employee_name": c.employee_name,
+                "device_type": c.device_type,
+                "device_mac": c.device_mac,
+                "device_serial": c.device_serial,
             }
             for c in rows
         ]
         return templates.TemplateResponse(
             request,
             "cert_list.html",
-            {"admin": admin, "items": items, "q": q, "status_filter": status, **_crl_banner_context(session)},
+            {
+                "admin": admin,
+                "items": items,
+                "q": q,
+                "status_filter": status,
+                "employee_filter": employee,
+                **_crl_banner_context(session),
+            },
         )
 
     @router.get("/certs/check-cn")
@@ -175,7 +194,12 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         return templates.TemplateResponse(
             request,
             "issue.html",
-            {"admin": admin, "request_id": str(uuid.uuid4()), **_crl_banner_context(session)},
+            {
+                "admin": admin,
+                "request_id": str(uuid.uuid4()),
+                "device_types": db.DEVICE_TYPES,
+                **_crl_banner_context(session),
+            },
         )
 
     @router.post("/certs/issue")
@@ -183,17 +207,42 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         request: Request,
         cn: str = Form(...),
         note: str = Form(""),
+        employee_name: str = Form(""),
+        device_type: str = Form(""),
+        device_mac: str = Form(""),
+        device_serial: str = Form(""),
         request_id: str = Form(...),
         admin: db.Admin = Depends(deps.require_admin),
     ):
         session = deps.get_db_session()
+        form_context = {
+            "admin": admin,
+            "request_id": request_id,
+            "device_types": db.DEVICE_TYPES,
+            "form": {
+                "cn": cn,
+                "employee_name": employee_name,
+                "device_type": device_type,
+                "device_mac": device_mac,
+                "device_serial": device_serial,
+                "note": note,
+            },
+            **_crl_banner_context(session),
+        }
         if not CN_RE.match(cn):
             return templates.TemplateResponse(
-                request,
-                "issue.html",
-                {"admin": admin, "request_id": request_id, "error": "Invalid CN format.", **_crl_banner_context(session)},
-                status_code=400,
+                request, "issue.html", {**form_context, "error": "Invalid CN format."}, status_code=400,
             )
+        normalized_mac = None
+        if device_mac.strip():
+            normalized_mac = normalize_mac(device_mac.strip())
+            if normalized_mac is None:
+                return templates.TemplateResponse(
+                    request,
+                    "issue.html",
+                    {**form_context, "error": "Invalid MAC address format."},
+                    status_code=400,
+                )
         try:
             result = cert_service.issue_certificate(
                 session,
@@ -206,12 +255,18 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 export_password=None,
                 issued_by=admin.username,
                 days=deps.client_cert_days,
+                device=cert_service.DeviceInfo(
+                    employee_name=employee_name.strip() or None,
+                    device_type=device_type.strip() or None,
+                    device_mac=normalized_mac,
+                    device_serial=device_serial.strip() or None,
+                ),
             )
         except cert_service.CNConflictError:
             return templates.TemplateResponse(
                 request,
                 "issue.html",
-                {"admin": admin, "request_id": request_id, "error": f'An active certificate for "{cn}" already exists.', **_crl_banner_context(session)},
+                {**form_context, "error": f'An active certificate for "{cn}" already exists.'},
                 status_code=409,
             )
         if result.bundle is None:
@@ -264,6 +319,15 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             select(db.Certificate).where(db.Certificate.supersedes_id == cert.id)
         )
 
+        other_device_count = 0
+        if cert.employee_name:
+            other_device_count = session.scalar(
+                select(func.count()).select_from(db.Certificate).where(
+                    db.Certificate.employee_name == cert.employee_name,
+                    db.Certificate.id != cert.id,
+                )
+            )
+
         is_super = admin.role == db.AdminRole.super_admin
         return templates.TemplateResponse(
             request,
@@ -278,6 +342,10 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                     "expires_at": cert.expires_at,
                     "issued_by": cert.issued_by,
                     "note": cert.note,
+                    "employee_name": cert.employee_name,
+                    "device_type": cert.device_type,
+                    "device_mac": cert.device_mac,
+                    "device_serial": cert.device_serial,
                     "supersedes_cn": supersedes.cn if supersedes else None,
                     "supersedes_serial": supersedes.serial if supersedes else None,
                     "superseded_by_cn": superseded_by.cn if superseded_by else None,
@@ -290,6 +358,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "can_suspend": True,
                 "can_unsuspend": is_super,
                 "can_revoke": is_super,
+                "other_device_count": other_device_count,
                 **_crl_banner_context(session),
             },
         )

@@ -18,7 +18,7 @@
     <input type="hidden" name="request_id" value="{{ request_id }}">
     <div>
       <label for="cn" class="field-label">Identifier (CN)</label>
-      <input id="cn" name="cn" type="text" required autofocus
+      <input id="cn" name="cn" type="text" required autofocus value="{{ form.cn if form else '' }}"
              hx-get="/certs/check-cn" hx-trigger="input changed delay:300ms" hx-target="#cn-status" hx-swap="innerHTML"
              hx-indicator="#cn-spinner"
              class="field-input">
@@ -30,9 +30,42 @@
         <div id="cn-status"></div>
       </div>
     </div>
+
+    <div class="pt-2 border-t border-slate-100">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3">Device &amp; owner (optional, for tracking)</div>
+
+      <div class="mb-3">
+        <label for="employee_name" class="field-label">Employee name</label>
+        <input id="employee_name" name="employee_name" type="text" value="{{ form.employee_name if form else '' }}"
+               placeholder="Jordan Ellis" class="field-input">
+      </div>
+
+      <div class="mb-3">
+        <label for="device_type" class="field-label">Device type</label>
+        <select id="device_type" name="device_type" class="field-input">
+          <option value="">Not specified</option>
+          {% for dt in device_types %}
+          <option value="{{ dt }}" {{ "selected" if form and form.device_type == dt else "" }}>{{ dt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="mb-3">
+        <label for="device_mac" class="field-label">Device MAC address</label>
+        <input id="device_mac" name="device_mac" type="text" value="{{ form.device_mac if form else '' }}"
+               placeholder="aa:bb:cc:dd:ee:ff" class="field-input font-mono">
+      </div>
+
+      <div>
+        <label for="device_serial" class="field-label">Device serial / asset tag</label>
+        <input id="device_serial" name="device_serial" type="text" value="{{ form.device_serial if form else '' }}"
+               placeholder="C02XG2JMQ6L9" class="field-input font-mono">
+      </div>
+    </div>
+
     <div>
       <label for="note" class="field-label">Note (optional)</label>
-      <input id="note" name="note" type="text" class="field-input">
+      <input id="note" name="note" type="text" value="{{ form.note if form else '' }}" class="field-input">
     </div>
     <button type="submit" class="btn-primary w-full">
       <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>

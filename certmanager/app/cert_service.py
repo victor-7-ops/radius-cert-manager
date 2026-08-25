@@ -26,6 +26,19 @@ class CNConflictError(Exception):
 
 
 @dataclass
+class DeviceInfo:
+    """Who and what a cert was issued for — tracking metadata only, never
+    part of the cert itself. Defaults to all-None so existing call sites
+    (and the reissue/imported paths that have no device info) don't need
+    to change."""
+
+    employee_name: str | None = None
+    device_type: str | None = None
+    device_mac: str | None = None
+    device_serial: str | None = None
+
+
+@dataclass
 class IssueResult:
     certificate: db.Certificate
     bundle: pki.Pkcs12Bundle | None
@@ -58,6 +71,7 @@ def _issue_one_locked(
     issued_by: str,
     days: int,
     batch_id: str | None,
+    device: DeviceInfo | None = None,
 ) -> IssueResult:
     """Caller must already hold _lock(pki_path)."""
     existing = session.scalar(select(db.Certificate).where(db.Certificate.request_id == request_id))
@@ -88,6 +102,7 @@ def _issue_one_locked(
     issued_dir.mkdir(parents=True, exist_ok=True)
     (issued_dir / f"{cn}.crt").write_bytes(pki.cert_to_pem(cert))
 
+    device = device or DeviceInfo()
     row = db.Certificate(
         cn=cn,
         serial=str(serial),
@@ -98,9 +113,16 @@ def _issue_one_locked(
         request_id=request_id,
         note=note,
         batch_id=batch_id,
+        employee_name=device.employee_name,
+        device_type=device.device_type,
+        device_mac=device.device_mac,
+        device_serial=device.device_serial,
     )
     session.add(row)
-    db.audit(session, actor=issued_by, action="issue", target=cn, detail=f"serial={serial}")
+    audit_detail = f"serial={serial}"
+    if device.employee_name:
+        audit_detail += f" employee={device.employee_name}"
+    db.audit(session, actor=issued_by, action="issue", target=cn, detail=audit_detail)
     session.commit()
     session.refresh(row)
 
@@ -119,11 +141,12 @@ def issue_certificate(
     issued_by: str,
     days: int,
     batch_id: str | None = None,
+    device: DeviceInfo | None = None,
 ) -> IssueResult:
     with _lock(pki_path):
         return _issue_one_locked(
             session, pki_path, inter_cert, inter_key, cn, note, request_id,
-            export_password, issued_by, days, batch_id,
+            export_password, issued_by, days, batch_id, device,
         )
 
 

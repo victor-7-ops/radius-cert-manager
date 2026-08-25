@@ -39,6 +39,22 @@ producing spurious 401s. All routers are now built fresh inside their
 `get_router()` call. This wouldn't have surfaced in a single long-running
 production process, but the tests that caught it are worth keeping.
 
+Beyond the phase list: device/owner tracking. Each certificate can carry
+an employee name, device type, MAC address, and device serial/asset tag
+— captured at issue time (single or bulk CSV, columns
+`cn, employee_name, device_type, device_mac, device_serial`), shown on
+the cert list and detail pages, and searchable. Clicking an employee's
+name filters the cert list down to every device issued to them
+(`/certs?employee=...`), since one person often has more than one
+device on the network. MAC addresses are validated and normalized to
+`aa:bb:cc:dd:ee:ff` regardless of how they're typed in (colon, dash,
+Cisco dotted, or bare hex). None of this touches the certificate
+itself — it's tracking metadata in SQLite only. Existing databases are
+migrated in place on startup (`db.py`'s `_migrate_certificate_columns`
+adds the new columns via `ALTER TABLE` if they're missing — there's no
+Alembic in this project, so this is the whole migration story; it only
+ever adds columns, never drops or renames).
+
 Phase A (static IPs, live PKI restructuring, host hardening) is a manual
 procedure on the real CA/RADIUS hosts that can't be run from this
 environment — no network path to `192.168.200.18`/`.19`. What's built

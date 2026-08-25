@@ -40,6 +40,38 @@
   </div>
 </div>
 
+{% if cert.employee_name or cert.device_type or cert.device_mac or cert.device_serial %}
+<section class="card p-5 mb-6">
+  <h2 class="font-semibold text-slate-900 mb-4">Owner &amp; device</h2>
+  <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+    {% if cert.employee_name %}
+    <div class="flex justify-between gap-4 sm:col-span-2">
+      <dt class="text-slate-500">Employee</dt>
+      <dd class="text-right">
+        <a href="/certs?employee={{ cert.employee_name | urlencode }}" class="text-slate-900 font-medium hover:underline inline-flex items-center gap-1">
+          {{ cert.employee_name }}
+          {% if other_device_count %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
+            +{{ other_device_count }} more device{{ "s" if other_device_count != 1 else "" }}
+          </span>
+          {% endif %}
+        </a>
+      </dd>
+    </div>
+    {% endif %}
+    {% if cert.device_type %}
+    <div class="flex justify-between gap-4"><dt class="text-slate-500">Device type</dt><dd class="text-slate-800">{{ cert.device_type }}</dd></div>
+    {% endif %}
+    {% if cert.device_mac %}
+    <div class="flex justify-between gap-4"><dt class="text-slate-500">MAC address</dt><dd class="text-slate-800 font-mono">{{ cert.device_mac }}</dd></div>
+    {% endif %}
+    {% if cert.device_serial %}
+    <div class="flex justify-between gap-4"><dt class="text-slate-500">Device serial</dt><dd class="text-slate-800 font-mono">{{ cert.device_serial }}</dd></div>
+    {% endif %}
+  </dl>
+</section>
+{% endif %}
+
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
   <section class="card p-5">
     <h2 class="font-semibold text-slate-900 mb-4">Metadata</h2>

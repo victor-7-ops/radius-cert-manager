@@ -35,12 +35,12 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         admin: db.Admin = Depends(deps.require_admin),
     ):
         session = deps.get_db_session()
-        identifiers = bulk_service.parse_identifiers(identifiers_text)
+        input_rows = bulk_service.parse_identifiers(identifiers_text)
         if csv_file is not None and csv_file.filename:
-            identifiers = bulk_service.parse_csv(await csv_file.read())
+            input_rows = bulk_service.parse_csv(await csv_file.read())
 
         try:
-            rows = bulk_service.classify(session, identifiers)
+            rows = bulk_service.classify(session, input_rows)
         except bulk_service.BatchTooLargeError as e:
             return templates.TemplateResponse(
                 request,
@@ -50,8 +50,18 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             )
 
         batch_token = str(uuid.uuid4())
-        valid_identifiers = [r.identifier for r in rows if r.classification == "valid"]
-        deps.store_pending_preview(batch_token, valid_identifiers)
+        valid_rows = [
+            bulk_service.BatchInputRow(
+                identifier=r.identifier,
+                employee_name=r.employee_name,
+                device_type=r.device_type,
+                device_mac=r.device_mac,
+                device_serial=r.device_serial,
+            )
+            for r in rows
+            if r.classification == "valid"
+        ]
+        deps.store_pending_preview(batch_token, valid_rows)
 
         return templates.TemplateResponse(
             request,
@@ -72,8 +82,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         export_password: str = Form(...),
         admin: db.Admin = Depends(deps.require_admin),
     ):
-        identifiers = deps.take_pending_preview(batch_token)
-        if identifiers is None:
+        input_rows = deps.take_pending_preview(batch_token)
+        if input_rows is None:
             raise HTTPException(status.HTTP_410_GONE, "preview expired or already confirmed")
 
         session = deps.get_db_session()
@@ -83,7 +93,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             deps.pki_path,
             deps.inter_cert,
             deps.inter_key,
-            identifiers,
+            input_rows,
             batch_id=batch_id,
             export_password=export_password,
             issued_by=admin.username,

@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     String,
     create_engine,
+    text,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -76,6 +77,14 @@ class Certificate(Base):
     note: Mapped[str | None] = mapped_column(String, nullable=True)
     batch_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
+    # Device/owner tracking, so a cert maps back to a real device and
+    # person, not just an opaque CN — the CN is often a hostname, which
+    # doesn't tell you who to call when a laptop goes missing.
+    employee_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    device_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    device_mac: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    device_serial: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
     supersedes: Mapped["Certificate | None"] = relationship(
         remote_side=[id], back_populates="superseded_by", uselist=False
     )
@@ -133,8 +142,33 @@ def make_session_factory(engine) -> sessionmaker:
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
+# (new_column_name, SQL type) — appended here as the schema grows,
+# since this project has no migration framework. init_db() adds any
+# missing column to an existing table on startup; it never removes or
+# renames one, so it's safe to run against a live DB every boot.
+_CERTIFICATE_COLUMN_MIGRATIONS = [
+    ("employee_name", "VARCHAR"),
+    ("device_type", "VARCHAR"),
+    ("device_mac", "VARCHAR"),
+    ("device_serial", "VARCHAR"),
+]
+
+DEVICE_TYPES = ["Laptop", "Phone", "Tablet", "Desktop", "Other"]
+
+
+def _migrate_certificate_columns(engine) -> None:
+    with engine.begin() as conn:
+        existing = {row[1] for row in conn.execute(text("PRAGMA table_info(certificates)"))}
+        if not existing:
+            return  # table doesn't exist yet — create_all will make it with all columns
+        for column_name, sql_type in _CERTIFICATE_COLUMN_MIGRATIONS:
+            if column_name not in existing:
+                conn.execute(text(f"ALTER TABLE certificates ADD COLUMN {column_name} {sql_type}"))
+
+
 def init_db(engine) -> None:
     Base.metadata.create_all(engine)
+    _migrate_certificate_columns(engine)
 
 
 def audit(
