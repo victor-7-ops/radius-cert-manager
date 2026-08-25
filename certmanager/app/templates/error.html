@@ -1,11 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ status_code }} — Certificate Manager{% endblock %}
 {% block content %}
-<div class="max-w-md mx-auto mt-16 text-center">
-  <div class="text-3xl font-semibold text-slate-300 mb-2">{{ status_code }}</div>
-  <h1 class="text-lg font-semibold text-slate-900 mb-2">{{ title }}</h1>
-  <p class="text-sm text-slate-500 mb-6">{{ message }}</p>
-  <a href="/dashboard" class="inline-block min-h-[44px] flex items-center justify-center px-4 rounded bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 w-fit mx-auto">
+<div class="max-w-md mx-auto mt-16 sm:mt-24 text-center">
+  <div class="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mx-auto mb-5">
+    <svg class="w-7 h-7 text-slate-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.516 2.63H3.72c-1.347 0-2.189-1.463-1.515-2.63L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
+  </div>
+  <div class="text-sm font-medium text-slate-400 mb-1">Error {{ status_code }}</div>
+  <h1 class="text-xl font-semibold text-slate-900 tracking-tight mb-2">{{ title }}</h1>
+  <p class="text-sm text-slate-500 mb-8">{{ message }}</p>
+  <a href="/dashboard" class="btn-primary w-fit mx-auto">
+    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd"/></svg>
     Back to dashboard
   </a>
 </div>

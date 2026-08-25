@@ -1,43 +1,45 @@
 {% extends "base.html" %}
 {% block title %}Activity log — Certificate Manager{% endblock %}
 {% block content %}
-<h1 class="text-lg font-semibold text-slate-900 mb-4">Activity log</h1>
+<h1 class="text-2xl font-semibold text-slate-900 tracking-tight mb-6">Activity log</h1>
 
-<form method="get" action="/activity" class="flex flex-wrap gap-2 mb-4">
-  <input type="text" name="actor" placeholder="Actor" value="{{ actor or '' }}"
-         class="min-h-[44px] rounded border border-slate-300 px-3 text-sm">
-  <input type="text" name="action" placeholder="Action type" value="{{ action_filter or '' }}"
-         class="min-h-[44px] rounded border border-slate-300 px-3 text-sm">
-  <button type="submit" class="min-h-[44px] px-4 rounded border border-slate-300 text-sm font-medium hover:bg-slate-50">Filter</button>
+<form method="get" action="/activity" class="flex flex-wrap gap-2 mb-5">
+  <input type="text" name="actor" placeholder="Actor" value="{{ actor or '' }}" class="field-input sm:w-48">
+  <input type="text" name="action" placeholder="Action type" value="{{ action_filter or '' }}" class="field-input sm:w-48">
+  <button type="submit" class="btn-secondary">
+    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 8 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L2.659 6.22A2.25 2.25 0 0 1 2 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"/></svg>
+    Filter
+  </button>
 </form>
 
 {% if entries %}
-<div class="bg-white border border-slate-200 rounded-lg overflow-x-auto">
-  <table class="w-full text-sm">
-    <thead class="text-left text-slate-500 border-b border-slate-200">
+<div class="table-shell">
+  <table>
+    <thead>
       <tr>
-        <th class="px-4 py-3 font-medium">Time</th>
-        <th class="px-4 py-3 font-medium">Actor</th>
-        <th class="px-4 py-3 font-medium">Action</th>
-        <th class="px-4 py-3 font-medium">Target</th>
-        <th class="px-4 py-3 font-medium">Detail</th>
+        <th>Time</th>
+        <th>Actor</th>
+        <th>Action</th>
+        <th>Target</th>
+        <th>Detail</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-slate-100">
+    <tbody>
       {% for e in entries %}
       <tr>
-        <td class="px-4 py-3 text-slate-500">{{ e.timestamp }}</td>
-        <td class="px-4 py-3 text-slate-900">{{ e.actor }}</td>
-        <td class="px-4 py-3 text-slate-600">{{ e.action }}</td>
-        <td class="px-4 py-3 text-slate-600">{{ e.target }}</td>
-        <td class="px-4 py-3 text-slate-500">{{ e.detail or "" }}</td>
+        <td class="text-slate-500 whitespace-nowrap">{{ e.timestamp }}</td>
+        <td class="text-slate-900 font-medium">{{ e.actor }}</td>
+        <td class="text-slate-600">{{ e.action }}</td>
+        <td class="text-slate-600 font-mono text-xs">{{ e.target }}</td>
+        <td class="text-slate-500">{{ e.detail or "" }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 {% else %}
-<div class="bg-white border border-slate-200 rounded-lg p-10 text-center text-slate-500">
+<div class="card p-12 text-center text-slate-500">
+  <svg class="w-10 h-10 mx-auto mb-3 text-slate-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>
   No activity matches this filter.
 </div>
 {% endif %}

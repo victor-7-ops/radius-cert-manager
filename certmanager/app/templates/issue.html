@@ -1,11 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Issue certificate — Certificate Manager{% endblock %}
 {% block content %}
-<h1 class="text-lg font-semibold text-slate-900 mb-4">Issue certificate</h1>
+<a href="/certs" class="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-4">
+  <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd"/></svg>
+  Certificates
+</a>
+<h1 class="text-2xl font-semibold text-slate-900 tracking-tight mb-6">Issue certificate</h1>
 
-<div class="max-w-md bg-white border border-slate-200 rounded-lg p-6">
+<div class="max-w-md card p-6">
   {% if error %}
-  <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+  <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
     {{ error }}
   </div>
   {% endif %}
@@ -13,19 +17,18 @@
         onsubmit="const b=this.querySelector('button'); b.disabled=true; b.innerText='Issuing…';">
     <input type="hidden" name="request_id" value="{{ request_id }}">
     <div>
-      <label for="cn" class="block text-sm font-medium text-slate-700 mb-1">Identifier (CN)</label>
+      <label for="cn" class="field-label">Identifier (CN)</label>
       <input id="cn" name="cn" type="text" required autofocus
              hx-get="/certs/check-cn" hx-trigger="input changed delay:300ms" hx-target="#cn-status" hx-swap="innerHTML"
-             class="w-full min-h-[44px] rounded border border-slate-300 px-3 focus:outline-none focus:ring-2 focus:ring-slate-500">
-      <div id="cn-status" class="mt-1 text-sm"></div>
+             class="field-input">
+      <div id="cn-status" class="mt-1.5 text-sm"></div>
     </div>
     <div>
-      <label for="note" class="block text-sm font-medium text-slate-700 mb-1">Note (optional)</label>
-      <input id="note" name="note" type="text"
-             class="w-full min-h-[44px] rounded border border-slate-300 px-3 focus:outline-none focus:ring-2 focus:ring-slate-500">
+      <label for="note" class="field-label">Note (optional)</label>
+      <input id="note" name="note" type="text" class="field-input">
     </div>
-    <button type="submit"
-            class="w-full min-h-[44px] rounded bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50">
+    <button type="submit" class="btn-primary w-full">
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
       Issue certificate
     </button>
   </form>

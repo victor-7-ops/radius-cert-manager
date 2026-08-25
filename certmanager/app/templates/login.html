@@ -1,32 +1,40 @@
 {% extends "base.html" %}
 {% block title %}Log in — Certificate Manager{% endblock %}
 {% block content %}
-<div class="max-w-sm mx-auto mt-16">
-  <h1 class="text-lg font-semibold text-slate-900 mb-6 text-center">Certificate Manager</h1>
-  <div class="bg-white border border-slate-200 rounded-lg p-6">
+<div class="max-w-sm mx-auto mt-16 sm:mt-24">
+  <div class="flex flex-col items-center mb-8">
+    <div class="w-12 h-12 rounded-2xl bg-slate-900 flex items-center justify-center mb-4 shadow-sm">
+      <svg class="w-7 h-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+        <path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.6 7.5 9.5 4.3-.9 7.5-4.9 7.5-9.5V6L12 3Z" stroke-linejoin="round"/>
+        <path d="m9 12 2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1 class="text-xl font-semibold text-slate-900 tracking-tight">Certificate Manager</h1>
+    <p class="text-sm text-slate-500 mt-1">Sign in to continue</p>
+  </div>
+  <div class="card p-6">
     {% if locked %}
-    <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+    <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 flex items-center gap-2">
+      <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>
       Too many failed attempts. Try again in {{ lockout_minutes }} minutes.
     </div>
     {% elif error %}
-    <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+    <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 flex items-center gap-2">
+      <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>
       Invalid username or password.
     </div>
     {% endif %}
     <form method="post" action="/auth/login" class="space-y-4"
           onsubmit="const b=this.querySelector('button'); b.disabled=true; b.innerText='Signing in…';">
       <div>
-        <label for="username" class="block text-sm font-medium text-slate-700 mb-1">Username</label>
-        <input id="username" name="username" type="text" required autofocus
-               class="w-full min-h-[44px] rounded border border-slate-300 px-3 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500">
+        <label for="username" class="field-label">Username</label>
+        <input id="username" name="username" type="text" required autofocus class="field-input">
       </div>
       <div>
-        <label for="password" class="block text-sm font-medium text-slate-700 mb-1">Password</label>
-        <input id="password" name="password" type="password" required
-               class="w-full min-h-[44px] rounded border border-slate-300 px-3 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500">
+        <label for="password" class="field-label">Password</label>
+        <input id="password" name="password" type="password" required class="field-input">
       </div>
-      <button type="submit"
-              class="w-full min-h-[44px] rounded bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50">
+      <button type="submit" class="btn-primary w-full">
         Sign in
       </button>
     </form>

@@ -1,27 +1,28 @@
 {% extends "base.html" %}
 {% block title %}Bulk issue results — Certificate Manager{% endblock %}
 {% block content %}
-<h1 class="text-lg font-semibold text-slate-900 mb-1">Bulk issue results</h1>
-<p class="text-sm text-slate-500 mb-4">
-  {{ result.succeeded|length }} succeeded, {{ result.failed|length }} failed.
+<h1 class="text-2xl font-semibold text-slate-900 tracking-tight mb-1">Bulk issue results</h1>
+<p class="text-sm text-slate-500 mb-6">
+  <span class="text-green-700 font-medium">{{ result.succeeded|length }} succeeded</span>,
+  <span class="{{ 'text-red-700 font-medium' if result.failed else '' }}">{{ result.failed|length }} failed</span>.
   The export password you set is not shown again — if you didn't save it, reissue the failed and re-download rows as a new batch.
 </p>
 
-<a href="/api/batches/{{ batch_id }}/bundle"
-   class="inline-block mb-6 min-h-[44px] flex items-center px-4 rounded bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 w-fit">
+<a href="/api/batches/{{ batch_id }}/bundle" class="btn-primary w-fit mb-8">
+  <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a.75.75 0 0 1 .75.75v10.638l3.96-4.158a.75.75 0 1 1 1.08 1.04l-5.25 5.5a.75.75 0 0 1-1.08 0l-5.25-5.5a.75.75 0 1 1 1.08-1.04l3.96 4.158V3.75A.75.75 0 0 1 10 3ZM3 15.5a.75.75 0 0 1 .75.75v.75c0 .414.336.75.75.75h11a.75.75 0 0 0 .75-.75v-.75a.75.75 0 0 1 1.5 0v.75A2.25 2.25 0 0 1 15.5 19h-11A2.25 2.25 0 0 1 2.25 16.75v-.75A.75.75 0 0 1 3 15.5Z" clip-rule="evenodd"/></svg>
   Download ZIP (.p12 files + manifest.csv)
 </a>
 
 {% if result.succeeded %}
-<h2 class="font-medium text-slate-900 mb-2">Succeeded</h2>
-<div class="bg-white border border-slate-200 rounded-lg overflow-x-auto mb-6">
-  <table class="w-full text-sm">
-    <thead class="text-left text-slate-500 border-b border-slate-200">
-      <tr><th class="px-4 py-3 font-medium">CN</th><th class="px-4 py-3 font-medium">Serial</th></tr>
+<h2 class="font-semibold text-slate-900 mb-3">Succeeded</h2>
+<div class="table-shell mb-8">
+  <table>
+    <thead>
+      <tr><th>CN</th><th>Serial</th></tr>
     </thead>
-    <tbody class="divide-y divide-slate-100">
+    <tbody>
       {% for r in result.succeeded %}
-      <tr><td class="px-4 py-3 font-mono">{{ r.cn }}</td><td class="px-4 py-3 font-mono text-slate-500">{{ r.serial }}</td></tr>
+      <tr><td class="font-mono text-slate-900">{{ r.cn }}</td><td class="font-mono text-slate-500 text-xs">{{ r.serial }}</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -29,15 +30,15 @@
 {% endif %}
 
 {% if result.failed %}
-<h2 class="font-medium text-slate-900 mb-2">Failed — not signed, retry as a new batch</h2>
-<div class="bg-white border border-red-200 rounded-lg overflow-x-auto">
+<h2 class="font-semibold text-slate-900 mb-3">Failed — not signed, retry as a new batch</h2>
+<div class="card border-red-200 overflow-x-auto">
   <table class="w-full text-sm">
-    <thead class="text-left text-slate-500 border-b border-slate-200">
-      <tr><th class="px-4 py-3 font-medium">CN</th><th class="px-4 py-3 font-medium">Reason</th></tr>
+    <thead class="text-left text-xs font-semibold uppercase tracking-wide text-red-400 border-b border-red-100 bg-red-50/50">
+      <tr><th class="px-4 py-3">CN</th><th class="px-4 py-3">Reason</th></tr>
     </thead>
     <tbody class="divide-y divide-slate-100">
       {% for r in result.failed %}
-      <tr><td class="px-4 py-3 font-mono">{{ r.cn }}</td><td class="px-4 py-3 text-red-700">{{ r.error }}</td></tr>
+      <tr><td class="px-4 py-3 font-mono text-slate-900">{{ r.cn }}</td><td class="px-4 py-3 text-red-700">{{ r.error }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

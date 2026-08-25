@@ -1,35 +1,34 @@
 {% extends "base.html" %}
-{% import "_status_badge.html" as badge %}
 {% block title %}Bulk issue preview — Certificate Manager{% endblock %}
 {% block content %}
-<h1 class="text-lg font-semibold text-slate-900 mb-1">Bulk issue preview</h1>
-<p class="text-sm text-slate-500 mb-4">
-  Nothing is signed until you confirm. {{ valid_count }} of {{ rows|length }} identifiers are valid.
+<h1 class="text-2xl font-semibold text-slate-900 tracking-tight mb-1">Bulk issue preview</h1>
+<p class="text-sm text-slate-500 mb-6">
+  Nothing is signed until you confirm. <span class="font-medium text-slate-700">{{ valid_count }} of {{ rows|length }}</span> identifiers are valid.
 </p>
 
-<div class="bg-white border border-slate-200 rounded-lg overflow-x-auto mb-6">
-  <table class="w-full text-sm">
-    <thead class="text-left text-slate-500 border-b border-slate-200">
+<div class="table-shell mb-6">
+  <table>
+    <thead>
       <tr>
-        <th class="px-4 py-3 font-medium">Identifier</th>
-        <th class="px-4 py-3 font-medium">Classification</th>
-        <th class="px-4 py-3 font-medium">Reason</th>
+        <th>Identifier</th>
+        <th>Classification</th>
+        <th>Reason</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-slate-100">
+    <tbody>
       {% for r in rows %}
       <tr>
-        <td class="px-4 py-3 font-mono text-slate-900">{{ r.identifier }}</td>
-        <td class="px-4 py-3">
+        <td class="font-mono text-slate-900">{{ r.identifier }}</td>
+        <td>
           {% if r.classification == "valid" %}
-          <span class="text-green-700">Valid</span>
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-green-50 text-green-700"><span class="w-1.5 h-1.5 rounded-full bg-green-600"></span> Valid</span>
           {% elif r.classification == "duplicate" %}
-          <span class="text-amber-700">Duplicate</span>
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Duplicate</span>
           {% else %}
-          <span class="text-red-700">Malformed</span>
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-red-50 text-red-700"><span class="w-1.5 h-1.5 rounded-full bg-red-600"></span> Malformed</span>
           {% endif %}
         </td>
-        <td class="px-4 py-3 text-slate-500">{{ r.reason or "" }}</td>
+        <td class="text-slate-500">{{ r.reason or "" }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -37,20 +36,19 @@
 </div>
 
 {% if valid_count > 0 %}
-<div class="max-w-md bg-white border border-slate-200 rounded-lg p-6">
+<div class="max-w-md card p-6">
   <form method="post" action="/certs/bulk/confirm" class="space-y-4"
         onsubmit="const b=this.querySelector('button'); b.disabled=true; b.innerText='Issuing…';">
     <input type="hidden" name="batch_token" value="{{ batch_token }}">
     <div>
-      <label for="export_password" class="block text-sm font-medium text-slate-700 mb-1">
+      <label for="export_password" class="field-label">
         Export password for this batch
       </label>
-      <input id="export_password" name="export_password" type="text" required minlength="12"
-             class="w-full min-h-[44px] rounded border border-slate-300 px-3 font-mono focus:outline-none focus:ring-2 focus:ring-slate-500">
-      <p class="mt-1 text-xs text-slate-500">One password protects every .p12 in this batch. Shown once, on the results page.</p>
+      <input id="export_password" name="export_password" type="text" required minlength="12" class="field-input font-mono">
+      <p class="mt-1.5 text-xs text-slate-500">One password protects every .p12 in this batch. Shown once, on the results page.</p>
     </div>
-    <button type="submit"
-            class="w-full min-h-[44px] rounded bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50">
+    <button type="submit" class="btn-primary w-full">
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
       Issue {{ valid_count }} certificate{{ "s" if valid_count != 1 else "" }}
     </button>
   </form>

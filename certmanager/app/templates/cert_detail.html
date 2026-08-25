@@ -2,29 +2,34 @@
 {% import "_status_badge.html" as badge %}
 {% block title %}{{ cert.cn }} — Certificate Manager{% endblock %}
 {% block content %}
-<div class="flex items-center justify-between mb-4">
+<a href="/certs" class="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-4">
+  <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd"/></svg>
+  Certificates
+</a>
+
+<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
   <div>
-    <h1 class="text-lg font-semibold text-slate-900">{{ cert.cn }}</h1>
-    <div class="mt-1">{{ badge.status_badge(cert.status) }}</div>
+    <h1 class="text-2xl font-semibold text-slate-900 tracking-tight font-mono">{{ cert.cn }}</h1>
+    <div class="mt-2">{{ badge.status_badge(cert.status) }}</div>
   </div>
   <div class="flex gap-2">
     {% if cert.status == "active" and can_suspend %}
     <button hx-post="/certs/{{ cert.serial }}/suspend" hx-prompt="Reason for suspending {{ cert.cn }}?"
-            hx-confirm="Suspend {{ cert.cn }}?"
-            class="min-h-[44px] px-4 rounded border border-amber-300 text-amber-700 text-sm font-medium hover:bg-amber-50">
+            hx-confirm="Suspend {{ cert.cn }}?" class="btn-warn">
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6.75 5.5a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0v-7.5a.75.75 0 0 1 .75-.75Zm6.5 0a.75.75 0 0 1 .75.75v7.5a.75.75 0 0 1-1.5 0v-7.5a.75.75 0 0 1 .75-.75Z" clip-rule="evenodd"/></svg>
       Suspend
     </button>
     {% endif %}
     {% if cert.status == "suspended" and can_unsuspend %}
-    <button hx-post="/certs/{{ cert.serial }}/unsuspend" hx-confirm="Unsuspend {{ cert.cn }}?"
-            class="min-h-[44px] px-4 rounded border border-green-300 text-green-700 text-sm font-medium hover:bg-green-50">
+    <button hx-post="/certs/{{ cert.serial }}/unsuspend" hx-confirm="Unsuspend {{ cert.cn }}?" class="btn-success">
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" clip-rule="evenodd"/></svg>
       Unsuspend
     </button>
     {% endif %}
     {% if cert.status != "revoked" and can_revoke %}
     <button hx-post="/certs/{{ cert.serial }}/revoke" hx-prompt="Reason for revoking {{ cert.cn }}? (permanent)"
-            hx-confirm="Revoke {{ cert.cn }}? This is permanent."
-            class="min-h-[44px] px-4 rounded border border-red-300 text-red-700 text-sm font-medium hover:bg-red-50">
+            hx-confirm="Revoke {{ cert.cn }}? This is permanent." class="btn-danger">
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clip-rule="evenodd"/></svg>
       Revoke
     </button>
     {% endif %}
@@ -32,38 +37,41 @@
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-  <section class="bg-white border border-slate-200 rounded-lg p-4">
-    <h2 class="font-medium text-slate-900 mb-3">Metadata</h2>
-    <dl class="text-sm space-y-2">
-      <div class="flex justify-between"><dt class="text-slate-500">Serial</dt><dd class="font-mono">{{ cert.serial }}</dd></div>
-      <div class="flex justify-between"><dt class="text-slate-500">Issued</dt><dd>{{ cert.issued_at }}</dd></div>
-      <div class="flex justify-between"><dt class="text-slate-500">Expires</dt><dd>{{ cert.expires_at }}</dd></div>
-      <div class="flex justify-between"><dt class="text-slate-500">Issued by</dt><dd>{{ cert.issued_by }}</dd></div>
-      {% if cert.note %}<div class="flex justify-between"><dt class="text-slate-500">Note</dt><dd>{{ cert.note }}</dd></div>{% endif %}
+  <section class="card p-5">
+    <h2 class="font-semibold text-slate-900 mb-4">Metadata</h2>
+    <dl class="text-sm space-y-3">
+      <div class="flex justify-between gap-4"><dt class="text-slate-500">Serial</dt><dd class="font-mono text-slate-800 text-right break-all">{{ cert.serial }}</dd></div>
+      <div class="flex justify-between gap-4"><dt class="text-slate-500">Issued</dt><dd class="text-slate-800">{{ cert.issued_at }}</dd></div>
+      <div class="flex justify-between gap-4"><dt class="text-slate-500">Expires</dt><dd class="text-slate-800">{{ cert.expires_at }}</dd></div>
+      <div class="flex justify-between gap-4"><dt class="text-slate-500">Issued by</dt><dd class="text-slate-800">{{ cert.issued_by }}</dd></div>
+      {% if cert.note %}<div class="flex justify-between gap-4"><dt class="text-slate-500">Note</dt><dd class="text-slate-800">{{ cert.note }}</dd></div>{% endif %}
       {% if cert.supersedes_cn %}
-      <div class="flex justify-between"><dt class="text-slate-500">Supersedes</dt>
-        <dd><a href="/certs/{{ cert.supersedes_serial }}" class="text-slate-700 hover:underline">{{ cert.supersedes_cn }}</a></dd></div>
+      <div class="flex justify-between gap-4"><dt class="text-slate-500">Supersedes</dt>
+        <dd><a href="/certs/{{ cert.supersedes_serial }}" class="text-slate-700 hover:underline font-medium">{{ cert.supersedes_cn }}</a></dd></div>
       {% endif %}
       {% if cert.superseded_by_cn %}
-      <div class="flex justify-between"><dt class="text-slate-500">Superseded by</dt>
-        <dd><a href="/certs/{{ cert.superseded_by_serial }}" class="text-slate-700 hover:underline">{{ cert.superseded_by_cn }}</a></dd></div>
+      <div class="flex justify-between gap-4"><dt class="text-slate-500">Superseded by</dt>
+        <dd><a href="/certs/{{ cert.superseded_by_serial }}" class="text-slate-700 hover:underline font-medium">{{ cert.superseded_by_cn }}</a></dd></div>
       {% endif %}
     </dl>
   </section>
 
-  <section class="bg-white border border-slate-200 rounded-lg p-4">
-    <h2 class="font-medium text-slate-900 mb-3">Status history</h2>
+  <section class="card p-5">
+    <h2 class="font-semibold text-slate-900 mb-4">Status history</h2>
     {% if history %}
-    <ul class="text-sm divide-y divide-slate-100">
+    <ol class="relative border-l border-slate-200 ml-2 space-y-4">
       {% for h in history %}
-      <li class="py-2">
-        <span class="font-medium text-slate-700">{{ h.action }}</span>
-        <span class="text-slate-500">by {{ h.actor }}</span>
-        {% if h.detail %}<div class="text-slate-500">{{ h.detail }}</div>{% endif %}
-        <div class="text-xs text-slate-400">{{ h.timestamp }}</div>
+      <li class="pl-4 relative">
+        <span class="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-slate-400"></span>
+        <div class="text-sm">
+          <span class="font-medium text-slate-800">{{ h.action }}</span>
+          <span class="text-slate-500">by {{ h.actor }}</span>
+        </div>
+        {% if h.detail %}<div class="text-sm text-slate-500">{{ h.detail }}</div>{% endif %}
+        <div class="text-xs text-slate-400 mt-0.5">{{ h.timestamp }}</div>
       </li>
       {% endfor %}
-    </ul>
+    </ol>
     {% else %}
     <p class="text-sm text-slate-500">No history yet.</p>
     {% endif %}

@@ -2,26 +2,31 @@
 {% import "_status_badge.html" as badge %}
 {% block title %}Certificates — Certificate Manager{% endblock %}
 {% block content %}
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-lg font-semibold text-slate-900">Certificates</h1>
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+  <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Certificates</h1>
   <div class="flex gap-2">
-    <a href="/certs/bulk" class="min-h-[44px] flex items-center px-4 rounded border border-slate-300 text-sm font-medium hover:bg-slate-50">
+    <a href="/certs/bulk" class="btn-secondary">
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4Z"/><path fill-rule="evenodd" d="M3 10a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6Zm4 2a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2H7Z" clip-rule="evenodd"/></svg>
       Bulk issue
     </a>
-    <a href="/certs/issue" class="min-h-[44px] flex items-center px-4 rounded bg-slate-900 text-white text-sm font-medium hover:bg-slate-800">
+    <a href="/certs/issue" class="btn-primary">
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
       Issue certificate
     </a>
   </div>
 </div>
 
-<div class="flex flex-wrap gap-2 mb-4">
-  <input type="search" name="q" placeholder="Search by CN…" value="{{ q or '' }}"
-         hx-get="/certs" hx-trigger="input changed delay:300ms" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML"
-         hx-include="[name=status]"
-         class="min-h-[44px] flex-1 min-w-[200px] rounded border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
+<div class="flex flex-wrap gap-2 mb-5">
+  <div class="relative flex-1 min-w-[200px]">
+    <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11ZM2 9a7 7 0 1 1 12.452 4.391l3.328 3.329a.75.75 0 1 1-1.06 1.06l-3.329-3.328A7 7 0 0 1 2 9Z" clip-rule="evenodd"/></svg>
+    <input type="search" name="q" placeholder="Search by CN…" value="{{ q or '' }}"
+           hx-get="/certs" hx-trigger="input changed delay:300ms" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML"
+           hx-include="[name=status]"
+           class="field-input pl-9">
+  </div>
   {% for s in ["active", "suspended", "revoked", "expired"] %}
-  <label class="min-h-[44px] flex items-center gap-1.5 px-3 rounded-full border text-sm cursor-pointer
-                {{ 'bg-slate-900 text-white border-slate-900' if status_filter == s else 'border-slate-300 text-slate-600' }}">
+  <label class="min-h-[44px] flex items-center gap-1.5 px-3.5 rounded-full border text-sm font-medium cursor-pointer transition-colors
+                {{ 'bg-slate-900 text-white border-slate-900' if status_filter == s else 'border-slate-300 text-slate-600 hover:bg-slate-50' }}">
     <input type="radio" name="status" value="{{ s }}" class="hidden"
            hx-get="/certs" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML" hx-include="[name=q]"
            {{ 'checked' if status_filter == s else '' }}>
@@ -33,31 +38,31 @@
 <div id="cert-results">
   {% if items %}
 
-  <div class="hidden md:block bg-white border border-slate-200 rounded-lg overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead class="text-left text-slate-500 border-b border-slate-200">
+  <div class="hidden md:block table-shell">
+    <table>
+      <thead>
         <tr>
-          <th class="px-4 py-3 font-medium">CN</th>
-          <th class="px-4 py-3 font-medium">Status</th>
-          <th class="px-4 py-3 font-medium">Issued</th>
-          <th class="px-4 py-3 font-medium text-right">Expires</th>
-          <th class="px-4 py-3 font-medium">Issued by</th>
-          <th class="px-4 py-3 font-medium"></th>
+          <th>CN</th>
+          <th>Status</th>
+          <th>Issued</th>
+          <th class="text-right">Expires</th>
+          <th>Issued by</th>
+          <th></th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody>
         {% for c in items %}
-        <tr class="hover:bg-slate-50">
-          <td class="px-4 py-3"><a href="/certs/{{ c.serial }}" class="text-slate-900 hover:underline">{{ c.cn }}</a></td>
-          <td class="px-4 py-3">{{ badge.status_badge(c.status) }}</td>
-          <td class="px-4 py-3 text-slate-600">{{ c.issued_at }}</td>
-          <td class="px-4 py-3 text-right text-slate-600">{{ c.expires_relative }}</td>
-          <td class="px-4 py-3 text-slate-600">{{ c.issued_by }}</td>
-          <td class="px-4 py-3 text-right">
+        <tr>
+          <td><a href="/certs/{{ c.serial }}" class="text-slate-900 font-medium hover:underline">{{ c.cn }}</a></td>
+          <td>{{ badge.status_badge(c.status) }}</td>
+          <td class="text-slate-500">{{ c.issued_at }}</td>
+          <td class="text-right text-slate-500">{{ c.expires_relative }}</td>
+          <td class="text-slate-500">{{ c.issued_by }}</td>
+          <td class="text-right">
             {% if c.status == "active" %}
             <button hx-post="/certs/{{ c.serial }}/suspend" hx-prompt="Reason for suspending {{ c.cn }}?"
                     hx-confirm="Suspend {{ c.cn }}?" hx-target="closest tr" hx-swap="outerHTML"
-                    class="text-amber-700 hover:underline min-h-[44px] px-2">Suspend</button>
+                    class="text-amber-700 hover:underline text-sm font-medium min-h-[44px] px-2">Suspend</button>
             {% endif %}
           </td>
         </tr>
@@ -68,19 +73,20 @@
 
   <div class="md:hidden space-y-3">
     {% for c in items %}
-    <a href="/certs/{{ c.serial }}" class="block bg-white border border-slate-200 rounded-lg p-4">
+    <a href="/certs/{{ c.serial }}" class="card block p-4 hover:border-slate-300 transition-colors">
       <div class="flex items-center justify-between mb-2">
         <span class="font-medium text-slate-900">{{ c.cn }}</span>
         {{ badge.status_badge(c.status) }}
       </div>
       <div class="text-sm text-slate-500">Expires {{ c.expires_relative }}</div>
-      <div class="text-xs text-slate-400">issued by {{ c.issued_by }}</div>
+      <div class="text-xs text-slate-400 mt-0.5">issued by {{ c.issued_by }}</div>
     </a>
     {% endfor %}
   </div>
 
   {% else %}
-  <div class="bg-white border border-slate-200 rounded-lg p-10 text-center text-slate-500">
+  <div class="card p-12 text-center text-slate-500">
+    <svg class="w-10 h-10 mx-auto mb-3 text-slate-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4Zm2 3a1 1 0 0 0 0 2h8a1 1 0 1 0 0-2H6Zm0 4a1 1 0 1 0 0 2h4a1 1 0 1 0 0-2H6Z" clip-rule="evenodd"/></svg>
     No certificates match this filter.
   </div>
   {% endif %}

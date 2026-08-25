@@ -1,34 +1,38 @@
 {% extends "base.html" %}
 {% block title %}Bulk issue — Certificate Manager{% endblock %}
 {% block content %}
-<h1 class="text-lg font-semibold text-slate-900 mb-4">Bulk issue</h1>
+<h1 class="text-2xl font-semibold text-slate-900 tracking-tight mb-6">Bulk issue</h1>
 
-<div class="max-w-lg bg-white border border-slate-200 rounded-lg p-6">
+<div class="max-w-lg card p-6">
   {% if error %}
-  <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+  <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
     {{ error }}
   </div>
   {% endif %}
   <form method="post" action="/certs/bulk/preview" enctype="multipart/form-data" class="space-y-4">
     <div>
-      <label for="identifiers_text" class="block text-sm font-medium text-slate-700 mb-1">
+      <label for="identifiers_text" class="field-label">
         Paste identifiers, one per line
       </label>
       <textarea id="identifiers_text" name="identifiers_text" rows="8"
-                class="w-full rounded border border-slate-300 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-slate-500"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2.5 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 transition-shadow"
                 placeholder="alex-laptop&#10;jordan-phone&#10;taylor-tablet"></textarea>
     </div>
-    <div class="text-center text-xs text-slate-400">— or —</div>
+    <div class="flex items-center gap-3 text-xs text-slate-400">
+      <div class="flex-1 h-px bg-slate-200"></div>
+      or
+      <div class="flex-1 h-px bg-slate-200"></div>
+    </div>
     <div>
-      <label for="csv_file" class="block text-sm font-medium text-slate-700 mb-1">
+      <label for="csv_file" class="field-label">
         Upload a single-column CSV
       </label>
       <input id="csv_file" name="csv_file" type="file" accept=".csv"
-             class="w-full min-h-[44px] text-sm">
+             class="w-full min-h-[44px] text-sm file:mr-3 file:btn-secondary file:border-0 file:cursor-pointer">
     </div>
     <p class="text-xs text-slate-500">Up to 100 identifiers per batch.</p>
-    <button type="submit"
-            class="w-full min-h-[44px] rounded bg-slate-900 text-white font-medium hover:bg-slate-800">
+    <button type="submit" class="btn-primary w-full">
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.844-8.791a.75.75 0 0 0-1.188-.918l-3.7 4.79-1.649-1.833a.75.75 0 1 0-1.114 1.004l2.25 2.5a.75.75 0 0 0 1.15-.043l4.25-5.5Z" clip-rule="evenodd"/></svg>
       Preview batch
     </button>
   </form>

@@ -1,50 +1,68 @@
 {% extends "base.html" %}
 {% block title %}Admins — Certificate Manager{% endblock %}
 {% block content %}
-<div class="flex items-center justify-between mb-4">
-  <h1 class="text-lg font-semibold text-slate-900">Admin management</h1>
-  <button hx-get="/admins/new-form" hx-target="#new-admin-slot" hx-swap="innerHTML"
-          class="min-h-[44px] px-4 rounded bg-slate-900 text-white text-sm font-medium hover:bg-slate-800">
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+  <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Admin management</h1>
+  <button hx-get="/admins/new-form" hx-target="#new-admin-slot" hx-swap="innerHTML" class="btn-primary">
+    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
     New admin
   </button>
 </div>
 <div id="new-admin-slot" class="mb-4"></div>
 
 {% if only_one_super_admin %}
-<div class="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+<div class="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 flex items-center gap-2">
+  <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.516 2.63H3.72c-1.347 0-2.189-1.463-1.515-2.63L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
   Only one active Super Admin exists. Operationally, keep at least two so one person leaving
   doesn't strand the system.
 </div>
 {% endif %}
 
-<div class="bg-white border border-slate-200 rounded-lg overflow-x-auto">
-  <table class="w-full text-sm">
-    <thead class="text-left text-slate-500 border-b border-slate-200">
+<div class="table-shell">
+  <table>
+    <thead>
       <tr>
-        <th class="px-4 py-3 font-medium">Username</th>
-        <th class="px-4 py-3 font-medium">Role</th>
-        <th class="px-4 py-3 font-medium">Status</th>
-        <th class="px-4 py-3 font-medium"></th>
+        <th>Username</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th></th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-slate-100">
+    <tbody>
       {% for a in admins %}
       <tr>
-        <td class="px-4 py-3 text-slate-900">{{ a.username }}</td>
-        <td class="px-4 py-3 text-slate-600">{{ a.role }}</td>
-        <td class="px-4 py-3 text-slate-600">{{ "Active" if a.is_active else "Deactivated" }}</td>
-        <td class="px-4 py-3 text-right space-x-2">
+        <td class="text-slate-900 font-medium">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 rounded-full bg-slate-900 text-white text-[10px] font-semibold flex items-center justify-center uppercase">{{ a.username[0] }}</div>
+            {{ a.username }}
+          </div>
+        </td>
+        <td>
+          {% if a.role == "super_admin" %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-900 text-white">Super Admin</span>
+          {% else %}
+          <span class="text-slate-600 text-sm">Admin</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if a.is_active %}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-green-700"><span class="w-1.5 h-1.5 rounded-full bg-green-600"></span> Active</span>
+          {% else %}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400"><span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Deactivated</span>
+          {% endif %}
+        </td>
+        <td class="text-right space-x-1">
           {% if a.is_active %}
             {% if a.is_last_super_admin %}
             <span class="text-xs text-slate-400" title="Cannot deactivate the last active Super Admin">Protected</span>
             {% else %}
             <button hx-post="/admins/{{ a.id }}/deactivate" hx-confirm="Deactivate {{ a.username }}?"
-                    class="text-red-700 hover:underline min-h-[44px] px-2">Deactivate</button>
+                    class="text-red-700 hover:underline text-sm font-medium min-h-[44px] px-2">Deactivate</button>
             {% endif %}
             <button hx-post="/admins/{{ a.id }}/reset-password" hx-confirm="Force a password reset for {{ a.username }}?"
-                    class="text-slate-600 hover:underline min-h-[44px] px-2">Reset password</button>
+                    class="text-slate-600 hover:underline text-sm font-medium min-h-[44px] px-2">Reset password</button>
             <button hx-post="/admins/{{ a.id }}/force-logout" hx-confirm="Force logout for {{ a.username }}?"
-                    class="text-slate-600 hover:underline min-h-[44px] px-2">Force logout</button>
+                    class="text-slate-600 hover:underline text-sm font-medium min-h-[44px] px-2">Force logout</button>
           {% endif %}
         </td>
       </tr>

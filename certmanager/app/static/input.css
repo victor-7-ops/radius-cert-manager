@@ -1,3 +1,81 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    font-feature-settings: "cv11", "ss01";
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white border border-slate-200 rounded-xl shadow-sm;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 min-h-[44px] px-4 rounded-lg text-sm font-medium
+           transition-colors duration-100 focus-visible:outline focus-visible:outline-2
+           focus-visible:outline-offset-2 focus-visible:outline-slate-500 disabled:opacity-50
+           disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-slate-900 text-white hover:bg-slate-700 shadow-sm;
+  }
+  .btn-secondary {
+    @apply btn border border-slate-300 text-slate-700 bg-white hover:bg-slate-50;
+  }
+  .btn-danger {
+    @apply btn border border-red-200 text-red-700 bg-white hover:bg-red-50;
+  }
+  .btn-warn {
+    @apply btn border border-amber-200 text-amber-700 bg-white hover:bg-amber-50;
+  }
+  .btn-success {
+    @apply btn border border-green-200 text-green-700 bg-white hover:bg-green-50;
+  }
+  .btn-ghost {
+    @apply btn text-slate-600 hover:text-slate-900 hover:bg-slate-100 px-2;
+  }
+
+  .field-input {
+    @apply w-full min-h-[44px] rounded-lg border border-slate-300 px-3 text-sm text-slate-900 placeholder:text-slate-400
+           focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 transition-shadow;
+  }
+  .field-label {
+    @apply block text-sm font-medium text-slate-700 mb-1.5;
+  }
+
+  .nav-link {
+    @apply text-sm font-medium text-slate-500 hover:text-slate-900 min-h-[44px] flex items-center gap-2 border-b-2 border-transparent transition-colors;
+  }
+  .nav-link-active {
+    @apply text-sm font-medium text-slate-900 min-h-[44px] flex items-center gap-2 border-b-2 border-slate-900;
+  }
+
+  .stat-card {
+    @apply card p-4 flex items-start gap-3;
+  }
+
+  .table-shell {
+    @apply card overflow-x-auto;
+  }
+  .table-shell table {
+    @apply w-full text-sm;
+  }
+  .table-shell thead {
+    @apply text-left text-xs font-semibold uppercase tracking-wide text-slate-400 border-b border-slate-200 bg-slate-50/60;
+  }
+  .table-shell th {
+    @apply px-4 py-3;
+  }
+  .table-shell tbody {
+    @apply divide-y divide-slate-100;
+  }
+  .table-shell tbody tr {
+    @apply hover:bg-slate-50 transition-colors;
+  }
+  .table-shell td {
+    @apply px-4 py-3;
+  }
+}
