@@ -1,0 +1,10 @@
+# Goes in ~crlpush/.ssh/authorized_keys on the CM4 (handoff §8.4).
+# One line, wrapped here for readability — join the options and key onto
+# a single line when installing.
+#
+# Generate the key pair on the service host (never on the CM4):
+#   ssh-keygen -t ed25519 -f /opt/certmanager/crlpush_id_ed25519 -N "" -C "certmanager-crlpush"
+# Then put the PUBLIC key here, and point RADIUS_SSH_KEY at the private
+# half in .env.
+
+command="/usr/local/bin/crlpush_forced_command.sh",no-agent-forwarding,no-port-forwarding,no-pty,no-X11-forwarding,no-user-rc ssh-ed25519 AAAA...replace-with-the-real-public-key... certmanager-crlpush

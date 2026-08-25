@@ -39,10 +39,20 @@ producing spurious 401s. All routers are now built fresh inside their
 `get_router()` call. This wouldn't have surfaced in a single long-running
 production process, but the tests that caught it are worth keeping.
 
-Not yet built: Phase A (static IPs, live PKI restructuring, host
-hardening) is a manual procedure on the real CA/RADIUS hosts — see
-handoff §3–§4 — and the `eapol_test` gates in §10 can only be run
-against your real CM4/CA machine, not from here.
+Phase A (static IPs, live PKI restructuring, host hardening) is a manual
+procedure on the real CA/RADIUS hosts that can't be run from this
+environment — no network path to `192.168.200.18`/`.19`. What's built
+instead: `scripts/restructure_pki.py` (builds the offline root + online
+intermediate + reissues `radius-server`, tested against a throwaway
+output tree), `deploy/certmanager.service` (systemd hardening per §4),
+`deploy/crlpush_forced_command.sh` + `authorized_keys.crlpush.example`
+(the §8.4 forced-command credential), and `deploy/RUNBOOK.md`, which
+walks through every remaining step in order with checkpoints — including
+the exact-order test-device transition from §3 step 5 and the
+`eapol_test` gates from §10 that only your real CM4 can verify.
+
+55/55 automated tests pass against throwaway PKIs; nothing here has
+touched or can touch the live PKI or the live CM4.
 
 ## Setup
 

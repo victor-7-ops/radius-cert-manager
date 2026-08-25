@@ -44,6 +44,17 @@ def private_key_to_pem(key: CertificateIssuerPrivateKeyTypes) -> bytes:
     )
 
 
+def private_key_to_encrypted_pem(key: CertificateIssuerPrivateKeyTypes, password: bytes) -> bytes:
+    # Only the offline root CA key uses this (handoff §3 step 1) — every
+    # other key in this system (intermediate, client) must be unencrypted
+    # PKCS8 per the §5.1 trap above.
+    return key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.BestAvailableEncryption(password),
+    )
+
+
 def generate_serial() -> int:
     # Random, >=64 bits, never sequential (handoff §5.8): sequential
     # serials leak issuance volume and invite collisions with any
@@ -190,6 +201,54 @@ def build_crl(
         )
         builder = builder.add_revoked_certificate(revoked)
     return builder.sign(private_key=issuer_key, algorithm=hashes.SHA256())
+
+
+def sign_server_cert(
+    csr: x509.CertificateSigningRequest,
+    issuer_cert: x509.Certificate,
+    issuer_key: CertificateIssuerPrivateKeyTypes,
+    serial: int,
+    days: int,
+) -> x509.Certificate:
+    """Same shape as sign_client_cert but with serverAuth EKU — used only
+    for the RADIUS server's own cert (handoff §3 step 3), never for
+    client certs issued through the app."""
+    builder = _cert_builder(
+        csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value,
+        issuer_cert,
+        csr.public_key(),
+        serial,
+        days,
+    )
+    builder = (
+        builder.add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                key_encipherment=True,
+                content_commitment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=False,
+                crl_sign=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]),
+            critical=False,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(csr.public_key()), critical=False
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_key.public_key()),
+            critical=False,
+        )
+    )
+    return builder.sign(issuer_key, hashes.SHA256())
 
 
 def build_self_signed_ca(cn: str, days: int) -> tuple[x509.Certificate, CertificateIssuerPrivateKeyTypes]:

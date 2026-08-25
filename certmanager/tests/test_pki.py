@@ -1,5 +1,6 @@
 import datetime
 
+from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import ExtendedKeyUsageOID
 
@@ -13,6 +14,32 @@ def test_private_key_serializes_unencrypted_pkcs8_and_reloads():
     assert b"ENCRYPTED" not in pem
     reloaded = serialization.load_pem_private_key(pem, password=None)
     assert reloaded.private_numbers().private_value == key.private_numbers().private_value
+
+
+def test_encrypted_pem_requires_password_and_rejects_wrong_one():
+    key = pki.generate_private_key()
+    pem = pki.private_key_to_encrypted_pem(key, b"correct-horse-battery")
+    assert b"ENCRYPTED" in pem
+
+    import pytest
+
+    with pytest.raises(TypeError):
+        serialization.load_pem_private_key(pem, password=None)
+
+    reloaded = serialization.load_pem_private_key(pem, password=b"correct-horse-battery")
+    assert reloaded.private_numbers().private_value == key.private_numbers().private_value
+
+
+def test_sign_server_cert_has_server_auth_eku_not_client_auth(throwaway_pki):
+    key = pki.generate_private_key()
+    csr = pki.build_csr(key, "radius-server")
+    serial = pki.generate_serial()
+    cert = pki.sign_server_cert(
+        csr, throwaway_pki["inter_cert"], throwaway_pki["inter_key"], serial, days=365
+    )
+    eku = cert.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+    assert ExtendedKeyUsageOID.SERVER_AUTH in eku
+    assert ExtendedKeyUsageOID.CLIENT_AUTH not in eku
 
 
 def test_signed_cert_has_correct_validity_window_eku_and_chains(throwaway_pki):
