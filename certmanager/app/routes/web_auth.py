@@ -6,12 +6,12 @@ from fastapi.templating import Jinja2Templates
 
 from app import auth
 
-router = APIRouter(prefix="/auth", tags=["web-auth"])
-
 LOCKOUT_MINUTES = auth.LOCKOUT_WINDOW_MINUTES
 
 
 def get_router(deps, templates: Jinja2Templates) -> APIRouter:
+    router = APIRouter(prefix="/auth", tags=["web-auth"])
+
     @router.post("/login")
     def login(request: Request, username: str = Form(...), password: str = Form(...)):
         session = deps.get_db_session()

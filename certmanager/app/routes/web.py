@@ -41,9 +41,7 @@ def _effective_status(cert: db.Certificate) -> str:
 def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     router = APIRouter(tags=["web"])
 
-    def _crl_banner_context(session) -> dict:
-        health = crl_health.get_health(session)
-        return {"crl_critical": health.is_critical}
+    _crl_banner_context = crl_health.banner_context
 
     @router.get("/login")
     def login_page(request: Request):
@@ -122,7 +120,19 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         stmt = select(db.Certificate)
         if q:
             stmt = stmt.where(db.Certificate.cn.contains(q))
-        if status:
+        if status == "expired":
+            # "Expired" isn't a stored status (handoff §5.2) — it's an
+            # active cert whose expires_at has passed.
+            now = datetime.datetime.now(datetime.timezone.utc)
+            stmt = stmt.where(db.Certificate.status == db.CertStatus.active, db.Certificate.expires_at < now)
+        elif status == "active":
+            # An expired-but-stored-active cert shows the "Expired" badge
+            # (_effective_status), so the Active filter must exclude it —
+            # otherwise a row filtered into "Active" would render as
+            # "Expired", which reads as a bug.
+            now = datetime.datetime.now(datetime.timezone.utc)
+            stmt = stmt.where(db.Certificate.status == db.CertStatus.active, db.Certificate.expires_at >= now)
+        elif status:
             stmt = stmt.where(db.Certificate.status == status)
         page_size = 50
         stmt = stmt.order_by(db.Certificate.issued_at.desc()).offset((page - 1) * page_size).limit(page_size)

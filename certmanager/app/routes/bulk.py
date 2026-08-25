@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from app import bulk_service, db
+from app import bulk_service, crl_health, db
 
 
 def get_router(deps, templates: Jinja2Templates) -> APIRouter:
@@ -22,7 +22,10 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/certs/bulk")
     def bulk_form(request: Request, admin: db.Admin = Depends(deps.require_admin)):
-        return templates.TemplateResponse(request, "bulk.html", {"admin": admin})
+        session = deps.get_db_session()
+        return templates.TemplateResponse(
+            request, "bulk.html", {"admin": admin, **crl_health.banner_context(session)}
+        )
 
     @router.post("/certs/bulk/preview")
     async def bulk_preview(
@@ -40,7 +43,10 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             rows = bulk_service.classify(session, identifiers)
         except bulk_service.BatchTooLargeError as e:
             return templates.TemplateResponse(
-                request, "bulk.html", {"admin": admin, "error": str(e)}, status_code=400
+                request,
+                "bulk.html",
+                {"admin": admin, "error": str(e), **crl_health.banner_context(session)},
+                status_code=400,
             )
 
         batch_token = str(uuid.uuid4())
@@ -55,6 +61,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "rows": rows,
                 "batch_token": batch_token,
                 "valid_count": sum(1 for r in rows if r.classification == "valid"),
+                **crl_health.banner_context(session),
             },
         )
 
@@ -92,10 +99,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         if entry is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "batch not found")
         result, _ = entry
+        session = deps.get_db_session()
         return templates.TemplateResponse(
             request,
             "bulk_result.html",
-            {"admin": admin, "batch_id": batch_id, "result": result},
+            {"admin": admin, "batch_id": batch_id, "result": result, **crl_health.banner_context(session)},
         )
 
     @router.get("/api/batches/{batch_id}")

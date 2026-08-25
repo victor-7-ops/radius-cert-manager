@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ status_code }} — Certificate Manager{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto mt-16 text-center">
+  <div class="text-3xl font-semibold text-slate-300 mb-2">{{ status_code }}</div>
+  <h1 class="text-lg font-semibold text-slate-900 mb-2">{{ title }}</h1>
+  <p class="text-sm text-slate-500 mb-6">{{ message }}</p>
+  <a href="/dashboard" class="inline-block min-h-[44px] flex items-center justify-center px-4 rounded bg-slate-900 text-white text-sm font-medium hover:bg-slate-800 w-fit mx-auto">
+    Back to dashboard
+  </a>
+</div>
+{% endblock %}

@@ -72,6 +72,12 @@ class CrlHealth:
     is_stale: bool
 
 
+def banner_context(session: Session) -> dict:
+    """Template context for the site-wide stale-CRL banner (handoff §6.3)
+    — every authenticated page includes this."""
+    return {"crl_critical": get_health(session).is_critical}
+
+
 def get_health(session: Session) -> CrlHealth:
     state = _get_or_create(session)
     next_update = _aware(state.next_update)

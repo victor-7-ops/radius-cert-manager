@@ -21,11 +21,28 @@ tests/test_bulk_e2e.py (browser-click automation against the live bulk
 form was unreliable in this environment, so that flow's correctness
 rests on the e2e test rather than a manual click-through).
 
-Not yet built: Phase I (polish/a11y pass, dark mode explicitly out of
-scope). Phase A (static IPs, live PKI
-restructuring, host hardening) is a manual procedure on the real
-CA/RADIUS hosts — see handoff §3–§4 — and the `eapol_test` gates in §10
-can only be run against your real CM4/CA machine, not from here.
+Built (Phase I — polish): HTML error pages for web routes (404/403/409/
+410/500) instead of raw JSON, a stale-CRL banner on every authenticated
+page (was missing from the bulk-issue screens), a fixed "Expired" cert
+filter (it's a computed status, not a stored one — the filter and the
+"Active" filter now agree with the badge shown on each row), and a
+regression test proving the 500 handler never leaks key material or a
+raw traceback to the client.
+
+Phase I also surfaced and fixed a real bug: `certs.py`, `health.py`, and
+`web_auth.py` built their `APIRouter` at module import time and mutated
+it inside `get_router()`. A second `create_app()` call in the same
+process (e.g. two tests back to back) appended duplicate routes to that
+shared router, and the *first* app's stale handlers — bound to its own
+DB session and secret key — won route matching for the second app,
+producing spurious 401s. All routers are now built fresh inside their
+`get_router()` call. This wouldn't have surfaced in a single long-running
+production process, but the tests that caught it are worth keeping.
+
+Not yet built: Phase A (static IPs, live PKI restructuring, host
+hardening) is a manual procedure on the real CA/RADIUS hosts — see
+handoff §3–§4 — and the `eapol_test` gates in §10 can only be run
+against your real CM4/CA machine, not from here.
 
 ## Setup
 

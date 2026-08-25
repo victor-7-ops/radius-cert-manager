@@ -202,10 +202,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from fastapi import HTTPException
     from fastapi.responses import RedirectResponse
 
+    ERROR_TITLES = {
+        403: "You don't have access to this",
+        404: "Not found",
+        409: "Conflict",
+        410: "No longer available",
+        500: "Something went wrong",
+    }
+
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
-        if exc.status_code == 401 and not request.url.path.startswith("/api"):
+        is_web_route = not request.url.path.startswith("/api")
+        if exc.status_code == 401 and is_web_route:
             return RedirectResponse("/login", status_code=303)
+        if is_web_route and request.method == "GET":
+            # A raw JSON error body is a "raw error text" failure mode for
+            # a page a human is looking at (handoff §6.1) — render the
+            # same designed error state instead.
+            return templates.TemplateResponse(
+                request,
+                "error.html",
+                {
+                    "status_code": exc.status_code,
+                    "title": ERROR_TITLES.get(exc.status_code, "Error"),
+                    "message": str(exc.detail),
+                },
+                status_code=exc.status_code,
+            )
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": {"code": "error", "message": str(exc.detail), "correlation_id": None}},
@@ -215,6 +238,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def catch_all(request: Request, exc: Exception):
         correlation_id = str(uuid.uuid4())
         logger.exception("unhandled error [correlation_id=%s]", correlation_id)
+        if not request.url.path.startswith("/api") and request.method == "GET":
+            return templates.TemplateResponse(
+                request,
+                "error.html",
+                {
+                    "status_code": 500,
+                    "title": ERROR_TITLES[500],
+                    "message": f"An unexpected error occurred. Reference: {correlation_id}",
+                },
+                status_code=500,
+            )
         return JSONResponse(
             status_code=500,
             content={

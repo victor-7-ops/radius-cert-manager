@@ -12,8 +12,6 @@ from sqlalchemy import select
 
 from app import cert_service, db
 
-router = APIRouter(prefix="/api/certs", tags=["certs"])
-
 
 class IssueRequest(BaseModel):
     cn: str
@@ -30,6 +28,7 @@ def get_router(deps) -> APIRouter:
     """deps carries app-specific providers (db session, pki material,
     settings, require_admin/require_super_admin) so this module has no
     hidden global state."""
+    router = APIRouter(prefix="/api/certs", tags=["certs"])
 
     @router.get("")
     def list_certs(

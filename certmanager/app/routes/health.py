@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends
 
 from app import crl_health, db
 
-router = APIRouter(prefix="/api/health", tags=["health"])
-
 
 def get_router(deps) -> APIRouter:
+    router = APIRouter(prefix="/api/health", tags=["health"])
+
     @router.get("/crl")
     def crl_status(admin: db.Admin = Depends(deps.require_admin)):
         session = deps.get_db_session()
