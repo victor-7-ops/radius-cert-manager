@@ -6,7 +6,36 @@
   <p class="text-sm text-slate-500 mt-1">Certificate inventory and CRL health at a glance.</p>
 </div>
 
-<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+  <section class="card p-5 lg:col-span-1 flex flex-col items-center justify-center">
+    <h2 class="font-semibold text-slate-900 self-start mb-2">Fleet status</h2>
+    {% if donut_total %}
+    <div class="relative w-36 h-36 my-2"
+         style="border-radius: 9999px; background: conic-gradient({% for s in donut_segments %}{{ s.color }} {{ s.start }}deg {{ s.end }}deg{{ "," if not loop.last }}{% endfor %});">
+      <div class="absolute inset-3 rounded-full bg-white flex flex-col items-center justify-center">
+        <span class="text-2xl font-semibold text-slate-900 leading-none">{{ donut_total }}</span>
+        <span class="text-[11px] text-slate-400 mt-1">certificates</span>
+      </div>
+    </div>
+    <div class="w-full mt-3 space-y-1.5">
+      {% for s in donut_segments %}
+      <div class="flex items-center justify-between text-xs">
+        <span class="flex items-center gap-1.5 text-slate-600">
+          <span class="w-2 h-2 rounded-full shrink-0" style="background: {{ s.color }}"></span>
+          {{ s.label | capitalize }}
+        </span>
+        <span class="font-medium text-slate-800">{{ s.count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="w-36 h-36 my-2 rounded-full border-8 border-slate-100 flex items-center justify-center">
+      <span class="text-xs text-slate-400">No certs yet</span>
+    </div>
+    {% endif %}
+  </section>
+
+  <div class="grid grid-cols-2 gap-3 lg:col-span-2">
   <div class="stat-card border-l-4 !border-l-green-500">
     <svg class="w-5 h-5 text-green-600 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/></svg>
     <div>
@@ -34,6 +63,7 @@
       <div class="text-2xl font-semibold text-slate-900 leading-none">{{ counts.revoked }}</div>
       <div class="text-xs text-slate-500 mt-1">Revoked</div>
     </div>
+  </div>
   </div>
 </div>
 
@@ -93,7 +123,8 @@
     <ul class="text-sm divide-y divide-slate-100">
       {% for a in recent_activity %}
       <li class="py-2.5 flex items-start gap-2">
-        <div class="w-6 h-6 rounded-full bg-slate-100 text-slate-500 text-[10px] font-semibold flex items-center justify-center uppercase shrink-0 mt-0.5">
+        <div class="w-6 h-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center uppercase shrink-0 mt-0.5"
+             style="background: hsl({{ a.actor | avatar_hue }} 55% 45%)">
           {{ a.actor[0] }}
         </div>
         <div class="min-w-0">

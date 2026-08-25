@@ -38,7 +38,8 @@
       <tr>
         <td class="text-slate-900 font-medium">
           <div class="flex items-center gap-2">
-            <div class="w-6 h-6 rounded-full bg-slate-900 text-white text-[10px] font-semibold flex items-center justify-center uppercase">{{ a.username[0] }}</div>
+            <div class="w-6 h-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center uppercase"
+                 style="background: hsl({{ a.username | avatar_hue }} 55% 42%)">{{ a.username[0] }}</div>
             {{ a.username }}
           </div>
         </td>

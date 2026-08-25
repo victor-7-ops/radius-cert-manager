@@ -8,6 +8,17 @@
   }
 }
 
+/* htmx-boosted navigation: fade the new page in instead of a hard cut.
+   htmx adds/removes .htmx-swapping on the incoming content mid-transition;
+   .body-fade lives on <body> so it also covers full-body boosted swaps. */
+.page-fade {
+  animation: page-fade-in 180ms ease-out;
+}
+@keyframes page-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @layer components {
   .card {
     @apply bg-white border border-slate-200 rounded-xl shadow-sm;
@@ -54,7 +65,7 @@
   }
 
   .stat-card {
-    @apply card p-4 flex items-start gap-3;
+    @apply card p-4 flex items-start gap-3 transition-all hover:shadow-md hover:-translate-y-0.5;
   }
 
   .table-shell {

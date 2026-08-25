@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_device_icon.html" as dicon %}
 {% block title %}Bulk issue preview — Certificate Manager{% endblock %}
 {% block content %}
 <h1 class="text-2xl font-semibold text-slate-900 tracking-tight mb-1">Bulk issue preview</h1>
@@ -22,7 +23,10 @@
       <tr>
         <td class="font-mono text-slate-900">{{ r.identifier }}</td>
         <td class="text-slate-600">{{ r.employee_name or "" }}</td>
-        <td class="text-slate-500">{{ r.device_type or "" }}{% if r.device_mac %} <span class="font-mono text-xs">{{ r.device_mac }}</span>{% endif %}</td>
+        <td class="text-slate-500">
+          {% if r.device_type %}<span class="inline-flex items-center gap-1">{{ dicon.device_icon(r.device_type, "w-3.5 h-3.5 text-slate-400") }}{{ r.device_type }}</span>{% endif %}
+          {% if r.device_mac %} <span class="font-mono text-xs">{{ r.device_mac }}</span>{% endif %}
+        </td>
         <td>
           {% if r.classification == "valid" %}
           <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-green-50 text-green-700"><span class="w-1.5 h-1.5 rounded-full bg-green-600"></span> Valid</span>

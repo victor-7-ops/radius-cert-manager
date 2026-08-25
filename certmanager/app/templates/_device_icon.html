@@ -1,0 +1,15 @@
+{% macro device_icon(device_type, extra="w-4 h-4") %}
+  {% if device_type == "Laptop" %}
+  <svg class="{{ extra }}" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 4.5A1.5 1.5 0 0 1 3.5 3h13A1.5 1.5 0 0 1 18 4.5v7A1.5 1.5 0 0 1 16.5 13h-13A1.5 1.5 0 0 1 2 11.5v-7ZM3.5 4.5v7h13v-7h-13Z" clip-rule="evenodd"/><path d="M1 15.25A.75.75 0 0 1 1.75 14.5h16.5a.75.75 0 0 1 0 1.5H1.75a.75.75 0 0 1-.75-.75Z"/></svg>
+  {% elif device_type == "Phone" %}
+  <svg class="{{ extra }}" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H6Zm4 13.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
+  {% elif device_type == "Tablet" %}
+  <svg class="{{ extra }}" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H4Zm6 11.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clip-rule="evenodd"/></svg>
+  {% elif device_type == "Desktop" %}
+  <svg class="{{ extra }}" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 4.5A1.5 1.5 0 0 1 3.5 3h13A1.5 1.5 0 0 1 18 4.5v6A1.5 1.5 0 0 1 16.5 12h-13A1.5 1.5 0 0 1 2 10.5v-6ZM8.5 15.5h-1a.75.75 0 0 0 0 1.5h5a.75.75 0 0 0 0-1.5h-1V14h-3v1.5Z" clip-rule="evenodd"/></svg>
+  {% elif device_type %}
+  <svg class="{{ extra }}" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a1 1 0 0 0 0 2v3a1 1 0 0 0 1 1h1a1 1 0 1 0 0-2v-3a1 1 0 0 0-1-1H9Z" clip-rule="evenodd"/></svg>
+  {% else %}
+  <svg class="{{ extra }} text-slate-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8.28 7.22a.75.75 0 0 0-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 1 0 1.06 1.06L10 11.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L11.06 10l1.72-1.72a.75.75 0 0 0-1.06-1.06L10 8.94 8.28 7.22Z" clip-rule="evenodd"/></svg>
+  {% endif %}
+{% endmacro %}

@@ -37,6 +37,12 @@ logger = logging.getLogger("certmanager")
 # logger must only ever receive the fields explicitly passed below.
 
 
+def _avatar_hue(name: str) -> int:
+    """Deterministic 0-359 hue from a name, for a per-user avatar color
+    that's stable across sessions without needing to store one."""
+    return sum(ord(c) for c in (name or "?")) * 37 % 360
+
+
 @dataclass
 class RouteDeps:
     require_admin: callable
@@ -189,6 +195,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+    templates.env.filters["avatar_hue"] = _avatar_hue
 
     app = FastAPI(title="RADIUS Certificate Manager")
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")

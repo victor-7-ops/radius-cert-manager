@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "_status_badge.html" as badge %}
 {% import "_spinner.html" as spin %}
+{% import "_device_icon.html" as dicon %}
 {% block title %}Certificates — Certificate Manager{% endblock %}
 {% block content %}
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
@@ -79,8 +80,15 @@
             {% endif %}
           </td>
           <td class="text-slate-500">
-            {% if c.device_type %}{{ c.device_type }}{% else %}<span class="text-slate-300">—</span>{% endif %}
-            {% if c.device_mac %}<div class="text-xs font-mono text-slate-400">{{ c.device_mac }}</div>{% endif %}
+            {% if c.device_type %}
+            <div class="flex items-center gap-1.5">
+              <span class="text-slate-400">{{ dicon.device_icon(c.device_type) }}</span>
+              {{ c.device_type }}
+            </div>
+            {% else %}
+            <span class="text-slate-300">—</span>
+            {% endif %}
+            {% if c.device_mac %}<div class="text-xs font-mono text-slate-400 ml-[22px]">{{ c.device_mac }}</div>{% endif %}
           </td>
           <td>{{ badge.status_badge(c.status) }}</td>
           <td class="text-slate-500">{{ c.issued_at }}</td>
@@ -103,14 +111,15 @@
 
   <div class="md:hidden space-y-3">
     {% for c in items %}
-    <a href="/certs/{{ c.serial }}" class="card block p-4 hover:border-slate-300 transition-colors">
+    <a href="/certs/{{ c.serial }}" class="card block p-4 hover:border-slate-300 hover:shadow-md transition-all">
       <div class="flex items-center justify-between mb-2">
         <span class="font-medium text-slate-900">{{ c.cn }}</span>
         {{ badge.status_badge(c.status) }}
       </div>
       <div class="text-sm text-slate-500">Expires {{ c.expires_relative }}</div>
       {% if c.employee_name or c.device_type %}
-      <div class="text-xs text-slate-400 mt-0.5">
+      <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+        {% if c.device_type %}{{ dicon.device_icon(c.device_type, "w-3.5 h-3.5") }}{% endif %}
         {{ c.employee_name or "" }}{% if c.employee_name and c.device_type %} · {% endif %}{{ c.device_type or "" }}
       </div>
       {% else %}

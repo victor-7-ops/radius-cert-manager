@@ -54,7 +54,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         thirty_days = now + datetime.timedelta(days=30)
 
         rows = session.scalars(select(db.Certificate)).all()
-        counts = {"active": 0, "expiring_soon": 0, "suspended": 0, "revoked": 0}
+        counts = {"active": 0, "expiring_soon": 0, "suspended": 0, "revoked": 0, "expired": 0}
         expiring = []
         for c in rows:
             eff = _effective_status(c)
@@ -64,10 +64,32 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 if exp <= thirty_days:
                     counts["expiring_soon"] += 1
                     expiring.append(c)
+            elif eff == "expired":
+                counts["expired"] += 1
             elif c.status == db.CertStatus.suspended:
                 counts["suspended"] += 1
             elif c.status == db.CertStatus.revoked:
                 counts["revoked"] += 1
+
+        # Donut chart segments (handoff has no chart requirement — this is
+        # a glance-value add). Mutually exclusive buckets only; expiring_soon
+        # is a subset of active, shown separately in "Attention needed".
+        donut_buckets = [
+            ("active", counts["active"], "#16a34a"),
+            ("suspended", counts["suspended"], "#d97706"),
+            ("revoked", counts["revoked"], "#dc2626"),
+            ("expired", counts["expired"], "#94a3b8"),
+        ]
+        donut_total = sum(n for _, n, _ in donut_buckets)
+        donut_segments = []
+        cursor = 0.0
+        if donut_total:
+            for label, n, color in donut_buckets:
+                if n == 0:
+                    continue
+                start = cursor
+                cursor += 360 * n / donut_total
+                donut_segments.append({"label": label, "count": n, "color": color, "start": round(start, 1), "end": round(cursor, 1)})
 
         orphans = reconcile.reconcile_issued_dir(session, deps.pki_path / "issued")
 
@@ -91,6 +113,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             {
                 "admin": admin,
                 "counts": counts,
+                "donut_segments": donut_segments,
+                "donut_total": donut_total,
                 "expiring": [{"cn": c.cn, "serial": c.serial, "expires_at": c.expires_at.date()} for c in expiring],
                 "orphans": orphans,
                 "recent_activity": [
