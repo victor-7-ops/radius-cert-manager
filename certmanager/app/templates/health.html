@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}System health — Certificate Manager{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">System health</h1>
+  <p class="text-sm text-slate-500 mt-1">Operational status at a glance — Super Admin only.</p>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div class="stat-card">
+    <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 {{ 'bg-red-50 text-red-600' if crl.is_critical else 'bg-green-50 text-green-600' }}">
+      <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>
+    </div>
+    <div>
+      <div class="text-sm text-slate-500">CRL status</div>
+      <div class="text-lg font-semibold {{ 'text-red-600' if crl.is_critical else 'text-slate-900' }}">{{ "Critical" if crl.is_critical else "Healthy" }}</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+      <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4Zm2 3a1 1 0 0 0 0 2h8a1 1 0 1 0 0-2H6Zm0 4a1 1 0 1 0 0 2h4a1 1 0 1 0 0-2H6Z" clip-rule="evenodd"/></svg>
+    </div>
+    <div>
+      <div class="text-sm text-slate-500">Certificates</div>
+      <div class="text-lg font-semibold text-slate-900">{{ cert_total }}</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+      <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z"/></svg>
+    </div>
+    <div>
+      <div class="text-sm text-slate-500">Active sessions</div>
+      <div class="text-lg font-semibold text-slate-900">{{ active_sessions }}</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 {{ 'bg-amber-50 text-amber-600' if disk_used_pct >= 85 else 'bg-slate-100 text-slate-600' }}">
+      <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 6a2 2 0 0 1 2-2h6l2 2h4a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6Z" clip-rule="evenodd"/></svg>
+    </div>
+    <div>
+      <div class="text-sm text-slate-500">Disk used</div>
+      <div class="text-lg font-semibold {{ 'text-amber-600' if disk_used_pct >= 85 else 'text-slate-900' }}">{{ disk_used_pct }}%</div>
+    </div>
+  </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="card p-5">
+    <h2 class="font-semibold text-slate-900 mb-3">CRL</h2>
+    {% if crl.next_update %}
+    <dl class="text-sm space-y-2">
+      <div class="flex justify-between"><dt class="text-slate-500">Last generated</dt><dd class="text-slate-700">{{ crl.last_generated_at }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">Last pushed</dt><dd class="text-slate-700">{{ crl.last_pushed_at or "never" }} ({{ "ok" if crl.last_push_ok else "failed" }})</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">Next update</dt><dd class="text-slate-700">{{ crl.next_update }}</dd></div>
+      {% if crl.hours_remaining is not none %}
+      <div class="flex justify-between"><dt class="text-slate-500">Time remaining</dt><dd class="{{ 'text-red-600 font-medium' if crl.is_critical else 'text-slate-700' }}">{{ "%.1f"|format(crl.hours_remaining) }} hours</dd></div>
+      {% endif %}
+    </dl>
+    {% else %}
+    <p class="text-sm text-slate-500">No CRL generated yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card p-5">
+    <h2 class="font-semibold text-slate-900 mb-3">Storage</h2>
+    <dl class="text-sm space-y-2">
+      <div class="flex justify-between"><dt class="text-slate-500">Database file</dt><dd class="text-slate-700">{{ db_size }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">PKI directory</dt><dd class="text-slate-700">{{ pki_size }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">Disk free</dt><dd class="text-slate-700">{{ disk_free }} of {{ disk_total }}</dd></div>
+    </dl>
+    <div class="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+      <div class="h-full bar-grow {{ 'bg-amber-500' if disk_used_pct >= 85 else 'bg-slate-900' }}" style="width: 0%;" data-grow-to="{{ disk_used_pct }}%"></div>
+    </div>
+  </div>
+
+  <div class="card p-5">
+    <h2 class="font-semibold text-slate-900 mb-3">Certificates by status</h2>
+    <dl class="text-sm space-y-2">
+      {% for s in ["active", "suspended", "revoked", "expired"] %}
+      <div class="flex justify-between"><dt class="text-slate-500">{{ s | capitalize }}</dt><dd class="text-slate-700">{{ status_counts.get(s, 0) }}</dd></div>
+      {% endfor %}
+    </dl>
+  </div>
+
+  <div class="card p-5">
+    <h2 class="font-semibold text-slate-900 mb-3">Admins</h2>
+    <dl class="text-sm space-y-2">
+      <div class="flex justify-between"><dt class="text-slate-500">Active admins</dt><dd class="text-slate-700">{{ active_admins }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">Active sessions</dt><dd class="text-slate-700">{{ active_sessions }}</dd></div>
+    </dl>
+  </div>
+</div>
+
+{% if ca_warnings or orphans %}
+<div class="mt-6 card p-5">
+  <h2 class="font-semibold text-slate-900 mb-3">Attention needed</h2>
+  <ul class="text-sm space-y-2">
+    {% for w in ca_warnings %}
+    <li class="text-amber-700 flex items-center gap-1.5">
+      <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.516 2.63H3.72c-1.347 0-2.189-1.463-1.515-2.63L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
+      {{ w }}
+    </li>
+    {% endfor %}
+    {% if orphans %}
+    <li class="text-red-700 flex items-center gap-1.5">
+      <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.516 2.63H3.72c-1.347 0-2.189-1.463-1.515-2.63L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
+      {{ orphans|length }} certificate(s) found in issued/ with no matching database row.
+    </li>
+    {% endif %}
+  </ul>
+</div>
+{% endif %}
+{% endblock %}

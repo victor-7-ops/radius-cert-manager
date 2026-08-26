@@ -17,6 +17,11 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **System health page** (`/health`, Super Admin only): CRL status,
+  cert counts by status, DB file size, PKI directory size, disk
+  free/used, active admin/session counts, and the same CA-expiry and
+  orphaned-file warnings the dashboard surfaces — one ops-focused view
+  instead of piecing it together from the dashboard and server access.
 - **Per-session tracking**: login now creates a real `AdminSession` row
   (device/IP/last-active), and the session cookie carries its id — not
   just the coarse `token_version` that used to make every session for

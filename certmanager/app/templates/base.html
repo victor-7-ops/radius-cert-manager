@@ -51,6 +51,10 @@
           <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z"/></svg>
           <span class="hidden sm:inline">Admins</span>
         </a>
+        <a href="/health" class="{{ 'nav-link-active' if path.startswith('/health') else 'nav-link' }}">
+          <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h4.362l-1.095 6.093a.75.75 0 0 0 1.292.657l8.5-9.5a.75.75 0 0 0-.557-1.25h-4.362l1.093-6.093Z" clip-rule="evenodd"/></svg>
+          <span class="hidden sm:inline">Health</span>
+        </a>
         {% endif %}
         {% if not admin.subsidiary_scope %}
         <a href="/activity" class="{{ 'nav-link-active' if path.startswith('/activity') else 'nav-link' }}">

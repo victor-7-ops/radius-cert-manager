@@ -49,6 +49,7 @@ class RouteDeps:
     require_super_admin: callable
     get_db_session: callable
     pki_path: Path
+    db_path: Path
     inter_cert: object
     inter_key: object
     client_cert_days: int
@@ -177,6 +178,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         require_super_admin=require_super_admin,
         get_db_session=lambda: session_factory(),
         pki_path=settings.pki_path,
+        db_path=settings.db_path,
         inter_cert=inter_cert,
         inter_key=inter_key,
         client_cert_days=settings.client_cert_days,

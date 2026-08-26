@@ -57,6 +57,35 @@ def _effective_status(cert: db.Certificate) -> str:
     return cert.status.value if hasattr(cert.status, "value") else cert.status
 
 
+def _ca_expiry_warnings(deps, now: datetime.datetime) -> list[str]:
+    warnings = []
+    for label, cert in (("Intermediate CA", deps.inter_cert), ("Root CA", deps.root_cert)):
+        if cert is None:
+            continue
+        not_after = cert.not_valid_after_utc
+        if not_after - now <= datetime.timedelta(days=180):
+            warnings.append(f"{label} expires {not_after.date()}")
+    return warnings
+
+
+def _dir_size_bytes(path) -> int:
+    total = 0
+    if path.exists():
+        for f in path.rglob("*"):
+            if f.is_file():
+                total += f.stat().st_size
+    return total
+
+
+def _human_bytes(n: int) -> str:
+    size = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
 def _require_cert_scope(admin: db.Admin, cert: db.Certificate) -> None:
     """A subsidiary-scoped admin can only act on certs for their own
     company. Unscoped admins (subsidiary_scope is None/blank) are
@@ -203,14 +232,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             ).all()
 
         health = crl_health.get_health(session)
-
-        ca_warnings = []
-        for label, cert in (("Intermediate CA", deps.inter_cert), ("Root CA", deps.root_cert)):
-            if cert is None:
-                continue
-            not_after = cert.not_valid_after_utc
-            if not_after - now <= datetime.timedelta(days=180):
-                ca_warnings.append(f"{label} expires {not_after.date()}")
+        ca_warnings = _ca_expiry_warnings(deps, now)
 
         return templates.TemplateResponse(
             request,
@@ -736,6 +758,54 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             msg += f" {missing} not found."
         dest = request.headers.get("referer", "/certs")
         return RedirectResponse(_flash(dest, msg, kind), status_code=303)
+
+    # --- System health (Super Admin only) ---
+
+    @router.get("/health")
+    def health_page(request: Request, admin: db.Admin = Depends(deps.require_super_admin)):
+        import shutil
+
+        session = deps.get_db_session()
+        now = datetime.datetime.now(datetime.timezone.utc)
+        crl = crl_health.get_health(session)
+
+        status_counts = {"active": 0, "suspended": 0, "revoked": 0, "expired": 0}
+        for c in session.scalars(select(db.Certificate)).all():
+            status_counts[_effective_status(c)] = status_counts.get(_effective_status(c), 0) + 1
+
+        db_size = deps.db_path.stat().st_size if deps.db_path.exists() else 0
+        pki_size = _dir_size_bytes(deps.pki_path)
+        disk = shutil.disk_usage(deps.pki_path if deps.pki_path.exists() else deps.pki_path.parent)
+
+        active_sessions = session.scalar(
+            select(func.count()).select_from(db.AdminSession).where(db.AdminSession.revoked_at.is_(None))
+        )
+        active_admins = session.scalar(
+            select(func.count()).select_from(db.Admin).where(db.Admin.is_active == True)  # noqa: E712
+        )
+
+        orphans = reconcile.reconcile_issued_dir(session, deps.pki_path / "issued")
+
+        return templates.TemplateResponse(
+            request,
+            "health.html",
+            {
+                "admin": admin,
+                "crl": crl,
+                "status_counts": status_counts,
+                "cert_total": sum(status_counts.values()),
+                "db_size": _human_bytes(db_size),
+                "pki_size": _human_bytes(pki_size),
+                "disk_free": _human_bytes(disk.free),
+                "disk_total": _human_bytes(disk.total),
+                "disk_used_pct": round(100 * (disk.total - disk.free) / disk.total, 1) if disk.total else 0,
+                "ca_warnings": _ca_expiry_warnings(deps, now),
+                "active_sessions": active_sessions,
+                "active_admins": active_admins,
+                "orphans": orphans,
+                **_crl_banner_context(session),
+            },
+        )
 
     # --- Your sessions (any admin, own sessions only) ---
 
