@@ -159,3 +159,28 @@ def test_retried_batch_submission_does_not_double_issue(session, tmp_path, throw
     assert result1.succeeded[0].serial == result2.succeeded[0].serial
     count = session.query(db.Certificate).filter_by(cn="retry-device").count()
     assert count == 1
+
+
+def test_parse_csv_reads_subsidiary_as_sixth_column():
+    data = b"device-a,Jordan Ellis,Laptop,AA:BB:CC:DD:EE:FF,C02XG2JMQ6L9,Bay Mall\n"
+    rows = bulk_service.parse_csv(data)
+    assert rows[0].subsidiary == "Bay Mall"
+
+
+def test_issue_batch_stores_subsidiary_and_includes_it_in_manifest(session, tmp_path, throwaway_pki):
+    input_rows = [
+        bulk_service.BatchInputRow(identifier="bmead-device", subsidiary="BMEAD"),
+    ]
+    result, zip_bytes = bulk_service.issue_batch(
+        session, tmp_path, throwaway_pki["inter_cert"], throwaway_pki["inter_key"],
+        input_rows, batch_id="batch-subsidiary", export_password="sharedpassword123",
+        issued_by="alice", days=365,
+    )
+    assert len(result.succeeded) == 1
+
+    zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    manifest = zf.read("manifest.csv").decode()
+    assert "BMEAD" in manifest
+
+    row = session.query(db.Certificate).filter_by(cn="bmead-device").one()
+    assert row.subsidiary == "BMEAD"

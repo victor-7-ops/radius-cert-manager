@@ -13,6 +13,7 @@
       <tr>
         <th>Identifier</th>
         <th>Employee</th>
+        <th>Company</th>
         <th>Device</th>
         <th>Classification</th>
         <th>Reason</th>
@@ -23,6 +24,7 @@
       <tr>
         <td class="font-mono text-slate-900">{{ r.identifier }}</td>
         <td class="text-slate-600">{{ r.employee_name or "" }}</td>
+        <td class="text-slate-500 text-xs">{{ r.subsidiary or "" }}</td>
         <td class="text-slate-500">
           {% if r.device_type %}<span class="inline-flex items-center gap-1">{{ dicon.device_icon(r.device_type, "w-3.5 h-3.5 text-slate-400") }}{{ r.device_type }}</span>{% endif %}
           {% if r.device_mac %} <span class="font-mono text-xs">{{ r.device_mac }}</span>{% endif %}

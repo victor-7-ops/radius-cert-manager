@@ -84,6 +84,7 @@ class Certificate(Base):
     device_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     device_mac: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     device_serial: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    subsidiary: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
     supersedes: Mapped["Certificate | None"] = relationship(
         remote_side=[id], back_populates="superseded_by", uselist=False
@@ -151,9 +152,24 @@ _CERTIFICATE_COLUMN_MIGRATIONS = [
     ("device_type", "VARCHAR"),
     ("device_mac", "VARCHAR"),
     ("device_serial", "VARCHAR"),
+    ("subsidiary", "VARCHAR"),
 ]
 
 DEVICE_TYPES = ["Laptop", "Phone", "Tablet", "Desktop", "Other"]
+
+# Company/subsidiary a cert's device belongs to — free text is allowed
+# too (issue_certificate doesn't validate against this list), this is
+# just what the issue form and bulk CSV offer as quick picks.
+SUBSIDIARIES = [
+    "Lezzgo Boracay",
+    "Lezzgo Cebu",
+    "Topline Business Development Corporation",
+    "Light Fuels Corporation",
+    "Commercial Fuel Trade",
+    "Bay Mall",
+    "BMEAD",
+    "Others",
+]
 
 
 def _migrate_certificate_columns(engine) -> None:

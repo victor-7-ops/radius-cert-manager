@@ -12,6 +12,11 @@
       Devices for <span class="font-medium text-slate-700">{{ employee_filter }}</span> —
       <a href="/certs" class="text-slate-600 hover:text-slate-900 underline">clear</a>
     </p>
+    {% elif subsidiary_filter %}
+    <p class="text-sm text-slate-500 mt-1">
+      Certificates for <span class="font-medium text-slate-700">{{ subsidiary_filter }}</span> —
+      <a href="/certs" class="text-slate-600 hover:text-slate-900 underline">clear</a>
+    </p>
     {% else %}
     <p class="text-sm text-slate-500 mt-1">Search, filter, and manage issued client certificates.</p>
     {% endif %}
@@ -38,18 +43,26 @@
     </svg>
     <input type="search" name="q" placeholder="Search by CN or employee…" value="{{ q or '' }}"
            hx-get="/certs" hx-trigger="input changed delay:300ms" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML"
-           hx-include="[name=status],[name=employee]" hx-indicator="#search-spinner"
+           hx-include="[name=status],[name=employee],[name=subsidiary]" hx-indicator="#search-spinner"
            class="field-input pl-9 pr-9">
   </div>
   {% for s in ["active", "suspended", "revoked", "expired"] %}
   <label class="min-h-[44px] flex items-center gap-1.5 px-3.5 rounded-full border text-sm font-medium cursor-pointer transition-colors
                 {{ 'bg-slate-900 text-white border-slate-900' if status_filter == s else 'border-slate-300 text-slate-600 hover:bg-slate-50' }}">
     <input type="radio" name="status" value="{{ s }}" class="hidden"
-           hx-get="/certs" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML" hx-include="[name=q],[name=employee]"
+           hx-get="/certs" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML" hx-include="[name=q],[name=employee],[name=subsidiary]"
            {{ 'checked' if status_filter == s else '' }}>
     {{ s | capitalize }}
   </label>
   {% endfor %}
+  <select name="subsidiary" class="field-input w-auto min-w-[180px]"
+          hx-get="/certs" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML"
+          hx-include="[name=q],[name=status],[name=employee]">
+    <option value="">All companies</option>
+    {% for s in subsidiaries %}
+    <option value="{{ s }}" {{ "selected" if subsidiary_filter == s else "" }}>{{ s }}</option>
+    {% endfor %}
+  </select>
 </div>
 
 <div id="cert-results">
@@ -71,7 +84,10 @@
       <tbody>
         {% for c in items %}
         <tr>
-          <td><a href="/certs/{{ c.serial }}" class="text-slate-900 font-medium hover:underline">{{ c.cn }}</a></td>
+          <td>
+            <a href="/certs/{{ c.serial }}" class="text-slate-900 font-medium hover:underline">{{ c.cn }}</a>
+            {% if c.subsidiary %}<div class="text-xs text-slate-400">{{ c.subsidiary }}</div>{% endif %}
+          </td>
           <td>
             {% if c.employee_name %}
             <a href="/certs?employee={{ c.employee_name | urlencode }}" class="text-slate-700 hover:text-slate-900 hover:underline">{{ c.employee_name }}</a>

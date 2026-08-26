@@ -41,6 +41,16 @@
       </div>
 
       <div class="mb-3">
+        <label for="subsidiary" class="field-label">Company / subsidiary</label>
+        <select id="subsidiary" name="subsidiary" class="field-input">
+          <option value="">Not specified</option>
+          {% for s in subsidiaries %}
+          <option value="{{ s }}" {{ "selected" if form and form.subsidiary == s else "" }}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="mb-3">
         <label for="device_type" class="field-label">Device type</label>
         <select id="device_type" name="device_type" class="field-input">
           <option value="">Not specified</option>

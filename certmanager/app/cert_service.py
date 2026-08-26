@@ -36,6 +36,7 @@ class DeviceInfo:
     device_type: str | None = None
     device_mac: str | None = None
     device_serial: str | None = None
+    subsidiary: str | None = None
 
 
 @dataclass
@@ -117,6 +118,7 @@ def _issue_one_locked(
         device_type=device.device_type,
         device_mac=device.device_mac,
         device_serial=device.device_serial,
+        subsidiary=device.subsidiary,
     )
     session.add(row)
     audit_detail = f"serial={serial}"

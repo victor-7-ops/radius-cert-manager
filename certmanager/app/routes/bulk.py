@@ -57,6 +57,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 device_type=r.device_type,
                 device_mac=r.device_mac,
                 device_serial=r.device_serial,
+                subsidiary=r.subsidiary,
             )
             for r in rows
             if r.classification == "valid"

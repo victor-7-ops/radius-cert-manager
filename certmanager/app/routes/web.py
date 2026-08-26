@@ -138,6 +138,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         q: str | None = None,
         status: str | None = None,
         employee: str | None = None,
+        subsidiary: str | None = None,
         page: int = 1,
         admin: db.Admin = Depends(deps.require_admin),
     ):
@@ -152,6 +153,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             # of that person's devices, any status, so it reads as their
             # full device roster rather than just what's currently active.
             stmt = stmt.where(db.Certificate.employee_name == employee)
+        if subsidiary:
+            stmt = stmt.where(db.Certificate.subsidiary == subsidiary)
         if status == "expired":
             # "Expired" isn't a stored status (handoff §5.2) — it's an
             # active cert whose expires_at has passed.
@@ -182,6 +185,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "device_type": c.device_type,
                 "device_mac": c.device_mac,
                 "device_serial": c.device_serial,
+                "subsidiary": c.subsidiary,
             }
             for c in rows
         ]
@@ -194,6 +198,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "q": q,
                 "status_filter": status,
                 "employee_filter": employee,
+                "subsidiary_filter": subsidiary,
+                "subsidiaries": db.SUBSIDIARIES,
                 **_crl_banner_context(session),
             },
         )
@@ -222,6 +228,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "admin": admin,
                 "request_id": str(uuid.uuid4()),
                 "device_types": db.DEVICE_TYPES,
+                "subsidiaries": db.SUBSIDIARIES,
                 **_crl_banner_context(session),
             },
         )
@@ -235,6 +242,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         device_type: str = Form(""),
         device_mac: str = Form(""),
         device_serial: str = Form(""),
+        subsidiary: str = Form(""),
         request_id: str = Form(...),
         admin: db.Admin = Depends(deps.require_admin),
     ):
@@ -243,12 +251,14 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             "admin": admin,
             "request_id": request_id,
             "device_types": db.DEVICE_TYPES,
+            "subsidiaries": db.SUBSIDIARIES,
             "form": {
                 "cn": cn,
                 "employee_name": employee_name,
                 "device_type": device_type,
                 "device_mac": device_mac,
                 "device_serial": device_serial,
+                "subsidiary": subsidiary,
                 "note": note,
             },
             **_crl_banner_context(session),
@@ -284,6 +294,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                     device_type=device_type.strip() or None,
                     device_mac=normalized_mac,
                     device_serial=device_serial.strip() or None,
+                    subsidiary=subsidiary.strip() or None,
                 ),
             )
         except cert_service.CNConflictError:
@@ -370,6 +381,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                     "device_type": cert.device_type,
                     "device_mac": cert.device_mac,
                     "device_serial": cert.device_serial,
+                    "subsidiary": cert.subsidiary,
                     "supersedes_cn": supersedes.cn if supersedes else None,
                     "supersedes_serial": supersedes.serial if supersedes else None,
                     "superseded_by_cn": superseded_by.cn if superseded_by else None,

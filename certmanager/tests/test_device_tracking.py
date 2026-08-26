@@ -109,6 +109,7 @@ def test_existing_db_without_device_columns_is_migrated_on_init(tmp_path):
     assert row.device_type is None
     assert row.device_mac is None
     assert row.device_serial is None
+    assert row.subsidiary is None
 
 
 def test_issue_form_and_employee_drilldown_e2e(app_settings, throwaway_pki, monkeypatch):
@@ -171,3 +172,65 @@ def test_issue_rejects_invalid_mac(app_settings, throwaway_pki, monkeypatch):
 
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     assert session.query(db.Certificate).filter_by(cn="bad-mac-device").count() == 0
+
+
+def test_issue_certificate_stores_subsidiary(tmp_path, throwaway_pki):
+    engine = db.make_engine(str(tmp_path / "test.db"))
+    db.init_db(engine)
+    session = db.make_session_factory(engine)()
+
+    result = cert_service.issue_certificate(
+        session, tmp_path, throwaway_pki["inter_cert"], throwaway_pki["inter_key"],
+        cn="subsidiary-device", note=None, request_id=str(uuid.uuid4()), export_password=None,
+        issued_by="alice", days=365,
+        device=cert_service.DeviceInfo(subsidiary="Lezzgo Boracay"),
+    )
+    assert result.certificate.subsidiary == "Lezzgo Boracay"
+
+    reloaded = session.query(db.Certificate).filter_by(cn="subsidiary-device").one()
+    assert reloaded.subsidiary == "Lezzgo Boracay"
+
+
+def test_issue_form_and_subsidiary_filter_e2e(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "subsidiary-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    for cn, subsidiary in [("bay-mall-pos-01", "Bay Mall"), ("bmead-laptop-01", "BMEAD")]:
+        resp = client.post(
+            "/certs/issue",
+            data={"cn": cn, "request_id": str(uuid.uuid4()), "subsidiary": subsidiary},
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
+
+    detail_session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    bay_mall_cert = detail_session.query(db.Certificate).filter_by(cn="bay-mall-pos-01").one()
+    assert bay_mall_cert.subsidiary == "Bay Mall"
+
+    detail_resp = client.get(f"/certs/{bay_mall_cert.serial}")
+    assert "Bay Mall" in detail_resp.text
+
+    filtered_resp = client.get("/certs", params={"subsidiary": "Bay Mall"})
+    assert filtered_resp.status_code == 200
+    assert "bay-mall-pos-01" in filtered_resp.text
+    assert "bmead-laptop-01" not in filtered_resp.text
+
+
+def test_issue_form_offers_subsidiary_choices(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "form-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    resp = client.get("/certs/issue")
+    assert resp.status_code == 200
+    for name in db.SUBSIDIARIES:
+        assert name in resp.text

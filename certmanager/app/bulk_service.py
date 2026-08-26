@@ -8,8 +8,9 @@ the whole batch, shown once, never in the manifest. A partial failure
 does not roll back successful rows.
 
 Each row optionally carries employee_name/device_type/device_mac/
-device_serial — paste input is identifier-only, CSV input may add up to
-four more columns in that order. Either way it's optional per row.
+device_serial/subsidiary — paste input is identifier-only, CSV input may
+add up to five more columns in that order. Either way it's optional per
+row.
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ class BatchInputRow:
     device_type: str | None = None
     device_mac: str | None = None
     device_serial: str | None = None
+    subsidiary: str | None = None
 
 
 @dataclass
@@ -51,6 +53,7 @@ class PreviewRow:
     device_type: str | None = None
     device_mac: str | None = None
     device_serial: str | None = None
+    subsidiary: str | None = None
 
 
 def parse_identifiers(raw_text: str) -> list[BatchInputRow]:
@@ -59,8 +62,8 @@ def parse_identifiers(raw_text: str) -> list[BatchInputRow]:
 
 def parse_csv(data: bytes) -> list[BatchInputRow]:
     """Columns, in order: identifier, employee_name, device_type,
-    device_mac, device_serial. Only the first is required. A header row
-    is detected and skipped if its first cell looks like one."""
+    device_mac, device_serial, subsidiary. Only the first is required. A
+    header row is detected and skipped if its first cell looks like one."""
     text = data.decode("utf-8-sig")
     reader = csv.reader(io.StringIO(text))
     rows = [r for r in reader if r]
@@ -72,9 +75,9 @@ def parse_csv(data: bytes) -> list[BatchInputRow]:
         identifier = row[0].strip() if row else ""
         if not identifier:
             continue
-        cells = [c.strip() or None for c in row[1:5]]
-        cells += [None] * (4 - len(cells))
-        employee_name, device_type, device_mac, device_serial = cells
+        cells = [c.strip() or None for c in row[1:6]]
+        cells += [None] * (5 - len(cells))
+        employee_name, device_type, device_mac, device_serial, subsidiary = cells
         if device_mac:
             device_mac = normalize_mac(device_mac) or device_mac
         out.append(
@@ -84,6 +87,7 @@ def parse_csv(data: bytes) -> list[BatchInputRow]:
                 device_type=device_type,
                 device_mac=device_mac,
                 device_serial=device_serial,
+                subsidiary=subsidiary,
             )
         )
     return out
@@ -101,6 +105,7 @@ def classify(session: Session, input_rows: list[BatchInputRow]) -> list[PreviewR
             "device_type": r.device_type,
             "device_mac": r.device_mac,
             "device_serial": r.device_serial,
+            "subsidiary": r.subsidiary,
         }
         if not CN_RE.match(r.identifier):
             rows.append(PreviewRow(r.identifier, "malformed", "invalid characters or length", **common))
@@ -174,6 +179,7 @@ def issue_batch(
                     device_type=r.device_type,
                     device_mac=r.device_mac,
                     device_serial=r.device_serial,
+                    subsidiary=r.subsidiary,
                 )
                 try:
                     issue_result = cert_service._issue_one_locked(
@@ -201,11 +207,12 @@ def issue_batch(
                     r.device_type or "",
                     r.device_mac or "",
                     r.device_serial or "",
+                    r.subsidiary or "",
                 ))
 
             manifest_buf = io.StringIO()
             writer = csv.writer(manifest_buf)
-            writer.writerow(["cn", "serial", "expires_at", "employee_name", "device_type", "device_mac", "device_serial"])
+            writer.writerow(["cn", "serial", "expires_at", "employee_name", "device_type", "device_mac", "device_serial", "subsidiary"])
             writer.writerows(manifest_rows)
             zf.writestr("manifest.csv", manifest_buf.getvalue())
 
