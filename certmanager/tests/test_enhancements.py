@@ -348,3 +348,88 @@ def test_bulk_action_rejects_invalid_action_name(app_settings, throwaway_pki, mo
 
     resp = client.post("/certs/bulk-action", data={"action": "delete-everything", "serials": ["whatever"]})
     assert resp.status_code == 400
+
+
+def test_cert_search_matches_mac_and_serial(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "search-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={
+        "cn": "search-target-device", "request_id": str(uuid.uuid4()),
+        "device_mac": "AA:BB:CC:11:22:33", "device_serial": "ASSET-7788",
+    })
+    client.post("/certs/issue", data={"cn": "search-other-device", "request_id": str(uuid.uuid4())})
+
+    # MAC search is format-insensitive — normalized the same way at issue
+    # time and at query time, so dashes/no-separator still find a
+    # colon-stored MAC.
+    resp = client.get("/certs", params={"q": "aa-bb-cc-11-22-33"})
+    assert "search-target-device" in resp.text
+    assert "search-other-device" not in resp.text
+
+    resp = client.get("/certs", params={"q": "ASSET-7788"})
+    assert "search-target-device" in resp.text
+    assert "search-other-device" not in resp.text
+
+    # a MAC-shaped substring that isn't a full MAC still falls back to a
+    # plain substring match against the stored (normalized) value
+    resp = client.get("/certs", params={"q": "cc:11"})
+    assert "search-target-device" in resp.text
+
+
+def test_delivery_page_qr_download_works_once_without_login(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "qr-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    issue_resp = client.post("/certs/issue", data={"cn": "qr-device", "request_id": str(uuid.uuid4())})
+    assert issue_resp.status_code == 200  # delivery page after redirect-follow
+    assert "Scan on the device instead" in issue_resp.text
+
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    cert = session.query(db.Certificate).filter_by(cn="qr-device").one()
+
+    token = auth.make_bundle_qr_token(app_settings.secret_key, cert.serial)
+
+    # a fresh, unauthenticated client — the whole point is this works on
+    # a device with no admin session
+    anon_client = TestClient(app)
+    resp = anon_client.get(f"/certs/{cert.serial}/bundle/qr", params={"token": token})
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/x-pkcs12"
+
+    # single-use, same as the authenticated download link
+    resp2 = anon_client.get(f"/certs/{cert.serial}/bundle/qr", params={"token": token})
+    assert resp2.status_code == 410
+
+
+def test_delivery_page_qr_download_rejects_bad_token(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "qr-bad-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={"cn": "qr-bad-device", "request_id": str(uuid.uuid4())})
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    cert = session.query(db.Certificate).filter_by(cn="qr-bad-device").one()
+
+    anon_client = TestClient(app)
+    resp = anon_client.get(f"/certs/{cert.serial}/bundle/qr", params={"token": "garbage"})
+    assert resp.status_code == 403
+
+    # a token minted for a different serial must not unlock this one
+    other_token = auth.make_bundle_qr_token(app_settings.secret_key, "some-other-serial")
+    resp2 = anon_client.get(f"/certs/{cert.serial}/bundle/qr", params={"token": other_token})
+    assert resp2.status_code == 403

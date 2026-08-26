@@ -50,7 +50,7 @@
       <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
       <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z"/>
     </svg>
-    <input type="search" name="q" placeholder="Search by CN or employee…" value="{{ q or '' }}"
+    <input type="search" name="q" placeholder="Search by CN, employee, MAC, or serial…" value="{{ q or '' }}"
            hx-get="/certs" hx-trigger="input changed delay:300ms" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML"
            hx-include="[name=status],[name=employee],[name=subsidiary]" hx-indicator="#search-spinner"
            class="field-input pl-9 pr-9">

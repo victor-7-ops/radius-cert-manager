@@ -79,6 +79,32 @@ def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(SESSION_COOKIE)
 
 
+BUNDLE_QR_TOKEN_MAX_AGE_SECONDS = 600
+
+
+def _bundle_qr_serializer(secret_key: str) -> URLSafeTimedSerializer:
+    # Separate salt from the session cookie serializer so a leaked/expired
+    # QR token can never be replayed as a session token or vice versa.
+    return URLSafeTimedSerializer(secret_key, salt="cm-bundle-qr")
+
+
+def make_bundle_qr_token(secret_key: str, serial: str) -> str:
+    return _bundle_qr_serializer(secret_key).dumps({"serial": serial})
+
+
+def verify_bundle_qr_token(secret_key: str, token: str) -> str | None:
+    """Returns the serial the token was minted for, or None if the token
+    is missing, tampered with, or older than BUNDLE_QR_TOKEN_MAX_AGE_SECONDS.
+    This lets the QR link work on a device with no admin session — the
+    underlying bundle is still one-time-consumable, so it carries no more
+    exposure than the existing authenticated download link."""
+    try:
+        payload = _bundle_qr_serializer(secret_key).loads(token, max_age=BUNDLE_QR_TOKEN_MAX_AGE_SECONDS)
+    except (BadSignature, SignatureExpired):
+        return None
+    return payload.get("serial")
+
+
 class LoginResult:
     def __init__(self, ok: bool, admin: Admin | None = None, locked: bool = False):
         self.ok = ok

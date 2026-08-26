@@ -28,6 +28,24 @@
       Download .p12
     </a>
 
+    {% if qr_svg %}
+    <details class="group">
+      <summary class="text-sm font-medium text-slate-700 cursor-pointer select-none flex items-center gap-1.5">
+        <svg class="w-4 h-4 shrink-0 transition-transform group-open:rotate-90" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clip-rule="evenodd"/></svg>
+        Scan on the device instead
+      </summary>
+      <div class="mt-3 flex flex-col items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-600 p-4" style="background: #fff;">
+        <!-- Forced white regardless of theme: a scanner needs dark
+             modules on a light background, not our dark-mode palette. -->
+        <div class="w-40 h-40 [&_svg]:w-full [&_svg]:h-full">{{ qr_svg | safe }}</div>
+        <p class="text-xs text-slate-500 text-center">
+          Scan with the device's camera to download the .p12 directly — no login needed there.
+          Link expires in {{ qr_expires_minutes }} minutes, and works only once (same as the button above).
+        </p>
+      </div>
+    </details>
+    {% endif %}
+
     <p class="text-sm text-slate-600 bg-slate-50 border border-slate-100 rounded-lg p-3">
       Install this on the device, then delete the downloaded file. The password protects the
       file at rest and in transit to the device — it is not protection against anyone who could

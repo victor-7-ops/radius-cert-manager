@@ -17,6 +17,15 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **Certificate search** now also matches device MAC (any input format,
+  normalized the same way as at issue time) and device serial/asset
+  tag, not just CN/employee.
+- **QR code on the delivery screen**: scans straight to a .p12
+  download on the device being provisioned, which usually isn't
+  logged into this app. Backed by a short-lived (10 min) signed token
+  independent of the admin session — the bundle stays single-use, so
+  the QR and the "Download .p12" button race for the same one-time
+  download, same as before.
 - **Bulk suspend/revoke**: checkbox per row (desktop table) + a floating
   action bar once anything's selected. Suspend is any admin; revoke is
   gated to super admin same as the single-cert route (`/certs/bulk-action`).

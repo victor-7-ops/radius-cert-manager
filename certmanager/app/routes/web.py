@@ -13,6 +13,8 @@ import io
 import urllib.parse
 import uuid
 
+import qrcode
+import qrcode.image.svg
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -29,6 +31,11 @@ def _flash(url: str, message: str, kind: str = "success") -> str:
     re-show it and the URL doesn't stay ugly."""
     sep = "&" if "?" in url else "?"
     return f"{url}{sep}flash={urllib.parse.quote(message)}&flash_kind={kind}"
+
+
+def _qr_svg(data: str) -> str:
+    img = qrcode.make(data, image_factory=qrcode.image.svg.SvgPathImage, box_size=8, border=2)
+    return img.to_string(encoding="unicode")
 
 
 def _relative_expiry(expires_at: datetime.datetime) -> str:
@@ -210,9 +217,21 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         never silently drift apart on what a filter means."""
         stmt = select(db.Certificate)
         if q:
-            stmt = stmt.where(
-                db.Certificate.cn.contains(q) | db.Certificate.employee_name.contains(q)
+            normalized_mac = normalize_mac(q)
+            match = (
+                db.Certificate.cn.contains(q)
+                | db.Certificate.employee_name.contains(q)
+                | db.Certificate.device_serial.contains(q)
             )
+            if normalized_mac:
+                # MAC can be typed in any of the formats normalize_mac
+                # accepts (colon/dash/Cisco-dotted/bare-hex) — normalize
+                # the query the same way the stored value was normalized
+                # at issue time so any of those formats finds it.
+                match = match | (db.Certificate.device_mac == normalized_mac)
+            else:
+                match = match | db.Certificate.device_mac.contains(q)
+            stmt = stmt.where(match)
         if employee:
             # Drill-down from an employee name elsewhere in the UI — all
             # of that person's devices, any status, so it reads as their
@@ -426,10 +445,42 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "nothing to deliver")
         session = deps.get_db_session()
         cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+
+        # The device that needs the .p12 usually isn't logged into this
+        # app (an employee's phone, not the admin's browser), so the QR
+        # carries its own short-lived signed token instead of relying on
+        # the admin session cookie. The bundle itself stays single-use —
+        # whichever of "Download .p12" or the QR scan happens first wins.
+        qr_token = auth.make_bundle_qr_token(deps.secret_key, serial)
+        qr_url = str(request.base_url).rstrip("/") + f"/certs/{serial}/bundle/qr?token={qr_token}"
+
         return templates.TemplateResponse(
             request,
             "delivery.html",
-            {"admin": admin, "cn": cert.cn, "serial": serial, "export_password": password, **_crl_banner_context(session)},
+            {
+                "admin": admin,
+                "cn": cert.cn,
+                "serial": serial,
+                "export_password": password,
+                "qr_svg": _qr_svg(qr_url),
+                "qr_expires_minutes": auth.BUNDLE_QR_TOKEN_MAX_AGE_SECONDS // 60,
+                **_crl_banner_context(session),
+            },
+        )
+
+    @router.get("/certs/{serial}/bundle/qr")
+    def download_bundle_via_qr(serial: str, token: str = ""):
+        from fastapi import Response
+
+        if auth.verify_bundle_qr_token(deps.secret_key, token) != serial:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "invalid or expired QR link")
+        bundle = deps.take_pending_bundle(serial)
+        if bundle is None:
+            raise HTTPException(status.HTTP_410_GONE, "bundle already consumed or not found")
+        return Response(
+            content=bundle.data,
+            media_type="application/x-pkcs12",
+            headers={"Content-Disposition": f'attachment; filename="{serial}.p12"'},
         )
 
     @router.get("/certs/{serial}/bundle")
