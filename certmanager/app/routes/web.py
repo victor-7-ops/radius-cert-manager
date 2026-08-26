@@ -15,7 +15,7 @@ import uuid
 
 import qrcode
 import qrcode.image.svg
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select
@@ -736,6 +736,69 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             msg += f" {missing} not found."
         dest = request.headers.get("referer", "/certs")
         return RedirectResponse(_flash(dest, msg, kind), status_code=303)
+
+    # --- Your sessions (any admin, own sessions only) ---
+
+    @router.get("/account/sessions")
+    def account_sessions(
+        request: Request,
+        cm_session: str | None = Cookie(default=None),
+        admin: db.Admin = Depends(deps.require_admin),
+    ):
+        session = deps.get_db_session()
+        current_id = None
+        if cm_session is not None:
+            data = auth.decode_session_cookie(deps.secret_key, cm_session)
+            if data is not None:
+                current_id = data.session_id
+        rows = session.scalars(
+            select(db.AdminSession)
+            .where(db.AdminSession.admin_id == admin.id, db.AdminSession.revoked_at.is_(None))
+            .order_by(db.AdminSession.last_seen_at.desc())
+        ).all()
+        return templates.TemplateResponse(
+            request,
+            "account_sessions.html",
+            {
+                "admin": admin,
+                "sessions": [
+                    {
+                        "id": s.id,
+                        "is_current": s.id == current_id,
+                        "user_agent": s.user_agent,
+                        "ip_address": s.ip_address,
+                        "created_at": s.created_at,
+                        "last_seen_at": s.last_seen_at,
+                    }
+                    for s in rows
+                ],
+                **_crl_banner_context(session),
+            },
+        )
+
+    @router.post("/account/sessions/{session_id}/revoke")
+    def account_session_revoke(
+        request: Request,
+        session_id: str,
+        cm_session: str | None = Cookie(default=None),
+        admin: db.Admin = Depends(deps.require_admin),
+    ):
+        session = deps.get_db_session()
+        record = session.get(db.AdminSession, session_id)
+        if record is None or record.admin_id != admin.id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        current_id = None
+        if cm_session is not None:
+            data = auth.decode_session_cookie(deps.secret_key, cm_session)
+            if data is not None:
+                current_id = data.session_id
+        if record.id == current_id:
+            # Ending your own current session isn't "revoke a device",
+            # it's "log out" — send them through the real logout path so
+            # the cookie gets cleared too, not just the DB row.
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "use logout to end your current session")
+        auth.revoke_admin_session(session, record)
+        return RedirectResponse(_flash("/account/sessions", "Session ended.", "warn"), status_code=303)
 
     # --- Admin management (Super Admin only) ---
 

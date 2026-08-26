@@ -55,11 +55,14 @@ def make_admin(session_factory, username, role, password="correct horse battery 
     return admin
 
 
-def cookie_for(secret_key, admin):
+def cookie_for(secret_key, admin, session_factory):
+    session = session_factory()
+    record = auth.create_admin_session(session, admin, user_agent="pytest", ip_address="127.0.0.1")
     return auth._serializer(secret_key).dumps(
         {
             "sub": admin.id,
             "tv": admin.token_version,
+            "sid": record.id,
             "session_start": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
     )
@@ -73,14 +76,14 @@ def test_admin_gets_403_on_super_admin_routes(
     app_client, session_factory, secret_key, path, method
 ):
     admin = make_admin(session_factory, "regular-admin", db.AdminRole.admin)
-    app_client.cookies.set(auth.SESSION_COOKIE, cookie_for(secret_key, admin))
+    app_client.cookies.set(auth.SESSION_COOKIE, cookie_for(secret_key, admin, session_factory))
     resp = getattr(app_client, method)(path)
     assert resp.status_code == 403
 
 
 def test_super_admin_can_access_super_admin_route(app_client, session_factory, secret_key):
     admin = make_admin(session_factory, "root-admin", db.AdminRole.super_admin)
-    app_client.cookies.set(auth.SESSION_COOKIE, cookie_for(secret_key, admin))
+    app_client.cookies.set(auth.SESSION_COOKIE, cookie_for(secret_key, admin, session_factory))
     resp = app_client.post("/api/certs/x/revoke")
     assert resp.status_code == 200
 
@@ -92,7 +95,7 @@ def test_no_cookie_is_401(app_client):
 
 def test_deactivating_admin_invalidates_live_session(app_client, session_factory, secret_key):
     admin = make_admin(session_factory, "will-deactivate", db.AdminRole.admin)
-    cookie = cookie_for(secret_key, admin)
+    cookie = cookie_for(secret_key, admin, session_factory)
     app_client.cookies.set(auth.SESSION_COOKIE, cookie)
     assert app_client.get("/api/certs").status_code == 200
 

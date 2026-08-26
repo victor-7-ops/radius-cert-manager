@@ -5,6 +5,7 @@ CM4. If a test could conceivably write to PKI_PATH or SSH to RADIUS_HOST,
 it is wrong.
 """
 
+import datetime
 import os
 import sys
 from pathlib import Path
@@ -13,7 +14,25 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import pki  # noqa: E402
+from app import auth, db, pki  # noqa: E402
+
+
+def login_as(client, app_settings, admin):
+    """Log a TestClient in as `admin` the same way the real /auth/login
+    route does — creates a real AdminSession row and mints a cookie
+    carrying its id, rather than hand-building a cookie that skips
+    session tracking entirely (require_admin rejects a cookie with no
+    "sid" as of the per-session-list feature)."""
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    record = auth.create_admin_session(session, admin, user_agent="pytest-client", ip_address="127.0.0.1")
+    cookie = auth._serializer(app_settings.secret_key).dumps({
+        "sub": admin.id,
+        "tv": admin.token_version,
+        "sid": record.id,
+        "session_start": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    })
+    client.cookies.set(auth.SESSION_COOKIE, cookie)
 
 
 @pytest.fixture

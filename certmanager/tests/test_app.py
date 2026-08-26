@@ -39,16 +39,9 @@ def test_issue_list_suspend_revoke_flow(app_settings, throwaway_pki, monkeypatch
     app = create_app(app_settings)
     client = TestClient(app)
 
-    cookie = auth._serializer(app_settings.secret_key).dumps(
-        {
-            "sub": admin.id,
-            "tv": admin.token_version,
-            "session_start": __import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc
-            ).isoformat(),
-        }
-    )
-    client.cookies.set(auth.SESSION_COOKIE, cookie)
+    from tests.conftest import login_as
+
+    login_as(client, app_settings, admin)
 
     resp = client.post(
         "/api/certs",

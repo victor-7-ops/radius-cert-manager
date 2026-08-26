@@ -128,6 +128,25 @@ class Admin(Base):
     # intended use.
 
 
+class AdminSession(Base):
+    """One row per issued session cookie — lets an admin see (and end)
+    their own active sessions individually, rather than the previous
+    all-or-nothing token_version bump. token_version is still checked
+    too (belt and suspenders): bump_token_version revokes every row here
+    for that admin, so a deactivation/reset/force-logout still can't be
+    outrun by a session row that somehow survives."""
+
+    __tablename__ = "admin_sessions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    admin_id: Mapped[str] = mapped_column(String, index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    last_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    user_agent: Mapped[str | None] = mapped_column(String, nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String, nullable=True)
+    revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

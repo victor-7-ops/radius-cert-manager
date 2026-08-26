@@ -17,6 +17,15 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **Per-session tracking**: login now creates a real `AdminSession` row
+  (device/IP/last-active), and the session cookie carries its id — not
+  just the coarse `token_version` that used to make every session for
+  an admin an all-or-nothing unit. "Your sessions" (click your name in
+  the nav) lists every device you're signed in on and lets you end any
+  but the current one; deactivate/reset-password/force-logout still
+  work exactly as before, now revoking every session row too so the
+  list can't show a stale "active" device. A cookie from before this
+  feature (no session id) is treated as expired, not silently trusted.
 - **Per-subsidiary admin scoping**: an admin created with a "Restrict to
   subsidiary" set can only see/manage certs for that one company —
   enforced at the route layer (cert list/detail/export/dashboard, not

@@ -20,7 +20,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import Admin, AdminRole
+from app.db import Admin, AdminRole, AdminSession
 
 SESSION_COOKIE = "cm_session"
 SESSION_MAX_AGE_SECONDS = 15 * 60  # sliding inactivity timeout
@@ -58,11 +58,14 @@ def _serializer(secret_key: str) -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(secret_key, salt="cm-session")
 
 
-def issue_session_cookie(response: Response, secret_key: str, admin: Admin) -> None:
+def issue_session_cookie(
+    response: Response, secret_key: str, admin: Admin, session_id: str, session_start: str | None = None
+) -> None:
     payload = {
         "sub": admin.id,
         "tv": admin.token_version,
-        "session_start": _now().isoformat(),
+        "sid": session_id,
+        "session_start": session_start or _now().isoformat(),
     }
     token = _serializer(secret_key).dumps(payload)
     response.set_cookie(
@@ -73,6 +76,38 @@ def issue_session_cookie(response: Response, secret_key: str, admin: Admin) -> N
         secure=True,
         samesite="strict",
     )
+
+
+_USER_AGENT_MAX_LEN = 200
+
+
+def create_admin_session(db_session: Session, admin: Admin, user_agent: str | None, ip_address: str | None) -> AdminSession:
+    record = AdminSession(
+        admin_id=admin.id,
+        user_agent=(user_agent or "")[:_USER_AGENT_MAX_LEN] or None,
+        ip_address=ip_address,
+    )
+    db_session.add(record)
+    db_session.commit()
+    db_session.refresh(record)
+    return record
+
+
+def revoke_admin_session(db_session: Session, record: AdminSession) -> None:
+    record.revoked_at = _now()
+    db_session.commit()
+
+
+_LAST_SEEN_UPDATE_THRESHOLD = datetime.timedelta(seconds=30)
+
+
+def touch_admin_session(db_session: Session, record: AdminSession) -> None:
+    # Silent refresh happens on every authenticated request — throttle
+    # the write so a busy admin doesn't hammer the DB with an UPDATE per
+    # click. Precision to the minute is plenty for a "last seen" display.
+    if _now() - _aware(record.last_seen_at) >= _LAST_SEEN_UPDATE_THRESHOLD:
+        record.last_seen_at = _now()
+        db_session.commit()
 
 
 def clear_session_cookie(response: Response) -> None:
@@ -141,13 +176,21 @@ def attempt_login(session: Session, username: str, password: str) -> LoginResult
 
 def bump_token_version(session: Session, admin: Admin) -> None:
     admin.token_version += 1
+    # Every session row for this admin is now unusable regardless of
+    # whether its own revoked_at ever gets set explicitly — but set it
+    # anyway so the sessions list reads correctly rather than showing
+    # stale "active" rows for a deactivated/reset admin.
+    now = _now()
+    for record in session.scalars(select(AdminSession).where(AdminSession.admin_id == admin.id, AdminSession.revoked_at.is_(None))):
+        record.revoked_at = now
     session.commit()
 
 
 class SessionData:
-    def __init__(self, admin_id: str, token_version: int, session_start: datetime.datetime):
+    def __init__(self, admin_id: str, token_version: int, session_id: str, session_start: datetime.datetime):
         self.admin_id = admin_id
         self.token_version = token_version
+        self.session_id = session_id
         self.session_start = session_start
 
 
@@ -159,8 +202,11 @@ def decode_session_cookie(secret_key: str, token: str) -> SessionData | None:
     session_start = datetime.datetime.fromisoformat(payload["session_start"])
     if _now() - session_start > datetime.timedelta(seconds=SESSION_ABSOLUTE_SECONDS):
         return None
+    sid = payload.get("sid")
+    if sid is None:
+        return None  # pre-session-tracking cookie — treat as expired, forces a re-login
     return SessionData(
-        admin_id=payload["sub"], token_version=payload["tv"], session_start=session_start
+        admin_id=payload["sub"], token_version=payload["tv"], session_id=sid, session_start=session_start
     )
 
 
@@ -185,8 +231,13 @@ def get_current_admin_factory(get_db_session, get_secret_key):
         if admin is None or not admin.is_active or admin.token_version != data.token_version:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session invalid")
 
-        # Silent refresh: slide the inactivity window forward.
-        issue_session_cookie(response, secret_key, admin)
+        record = db_session.get(AdminSession, data.session_id)
+        if record is None or record.admin_id != admin.id or record.revoked_at is not None:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session invalid")
+        touch_admin_session(db_session, record)
+
+        # Silent refresh: slide the inactivity window forward, same session id.
+        issue_session_cookie(response, secret_key, admin, session_id=record.id)
         return admin
 
     def require_super_admin(admin: Admin = Depends(require_admin)) -> Admin:

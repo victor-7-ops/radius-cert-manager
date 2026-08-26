@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% import "_spinner.html" as spin %}
+{% block title %}Your sessions — Certificate Manager{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Your sessions</h1>
+  <p class="text-sm text-slate-500 mt-1">Every device currently signed in as {{ admin.username }}. End any you don't recognize.</p>
+</div>
+
+<div class="table-shell">
+  <table>
+    <thead>
+      <tr>
+        <th>Device</th>
+        <th>IP address</th>
+        <th>Started</th>
+        <th>Last active</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td>
+          <span class="text-slate-700 text-sm">{{ s.user_agent or "Unknown device" }}</span>
+          {% if s.is_current %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-900 text-white ml-1">This device</span>
+          {% endif %}
+        </td>
+        <td class="text-slate-500 font-mono text-xs">{{ s.ip_address or "—" }}</td>
+        <td class="text-slate-500">{{ s.created_at }}</td>
+        <td class="text-slate-500">{{ s.last_seen_at }}</td>
+        <td class="text-right">
+          {% if not s.is_current %}
+          <button hx-post="/account/sessions/{{ s.id }}/revoke" hx-confirm="End this session?"
+                  hx-target="closest tr" hx-swap="outerHTML"
+                  class="text-red-700 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+            {{ spin.spinner() }}<span class="htmx-hide-on-request">End session</span>
+          </button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

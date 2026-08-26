@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app import auth, cert_service, crl_push, db, pki
 from app.main import create_app
+from tests.conftest import login_as
 
 
 def _write_throwaway_pki(app_settings, throwaway_pki):
@@ -33,10 +34,7 @@ def _seed_admin(app_settings, username, role):
 
 
 def _login(client, app_settings, admin):
-    cookie = auth._serializer(app_settings.secret_key).dumps(
-        {"sub": admin.id, "tv": admin.token_version, "session_start": datetime.datetime.now(datetime.timezone.utc).isoformat()}
-    )
-    client.cookies.set(auth.SESSION_COOKIE, cookie)
+    login_as(client, app_settings, admin)
 
 
 # --- cert_service.reissue_certificate ---
