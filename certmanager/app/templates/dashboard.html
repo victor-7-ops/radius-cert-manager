@@ -67,6 +67,33 @@
   </div>
 </div>
 
+{% if company_breakdown %}
+<section class="card p-5 mb-6">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="font-semibold text-slate-900">By company</h2>
+    <span class="text-xs text-slate-400">{{ company_total }} total</span>
+  </div>
+
+  <div class="w-full h-2.5 rounded-full overflow-hidden flex mb-4 bg-slate-100">
+    {% for c in company_breakdown %}
+    <div style="width: {{ c.pct }}%; background: {{ c.color }}" title="{{ c.name }}: {{ c.count }}"></div>
+    {% endfor %}
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+    {% for c in company_breakdown %}
+    <a href="/certs?subsidiary={{ c.name | urlencode }}"
+       class="flex items-center gap-2.5 text-sm rounded-lg px-2 py-1.5 -mx-2 hover:bg-slate-50 transition-colors {{ 'pointer-events-none' if c.name == 'Unassigned' else '' }}">
+      <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background: {{ c.color }}"></span>
+      <span class="flex-1 min-w-0 truncate text-slate-700">{{ c.name }}</span>
+      <span class="text-xs text-slate-400">{{ c.pct }}%</span>
+      <span class="font-medium text-slate-900 w-6 text-right">{{ c.count }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
   <section class="card p-5">
     <h2 class="font-semibold text-slate-900 mb-4">Attention needed</h2>

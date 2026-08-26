@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 import datetime
 import urllib.request
 
-from app import auth, cert_service, crl_health, crl_push, pki, reconcile
+from app import auth, cert_service, crl_health, crl_push, db, pki, reconcile
 from app.config import Settings, load_settings
 from app.db import init_db, make_engine, make_session_factory
 from app.routes.certs import get_router as get_certs_router
@@ -196,6 +196,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
     templates.env.filters["avatar_hue"] = _avatar_hue
+    templates.env.filters["subsidiary_color"] = db.subsidiary_color
 
     app = FastAPI(title="RADIUS Certificate Manager")
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")

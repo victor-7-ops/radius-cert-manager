@@ -86,7 +86,12 @@
         <tr>
           <td>
             <a href="/certs/{{ c.serial }}" class="text-slate-900 font-medium hover:underline">{{ c.cn }}</a>
-            {% if c.subsidiary %}<div class="text-xs text-slate-400">{{ c.subsidiary }}</div>{% endif %}
+            {% if c.subsidiary %}
+            <div class="text-xs text-slate-400 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background: {{ c.subsidiary | subsidiary_color }}"></span>
+              {{ c.subsidiary }}
+            </div>
+            {% endif %}
           </td>
           <td>
             {% if c.employee_name %}

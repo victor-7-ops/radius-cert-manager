@@ -91,6 +91,25 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 cursor += 360 * n / donut_total
                 donut_segments.append({"label": label, "count": n, "color": color, "start": round(start, 1), "end": round(cursor, 1)})
 
+        # By-company breakdown (handoff has no requirement for this — a
+        # glance-value add for tracking subsidiaries). Every cert counts
+        # once here regardless of status, since this answers "how many
+        # devices does each company have on file", not "how many are
+        # currently valid" — that's what the status donut above is for.
+        company_totals: dict[str, int] = {}
+        for c in rows:
+            key = c.subsidiary or "Unassigned"
+            company_totals[key] = company_totals.get(key, 0) + 1
+        company_breakdown = [
+            {
+                "name": name,
+                "count": n,
+                "color": db.subsidiary_color(None if name == "Unassigned" else name),
+                "pct": round(100 * n / len(rows), 1) if rows else 0,
+            }
+            for name, n in sorted(company_totals.items(), key=lambda kv: kv[1], reverse=True)
+        ]
+
         orphans = reconcile.reconcile_issued_dir(session, deps.pki_path / "issued")
 
         recent = session.scalars(
@@ -115,6 +134,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "counts": counts,
                 "donut_segments": donut_segments,
                 "donut_total": donut_total,
+                "company_breakdown": company_breakdown,
+                "company_total": len(rows),
                 "expiring": [{"cn": c.cn, "serial": c.serial, "expires_at": c.expires_at.date()} for c in expiring],
                 "orphans": orphans,
                 "recent_activity": [

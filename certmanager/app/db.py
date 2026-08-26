@@ -171,6 +171,27 @@ SUBSIDIARIES = [
     "Others",
 ]
 
+# Fixed (not hashed) colorway per subsidiary, so the same company always
+# reads the same color across the dashboard chart, list chips, and detail
+# page — a hash-based color risks two companies landing on the same hue.
+SUBSIDIARY_COLORS = {
+    "Lezzgo Boracay": "#0ea5e9",
+    "Lezzgo Cebu": "#06b6d4",
+    "Topline Business Development Corporation": "#1e3a8a",
+    "Light Fuels Corporation": "#f59e0b",
+    "Commercial Fuel Trade": "#ea580c",
+    "Bay Mall": "#8b5cf6",
+    "BMEAD": "#ec4899",
+    "Others": "#64748b",
+}
+SUBSIDIARY_COLOR_UNASSIGNED = "#cbd5e1"
+
+
+def subsidiary_color(name: str | None) -> str:
+    if not name:
+        return SUBSIDIARY_COLOR_UNASSIGNED
+    return SUBSIDIARY_COLORS.get(name, SUBSIDIARY_COLOR_UNASSIGNED)
+
 
 def _migrate_certificate_columns(engine) -> None:
     with engine.begin() as conn:
