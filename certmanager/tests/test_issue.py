@@ -26,7 +26,7 @@ def test_issue_writes_cert_and_db_row(session, tmp_path, throwaway_pki):
         days=365,
     )
     assert result.certificate.cn == "device-a"
-    assert (tmp_path / "issued" / "device-a.crt").exists()
+    assert (tmp_path / "issued" / f"device-a.{result.certificate.serial}.crt").exists()
     assert result.bundle is not None
     loaded_key, loaded_cert, _ = pki.load_pkcs12(result.bundle.data, result.bundle.password)
     assert str(loaded_cert.serial_number) == result.certificate.serial

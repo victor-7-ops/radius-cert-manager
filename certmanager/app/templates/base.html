@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Certificate Manager{% endblock %}</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/tailwind.css?v=12">
+  <link rel="stylesheet" href="/static/tailwind.css?v=13">
   <script src="/static/htmx.min.js"></script>
 </head>
 <body class="h-full text-slate-800 antialiased">
@@ -66,6 +66,139 @@
     {% block content %}{% endblock %}
   </main>
 
+  {% if admin %}
+  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 items-end pointer-events-none"></div>
+  {% endif %}
+
+  <script>
+    // Toast: one-shot flash messages carried via ?flash=&flash_kind= on a
+    // redirect (see app/routes/web.py's _flash helper) — read once on
+    // load, then scrubbed from the URL so a refresh doesn't replay it.
+    (function () {
+      var TOAST_STYLES = {
+        success: {bg: '#f0fdf4', border: '#bbf7d0', text: '#15803d', icon: '#16a34a'},
+        warn: {bg: '#fffbeb', border: '#fde68a', text: '#b45309', icon: '#d97706'},
+        danger: {bg: '#fef2f2', border: '#fecaca', text: '#b91c1c', icon: '#dc2626'},
+      };
+
+      window.showToast = function (message, kind) {
+        var container = document.getElementById('toast-container');
+        if (!container) return;
+        var s = TOAST_STYLES[kind] || TOAST_STYLES.success;
+        var el = document.createElement('div');
+        el.className = 'anim-rise pointer-events-auto flex items-center gap-2 text-sm font-medium px-4 py-3 rounded-lg shadow-lg border max-w-sm';
+        el.style.background = s.bg;
+        el.style.borderColor = s.border;
+        el.style.color = s.text;
+        el.innerHTML =
+          '<svg class="w-4 h-4 shrink-0" style="color:' + s.icon + '" viewBox="0 0 20 20" fill="currentColor">' +
+          '<path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/></svg>' +
+          '<span></span>';
+        el.querySelector('span').textContent = message;
+        container.appendChild(el);
+        setTimeout(function () {
+          el.style.transition = 'opacity 200ms, transform 200ms';
+          el.style.opacity = '0';
+          el.style.transform = 'translateX(8px)';
+          setTimeout(function () { el.remove(); }, 220);
+        }, 4000);
+      };
+
+      var params = new URLSearchParams(window.location.search);
+      var flash = params.get('flash');
+      if (flash) {
+        showToast(flash, params.get('flash_kind') || 'success');
+        params.delete('flash');
+        params.delete('flash_kind');
+        var qs = params.toString();
+        var cleanUrl = window.location.pathname + (qs ? '?' + qs : '') + window.location.hash;
+        window.history.replaceState({}, '', cleanUrl);
+      }
+    })();
+  </script>
+
+  {% if admin %}
+  <script>
+    // Session-expiry warning: the cookie is a 15-minute sliding window
+    // (auth.SESSION_MAX_AGE_SECONDS), silently refreshed on every
+    // authenticated request. If the tab just sits idle, warn before it
+    // expires instead of the next click quietly bouncing to /login.
+    (function () {
+      var SESSION_SECONDS = 15 * 60;
+      var WARN_AT_REMAINING = 60;
+      var timer = null;
+
+      function scheduleWarning() {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(showWarning, (SESSION_SECONDS - WARN_AT_REMAINING) * 1000);
+      }
+
+      function showWarning() {
+        var container = document.getElementById('toast-container');
+        if (!container) return;
+        var el = document.createElement('div');
+        el.className = 'anim-rise pointer-events-auto flex items-center gap-3 text-sm font-medium px-4 py-3 rounded-lg shadow-lg border max-w-sm bg-white border-slate-200 text-slate-700';
+        el.innerHTML =
+          '<svg class="w-4 h-4 shrink-0 text-amber-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>' +
+          '<span>Your session is about to expire.</span>' +
+          '<button type="button" class="shrink-0 text-xs font-semibold px-2 py-1 rounded bg-slate-900 text-white">Stay signed in</button>';
+        el.querySelector('button').addEventListener('click', function () {
+          fetch('/auth/ping', {credentials: 'same-origin'}).then(function () {
+            el.remove();
+            scheduleWarning();
+          });
+        });
+        container.appendChild(el);
+      }
+
+      scheduleWarning();
+      // Any real navigation (boosted or not) means the cookie was just
+      // refreshed by require_admin — restart the countdown.
+      document.body.addEventListener('htmx:afterSettle', scheduleWarning);
+    })();
+  </script>
+
+  <script>
+    // Keyboard shortcuts: "/" focuses search (when one exists on the
+    // page and focus isn't already in a field), "g" then a letter jumps
+    // to a section. Ignored while typing anywhere.
+    (function () {
+      var GO = {d: '/dashboard', c: '/certs', b: '/certs/bulk', a: '/activity'};
+      var awaitingG = false;
+      var gTimeout = null;
+
+      function isTyping() {
+        var el = document.activeElement;
+        if (!el) return false;
+        var tag = el.tagName;
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+      }
+
+      document.addEventListener('keydown', function (e) {
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+        if (awaitingG) {
+          awaitingG = false;
+          clearTimeout(gTimeout);
+          var dest = GO[e.key];
+          if (dest) { e.preventDefault(); window.location.href = dest; }
+          return;
+        }
+
+        if (isTyping()) return;
+
+        if (e.key === '/') {
+          var search = document.querySelector('input[type=search], input[name=q]');
+          if (search) { e.preventDefault(); search.focus(); }
+        } else if (e.key === 'g') {
+          awaitingG = true;
+          gTimeout = setTimeout(function () { awaitingG = false; }, 900);
+        }
+      });
+    })();
+  </script>
+  {% endif %}
+
   <script>
     // Count-up numbers and grow-in bars — small enough to just run on
     // every page render and every htmx-boosted swap, no framework needed.
@@ -97,6 +230,14 @@
           requestAnimationFrame(function () {
             requestAnimationFrame(function () {
               el.style.width = target;
+            });
+          });
+        });
+        root.querySelectorAll('[data-grow-height-to]').forEach(function (el) {
+          var target = el.getAttribute('data-grow-height-to');
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              el.style.height = target;
             });
           });
         });

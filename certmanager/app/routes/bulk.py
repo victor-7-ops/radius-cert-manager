@@ -27,6 +27,21 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             request, "bulk.html", {"admin": admin, **crl_health.banner_context(session)}
         )
 
+    @router.get("/certs/bulk/template.csv")
+    def bulk_template(admin: db.Admin = Depends(deps.require_admin)):
+        # Registered before /certs/bulk/{batch_id} so "template.csv"
+        # never gets swallowed as a batch_id path param.
+        sample = (
+            "cn,employee_name,device_type,device_mac,device_serial,subsidiary\r\n"
+            f"alex-laptop,Jordan Ellis,{db.DEVICE_TYPES[0]},aa:bb:cc:dd:ee:ff,C02XG2JMQ6L9,{db.SUBSIDIARIES[0]}\r\n"
+            "jordan-phone,,,,,\r\n"
+        )
+        return Response(
+            content=sample,
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="bulk-issue-template.csv"'},
+        )
+
     @router.post("/certs/bulk/preview")
     async def bulk_preview(
         request: Request,

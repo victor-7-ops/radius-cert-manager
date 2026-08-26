@@ -7,16 +7,28 @@ template context entirely, not rendered-and-disabled.
 
 from __future__ import annotations
 
+import csv
 import datetime
+import io
+import urllib.parse
 import uuid
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 
 from app import auth, cert_service, crl_health, db, reconcile
 from app.validation import CN_RE, normalize_mac
+
+
+def _flash(url: str, message: str, kind: str = "success") -> str:
+    """Append a one-shot flash message to a redirect URL. base.html reads
+    ?flash=/&flash_kind= on load, shows a toast, then strips the params
+    from the address bar via history.replaceState — so a refresh doesn't
+    re-show it and the URL doesn't stay ugly."""
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}flash={urllib.parse.quote(message)}&flash_kind={kind}"
 
 
 def _relative_expiry(expires_at: datetime.datetime) -> str:
@@ -120,6 +132,34 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             cursor += 360 * c["count"] / len(rows) if rows else 0
             company_segments.append({**c, "start": round(start, 1), "end": round(cursor, 1)})
 
+        # Issuance-over-time: last 6 calendar months, oldest first. Built
+        # from the same `rows` fetch above rather than a second query —
+        # this dashboard is already all-certs-in-memory, no need to hit
+        # the DB again for one more aggregate over the same data.
+        month_counts: dict[str, int] = {}
+        month_labels: list[tuple[str, str]] = []
+        cursor_month = now.replace(day=1)
+        for _ in range(6):
+            key = cursor_month.strftime("%Y-%m")
+            month_labels.append((key, cursor_month.strftime("%b")))
+            month_counts[key] = 0
+            cursor_month = (cursor_month - datetime.timedelta(days=1)).replace(day=1)
+        month_labels.reverse()
+        for c in rows:
+            issued_at = c.issued_at.replace(tzinfo=datetime.timezone.utc) if c.issued_at.tzinfo is None else c.issued_at
+            key = issued_at.strftime("%Y-%m")
+            if key in month_counts:
+                month_counts[key] += 1
+        issuance_max = max(month_counts.values()) if month_counts else 0
+        issuance_trend = [
+            {
+                "label": label,
+                "count": month_counts[key],
+                "pct": round(100 * month_counts[key] / issuance_max) if issuance_max else 0,
+            }
+            for key, label in month_labels
+        ]
+
         orphans = reconcile.reconcile_issued_dir(session, deps.pki_path / "issued")
 
         recent = session.scalars(
@@ -147,6 +187,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "company_breakdown": company_breakdown,
                 "company_segments": company_segments,
                 "company_total": len(rows),
+                "issuance_trend": issuance_trend,
                 "expiring": [{"cn": c.cn, "serial": c.serial, "expires_at": c.expires_at.date()} for c in expiring],
                 "orphans": orphans,
                 "recent_activity": [
@@ -164,17 +205,9 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             },
         )
 
-    @router.get("/certs")
-    def cert_list(
-        request: Request,
-        q: str | None = None,
-        status: str | None = None,
-        employee: str | None = None,
-        subsidiary: str | None = None,
-        page: int = 1,
-        admin: db.Admin = Depends(deps.require_admin),
-    ):
-        session = deps.get_db_session()
+    def _cert_filter_stmt(q, status, employee, subsidiary):
+        """Shared by the list page and the CSV export so the two can
+        never silently drift apart on what a filter means."""
         stmt = select(db.Certificate)
         if q:
             stmt = stmt.where(
@@ -201,8 +234,21 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             stmt = stmt.where(db.Certificate.status == db.CertStatus.active, db.Certificate.expires_at >= now)
         elif status:
             stmt = stmt.where(db.Certificate.status == status)
+        return stmt.order_by(db.Certificate.issued_at.desc())
+
+    @router.get("/certs")
+    def cert_list(
+        request: Request,
+        q: str | None = None,
+        status: str | None = None,
+        employee: str | None = None,
+        subsidiary: str | None = None,
+        page: int = 1,
+        admin: db.Admin = Depends(deps.require_admin),
+    ):
+        session = deps.get_db_session()
         page_size = 50
-        stmt = stmt.order_by(db.Certificate.issued_at.desc()).offset((page - 1) * page_size).limit(page_size)
+        stmt = _cert_filter_stmt(q, status, employee, subsidiary).offset((page - 1) * page_size).limit(page_size)
         rows = session.scalars(stmt).all()
 
         items = [
@@ -234,6 +280,37 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "subsidiaries": db.SUBSIDIARIES,
                 **_crl_banner_context(session),
             },
+        )
+
+    @router.get("/certs/export.csv")
+    def cert_export(
+        q: str | None = None,
+        status: str | None = None,
+        employee: str | None = None,
+        subsidiary: str | None = None,
+        admin: db.Admin = Depends(deps.require_admin),
+    ):
+        # Whatever filter the admin currently has applied on the list
+        # page — the export is "what I'm looking at", not "everything".
+        session = deps.get_db_session()
+        rows = session.scalars(_cert_filter_stmt(q, status, employee, subsidiary)).all()
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow([
+            "cn", "serial", "status", "issued_at", "expires_at", "issued_by",
+            "employee_name", "device_type", "device_mac", "device_serial", "subsidiary",
+        ])
+        for c in rows:
+            writer.writerow([
+                c.cn, c.serial, _effective_status(c), c.issued_at.isoformat(), c.expires_at.isoformat(),
+                c.issued_by, c.employee_name or "", c.device_type or "", c.device_mac or "",
+                c.device_serial or "", c.subsidiary or "",
+            ])
+        return Response(
+            content=buf.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="certificates.csv"'},
         )
 
     @router.get("/certs/check-cn")
@@ -431,35 +508,57 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             },
         )
 
+    @router.post("/certs/{serial}/reissue")
+    def reissue(request: Request, serial: str, admin: db.Admin = Depends(deps.require_admin)):
+        session = deps.get_db_session()
+        try:
+            result = cert_service.reissue_certificate(
+                session,
+                deps.pki_path,
+                deps.inter_cert,
+                deps.inter_key,
+                old_serial=serial,
+                request_id=str(uuid.uuid4()),
+                export_password=None,
+                issued_by=admin.username,
+                days=deps.client_cert_days,
+            )
+        except cert_service.ReissueTargetError as e:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(e))
+        deps.store_pending_bundle(result.certificate.serial, result.bundle)
+        deps.store_pending_password(result.certificate.serial, result.bundle.password)
+        return RedirectResponse(f"/certs/{result.certificate.serial}/delivery", status_code=303)
+
     @router.post("/certs/{serial}/suspend")
     def suspend(request: Request, serial: str, reason: str = "", admin: db.Admin = Depends(deps.require_admin)):
         session = deps.get_db_session()
         try:
-            cert_service.suspend(session, deps.pki_path, serial, reason or "not specified", admin.username)
+            cert = cert_service.suspend(session, deps.pki_path, serial, reason or "not specified", admin.username)
         except KeyError:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
         deps.regenerate_and_push_crl()
-        return RedirectResponse(request.headers.get("referer", "/certs"), status_code=303)
+        dest = request.headers.get("referer", "/certs")
+        return RedirectResponse(_flash(dest, f"{cert.cn} suspended.", "warn"), status_code=303)
 
     @router.post("/certs/{serial}/unsuspend")
     def unsuspend(request: Request, serial: str, admin: db.Admin = Depends(deps.require_super_admin)):
         session = deps.get_db_session()
         try:
-            cert_service.unsuspend(session, deps.pki_path, serial, admin.username)
+            cert = cert_service.unsuspend(session, deps.pki_path, serial, admin.username)
         except KeyError:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
         deps.regenerate_and_push_crl()
-        return RedirectResponse(f"/certs/{serial}", status_code=303)
+        return RedirectResponse(_flash(f"/certs/{serial}", f"{cert.cn} unsuspended.", "success"), status_code=303)
 
     @router.post("/certs/{serial}/revoke")
     def revoke(request: Request, serial: str, reason: str = "", admin: db.Admin = Depends(deps.require_super_admin)):
         session = deps.get_db_session()
         try:
-            cert_service.revoke(session, deps.pki_path, serial, reason or "not specified", admin.username)
+            cert = cert_service.revoke(session, deps.pki_path, serial, reason or "not specified", admin.username)
         except KeyError:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
         deps.regenerate_and_push_crl()
-        return RedirectResponse(f"/certs/{serial}", status_code=303)
+        return RedirectResponse(_flash(f"/certs/{serial}", f"{cert.cn} revoked.", "danger"), status_code=303)
 
     # --- Admin management (Super Admin only) ---
 
@@ -524,7 +623,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         auth.bump_token_version(session, target)
         db.audit(session, actor=admin.username, action="deactivate_admin", target=target.username)
         session.commit()
-        return RedirectResponse("/admins", status_code=303)
+        return RedirectResponse(_flash("/admins", f"{target.username} deactivated.", "warn"), status_code=303)
 
     @router.post("/admins/{admin_id}/reset-password")
     def admin_reset_password(request: Request, admin_id: str, admin: db.Admin = Depends(deps.require_super_admin)):
@@ -553,7 +652,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         auth.bump_token_version(session, target)
         db.audit(session, actor=admin.username, action="force_logout", target=target.username)
         session.commit()
-        return RedirectResponse("/admins", status_code=303)
+        return RedirectResponse(_flash("/admins", f"{target.username} logged out everywhere.", "success"), status_code=303)
 
     @router.get("/activity")
     def activity(

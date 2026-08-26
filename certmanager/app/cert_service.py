@@ -73,6 +73,8 @@ def _issue_one_locked(
     days: int,
     batch_id: str | None,
     device: DeviceInfo | None = None,
+    supersedes_id: str | None = None,
+    skip_conflict_check: bool = False,
 ) -> IssueResult:
     """Caller must already hold _lock(pki_path)."""
     existing = session.scalar(select(db.Certificate).where(db.Certificate.request_id == request_id))
@@ -85,13 +87,14 @@ def _issue_one_locked(
         # issued", not to re-deliver a bundle.
         return IssueResult(certificate=existing, bundle=None, deduped=True)
 
-    active_conflict = session.scalar(
-        select(db.Certificate).where(
-            db.Certificate.cn == cn, db.Certificate.status == db.CertStatus.active
+    if not skip_conflict_check:
+        active_conflict = session.scalar(
+            select(db.Certificate).where(
+                db.Certificate.cn == cn, db.Certificate.status == db.CertStatus.active
+            )
         )
-    )
-    if active_conflict is not None:
-        raise CNConflictError(f"active certificate already exists for CN={cn}")
+        if active_conflict is not None:
+            raise CNConflictError(f"active certificate already exists for CN={cn}")
 
     key = pki.generate_private_key()
     csr = pki.build_csr(key, cn)
@@ -101,7 +104,10 @@ def _issue_one_locked(
 
     issued_dir = pki_path / "issued"
     issued_dir.mkdir(parents=True, exist_ok=True)
-    (issued_dir / f"{cn}.crt").write_bytes(pki.cert_to_pem(cert))
+    # Serial in the filename, not just the CN — two certs can share a CN
+    # over time (revoke-and-reissue, or an overlap-window reissue), and a
+    # bare "{cn}.crt" name would silently overwrite the earlier file.
+    (issued_dir / f"{cn}.{serial}.crt").write_bytes(pki.cert_to_pem(cert))
 
     device = device or DeviceInfo()
     row = db.Certificate(
@@ -119,11 +125,14 @@ def _issue_one_locked(
         device_mac=device.device_mac,
         device_serial=device.device_serial,
         subsidiary=device.subsidiary,
+        supersedes_id=supersedes_id,
     )
     session.add(row)
     audit_detail = f"serial={serial}"
     if device.employee_name:
         audit_detail += f" employee={device.employee_name}"
+    if supersedes_id:
+        audit_detail += f" supersedes={supersedes_id}"
     db.audit(session, actor=issued_by, action="issue", target=cn, detail=audit_detail)
     session.commit()
     session.refresh(row)
@@ -149,6 +158,49 @@ def issue_certificate(
         return _issue_one_locked(
             session, pki_path, inter_cert, inter_key, cn, note, request_id,
             export_password, issued_by, days, batch_id, device,
+        )
+
+
+class ReissueTargetError(Exception):
+    pass
+
+
+def reissue_certificate(
+    session: Session,
+    pki_path: Path,
+    inter_cert,
+    inter_key,
+    old_serial: str,
+    request_id: str,
+    export_password: str | None,
+    issued_by: str,
+    days: int,
+) -> IssueResult:
+    """Handoff §8.1: generate a new cert under the SAME CN as an existing
+    one, linked via supersedes_id. Old and new coexist — the old cert is
+    not touched here; suspending/revoking it is a separate, deliberate
+    admin action once the new one is confirmed installed. Device/owner
+    tracking metadata carries over from the old cert unchanged, since a
+    reissue is "same device, new cert", not a new device."""
+    with _lock(pki_path):
+        old = session.scalar(select(db.Certificate).where(db.Certificate.serial == old_serial))
+        if old is None:
+            raise ReissueTargetError(f"no certificate with serial={old_serial}")
+        if old.status == db.CertStatus.revoked:
+            raise ReissueTargetError("cannot reissue a revoked certificate")
+
+        device = DeviceInfo(
+            employee_name=old.employee_name,
+            device_type=old.device_type,
+            device_mac=old.device_mac,
+            device_serial=old.device_serial,
+            subsidiary=old.subsidiary,
+        )
+        return _issue_one_locked(
+            session, pki_path, inter_cert, inter_key,
+            cn=old.cn, note=old.note, request_id=request_id,
+            export_password=export_password, issued_by=issued_by, days=days,
+            batch_id=None, device=device, supersedes_id=old.id, skip_conflict_check=True,
         )
 
 

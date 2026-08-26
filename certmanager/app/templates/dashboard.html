@@ -95,6 +95,21 @@
 </section>
 {% endif %}
 
+{% if issuance_trend %}
+<section class="card p-5 mb-6">
+  <h2 class="font-semibold text-slate-900 mb-4">Issuance trend <span class="text-slate-400 font-normal">— last 6 months</span></h2>
+  <div class="flex items-end justify-between gap-3 h-28">
+    {% for m in issuance_trend %}
+    <div class="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
+      <span class="text-xs font-medium text-slate-700" data-countup="{{ m.count }}">0</span>
+      <div class="w-full max-w-[36px] bg-slate-900 rounded-t-md bar-grow" style="height: 0" data-grow-height-to="{{ m.pct }}%"></div>
+      <span class="text-xs text-slate-400">{{ m.label }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
   <section class="card p-5">
     <h2 class="font-semibold text-slate-900 mb-4">Attention needed</h2>

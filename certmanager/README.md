@@ -4,6 +4,34 @@ Internal admin tool for issuing/suspending/revoking client certificates
 used in EAP-TLS WiFi authentication. See the handoff document for full
 design rationale and Phase A/F–I work not yet built.
 
+## Beyond the handoff (added after v1)
+
+- **Device/owner tracking**: employee name, device type (with icon),
+  MAC (validated/normalized), device serial, and company/subsidiary
+  (fixed colorway) on every cert. Employee and subsidiary both drill
+  down into a filtered cert list from anywhere they appear.
+- **Dashboard**: fleet-status donut (colored by company), by-company
+  breakdown card, 6-month issuance trend bar chart, all with count-up
+  numbers and staggered entrance animation.
+- **Reissue**: same-CN new cert linked via `supersedes_id`, old cert
+  untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
+- **CSV export** of the cert list (respects whatever filter is active)
+  and a **bulk-issue CSV template** download.
+- **Toast notifications** on suspend/unsuspend/revoke/admin actions,
+  carried via a one-shot `?flash=` query param on the redirect, stripped
+  from the URL client-side after showing.
+- **Session-expiry warning**: a "stay signed in" toast ~60s before the
+  15-minute inactivity timeout, backed by a `GET /auth/ping` no-op that
+  rides the existing silent-cookie-refresh in `require_admin`.
+- **Keyboard shortcuts**: `/` focuses search, `g` then `d`/`c`/`b`/`a`
+  jumps to dashboard/certs/bulk/activity.
+- Topline branding (logo, favicon), boosted nav transitions, colored
+  avatars, and a general visual pass (see git log for the blow-by-blow).
+
+Not done: dark mode (explicitly out of scope in the handoff's §6.1
+decision — flagged, not silently skipped) and anything requiring the
+live hosts (Phase A — see below).
+
 ## Status
 
 Built: Phase B (pki.py), Phase C (db.py + first-run import), Phase D

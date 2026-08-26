@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app import auth
+from app import auth, db
 
 LOCKOUT_MINUTES = auth.LOCKOUT_WINDOW_MINUTES
 
@@ -32,5 +32,13 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         response = RedirectResponse("/login", status_code=303)
         auth.clear_session_cookie(response)
         return response
+
+    @router.get("/ping")
+    def ping(response: Response, admin: db.Admin = Depends(deps.require_admin)):
+        # No-op beyond the require_admin dependency itself, which does the
+        # actual work: it silently reissues the session cookie on every
+        # authenticated call. This route exists so the "stay signed in"
+        # toast has something to fetch() that isn't a full navigation.
+        return Response(status_code=204)
 
     return router
