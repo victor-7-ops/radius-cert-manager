@@ -227,3 +227,51 @@ def test_suspend_redirect_carries_flash_message(app_settings, throwaway_pki, mon
     location = resp.headers["location"]
     assert "flash=" in location
     assert "flash_kind=warn" in location
+
+
+def test_activity_log_action_and_date_filters(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "activity-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={"cn": "activity-device", "request_id": str(uuid.uuid4())})
+    client.post("/admins", data={"username": "throwaway-admin", "role": "admin"})
+
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+
+    # action filter is an exact match against the dropdown, not a substring —
+    # "issue" must not also pick up "create_admin".
+    resp = client.get("/activity", params={"action": "issue"})
+    assert resp.status_code == 200
+    assert "activity-device" in resp.text
+    assert "throwaway-admin" not in resp.text
+
+    resp = client.get("/activity", params={"action": "create_admin"})
+    assert "throwaway-admin" in resp.text
+    assert "activity-device" not in resp.text
+
+    # both known actions surface as options for the dropdown
+    resp = client.get("/activity")
+    assert "issue" in resp.text
+    assert "create_admin" in resp.text
+
+    tomorrow = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)).date().isoformat()
+    yesterday = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)).date().isoformat()
+
+    resp = client.get("/activity", params={"date_from": tomorrow})
+    assert "activity-device" not in resp.text
+
+    resp = client.get("/activity", params={"date_from": yesterday})
+    assert "activity-device" in resp.text
+
+    resp = client.get("/activity", params={"date_to": yesterday})
+    assert "activity-device" not in resp.text
+
+    # malformed date input is ignored rather than 500ing
+    resp = client.get("/activity", params={"date_from": "not-a-date"})
+    assert resp.status_code == 200
+    assert "activity-device" in resp.text

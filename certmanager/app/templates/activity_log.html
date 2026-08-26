@@ -6,14 +6,40 @@
   <p class="text-sm text-slate-500 mt-1">Every issue, suspend, revoke, and admin change, in order.</p>
 </div>
 
-<form method="get" action="/activity" class="flex flex-wrap gap-2 mb-5">
-  <input type="text" name="actor" placeholder="Actor" value="{{ actor or '' }}" class="field-input sm:w-48">
-  <input type="text" name="action" placeholder="Action type" value="{{ action_filter or '' }}" class="field-input sm:w-48">
+<form method="get" action="/activity" class="flex flex-wrap items-end gap-2 mb-5">
+  <div>
+    <label class="field-label" for="af-actor">Actor</label>
+    <input id="af-actor" type="text" name="actor" placeholder="Actor" value="{{ actor or '' }}" class="field-input sm:w-40">
+  </div>
+  <div>
+    <label class="field-label" for="af-action">Action</label>
+    <select id="af-action" name="action" class="field-input sm:w-44">
+      <option value="">All actions</option>
+      {% for a in known_actions %}
+      <option value="{{ a }}" {% if a == action_filter %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="field-label" for="af-from">From</label>
+    <input id="af-from" type="date" name="date_from" value="{{ date_from or '' }}" class="field-input sm:w-40">
+  </div>
+  <div>
+    <label class="field-label" for="af-to">To</label>
+    <input id="af-to" type="date" name="date_to" value="{{ date_to or '' }}" class="field-input sm:w-40">
+  </div>
   <button type="submit" class="btn-secondary">
     <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2.628 1.601C5.028 1.206 7.49 1 10 1s4.973.206 7.372.601a.75.75 0 0 1 .628.74v2.288a2.25 2.25 0 0 1-.659 1.59l-4.682 4.683a2.25 2.25 0 0 0-.659 1.59v3.037c0 .684-.31 1.33-.844 1.757l-1.937 1.55A.75.75 0 0 1 8 18.25v-5.757a2.25 2.25 0 0 0-.659-1.591L2.659 6.22A2.25 2.25 0 0 1 2 4.629V2.34a.75.75 0 0 1 .628-.74Z" clip-rule="evenodd"/></svg>
     Filter
   </button>
+  {% if actor or action_filter or date_from or date_to %}
+  <a href="/activity" class="btn-ghost">Clear</a>
+  {% endif %}
 </form>
+
+{% if truncated %}
+<p class="text-xs text-amber-600 mb-3">Showing the latest {{ result_limit }} matching entries — narrow the filters to see more.</p>
+{% endif %}
 
 {% if entries %}
 <div class="table-shell">

@@ -659,15 +659,33 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         request: Request,
         actor: str | None = None,
         action: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         admin: db.Admin = Depends(deps.require_admin),
     ):
         session = deps.get_db_session()
+        LIMIT = 200
         stmt = select(db.AuditLog).order_by(db.AuditLog.timestamp.desc())
         if actor:
             stmt = stmt.where(db.AuditLog.actor.contains(actor))
         if action:
-            stmt = stmt.where(db.AuditLog.action.contains(action))
-        rows = session.scalars(stmt.limit(200)).all()
+            stmt = stmt.where(db.AuditLog.action == action)
+        if date_from:
+            try:
+                stmt = stmt.where(db.AuditLog.timestamp >= datetime.datetime.fromisoformat(date_from))
+            except ValueError:
+                date_from = None
+        if date_to:
+            try:
+                stmt = stmt.where(
+                    db.AuditLog.timestamp < datetime.datetime.fromisoformat(date_to) + datetime.timedelta(days=1)
+                )
+            except ValueError:
+                date_to = None
+        rows = session.scalars(stmt.limit(LIMIT + 1)).all()
+        truncated = len(rows) > LIMIT
+        rows = rows[:LIMIT]
+        known_actions = sorted(a for (a,) in session.execute(select(db.AuditLog.action).distinct()))
         return templates.TemplateResponse(
             request,
             "activity_log.html",
@@ -679,6 +697,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 ],
                 "actor": actor,
                 "action_filter": action,
+                "date_from": date_from,
+                "date_to": date_to,
+                "known_actions": known_actions,
+                "truncated": truncated,
+                "result_limit": LIMIT,
                 **_crl_banner_context(session),
             },
         )
