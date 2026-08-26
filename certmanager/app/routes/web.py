@@ -110,6 +110,16 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             for name, n in sorted(company_totals.items(), key=lambda kv: kv[1], reverse=True)
         ]
 
+        # Same breakdown, as conic-gradient segments for the inner ring of
+        # the fleet-status donut — otherwise an all-one-status fleet (the
+        # common case early on) renders as a flat, boring single-color ring.
+        company_segments = []
+        cursor = 0.0
+        for c in company_breakdown:
+            start = cursor
+            cursor += 360 * c["count"] / len(rows) if rows else 0
+            company_segments.append({**c, "start": round(start, 1), "end": round(cursor, 1)})
+
         orphans = reconcile.reconcile_issued_dir(session, deps.pki_path / "issued")
 
         recent = session.scalars(
@@ -135,6 +145,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "donut_segments": donut_segments,
                 "donut_total": donut_total,
                 "company_breakdown": company_breakdown,
+                "company_segments": company_segments,
                 "company_total": len(rows),
                 "expiring": [{"cn": c.cn, "serial": c.serial, "expires_at": c.expires_at.date()} for c in expiring],
                 "orphans": orphans,
