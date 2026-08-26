@@ -17,6 +17,17 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **Fixed a real connection-pool leak**: every route called
+  `deps.get_db_session()` straight into `session_factory()` with
+  nothing ever closing the result — each request quietly leaked a
+  connection, and under sustained traffic (or `regenerate_and_push_crl`
+  holding its own separate never-closed session open through a CRL-push
+  retry/backoff) the pool exhausted and every request started raising
+  `sqlalchemy.exc.TimeoutError`. This actually happened repeatedly
+  against the live demo server during manual verification earlier in
+  development. Fixed with a `scoped_session` keyed by a `ContextVar` set
+  once per request by a middleware — one session per request, closed
+  automatically after the response, no route signatures changed.
 - **System health page** (`/health`, Super Admin only): CRL status,
   cert counts by status, DB file size, PKI directory size, disk
   free/used, active admin/session counts, and the same CA-expiry and

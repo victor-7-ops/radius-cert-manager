@@ -6,6 +6,7 @@ a correlation ID. Raw tracebacks must never reach a client.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import uuid
 from dataclasses import dataclass
@@ -15,7 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, scoped_session
 
 import datetime
 import urllib.request
@@ -74,6 +75,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     session_factory = make_session_factory(engine)
     init_db(engine)
 
+    # Every route just called session_factory() straight, once per
+    # deps.get_db_session() call, and nothing ever closed the result —
+    # each request quietly leaked a connection back to nothing but GC
+    # timing, and under any real concurrency (or a slow synchronous
+    # regenerate_and_push_crl() holding one open through a CRL-push
+    # retry/backoff) the pool exhausts. scoped_session ties one session
+    # per request: the registry key is a ContextVar set once by the
+    # middleware below, before FastAPI forks dependency/handler
+    # resolution into separate threadpool calls — those calls each get
+    # their own COPY of the context, but a copy still reads the value
+    # set before the copy, so every get_db_session() call within one
+    # request resolves to the same session, and request_scoped_db.remove()
+    # after the response closes it and evicts it from the registry.
+    _request_db_key: contextvars.ContextVar[object | None] = contextvars.ContextVar(
+        "_request_db_key", default=None
+    )
+    request_scoped_db = scoped_session(session_factory, scopefunc=_request_db_key.get)
+
     inter_cert = pki.load_cert_pem(settings.pki_path / "intermediate.crt")
     inter_key = pki.load_key_pem(settings.pki_path / "private" / "intermediate.key")
     ca_chain_path = settings.pki_path / "ca-chain.pem"
@@ -91,7 +110,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     bootstrap_session.close()
 
     require_admin, require_super_admin = auth.get_current_admin_factory(
-        get_db_session=lambda: session_factory(),
+        get_db_session=request_scoped_db,
         get_secret_key=lambda: settings.secret_key,
     )
 
@@ -154,7 +173,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             logger.exception("failed to deliver alert webhook")
 
     def regenerate_and_push_crl() -> None:
-        session = session_factory()
+        session = request_scoped_db()
         pem = cert_service.regenerate_crl(
             session, settings.pki_path, inter_cert, inter_key, settings.crl_validity_days
         )
@@ -176,7 +195,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     deps = RouteDeps(
         require_admin=require_admin,
         require_super_admin=require_super_admin,
-        get_db_session=lambda: session_factory(),
+        get_db_session=request_scoped_db,
         pki_path=settings.pki_path,
         db_path=settings.db_path,
         inter_cert=inter_cert,
@@ -201,6 +220,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     templates.env.filters["subsidiary_color"] = db.subsidiary_color
 
     app = FastAPI(title="RADIUS Certificate Manager")
+
+    @app.middleware("http")
+    async def _scope_db_session_to_request(request: Request, call_next):
+        token = _request_db_key.set(id(request))
+        try:
+            return await call_next(request)
+        finally:
+            request_scoped_db.remove()
+            _request_db_key.reset(token)
+
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
     app.include_router(get_certs_router(deps))
     app.include_router(get_health_router(deps))
