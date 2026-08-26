@@ -11,6 +11,16 @@
       <option value="super_admin">Super Admin</option>
     </select>
   </div>
+  <div>
+    <label class="field-label">Restrict to subsidiary (optional)</label>
+    <select name="subsidiary_scope" class="field-input">
+      <option value="">Unrestricted — sees every company</option>
+      {% for s in subsidiaries %}
+      <option value="{{ s }}">{{ s }}</option>
+      {% endfor %}
+    </select>
+    <p class="text-xs text-slate-500 mt-1">A scoped admin can only see and manage certs for that one company — bulk issue and the activity log are unavailable to them.</p>
+  </div>
   <button type="submit" class="btn-primary w-full">
     Create (temporary password shown once)
   </button>

@@ -49,6 +49,9 @@
           {% else %}
           <span class="text-slate-600 text-sm">Admin</span>
           {% endif %}
+          {% if a.subsidiary_scope %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ml-1" style="background: {{ a.subsidiary_scope | subsidiary_color }}22; color: {{ a.subsidiary_scope | subsidiary_color }};">{{ a.subsidiary_scope }}</span>
+          {% endif %}
         </td>
         <td>
           {% if a.is_active %}

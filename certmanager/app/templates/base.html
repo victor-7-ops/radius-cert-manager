@@ -40,20 +40,24 @@
           <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4Zm2 3a1 1 0 0 0 0 2h8a1 1 0 1 0 0-2H6Zm0 4a1 1 0 1 0 0 2h4a1 1 0 1 0 0-2H6Z" clip-rule="evenodd"/></svg>
           <span class="hidden sm:inline">Certificates</span>
         </a>
+        {% if not admin.subsidiary_scope %}
         <a href="/certs/bulk" class="{{ 'nav-link-active' if path.startswith('/certs/bulk') else 'nav-link' }}">
           <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4Z"/><path fill-rule="evenodd" d="M3 10a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6Zm4 2a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2H7Z" clip-rule="evenodd"/></svg>
           <span class="hidden sm:inline">Bulk issue</span>
         </a>
+        {% endif %}
         {% if admin.role.value == "super_admin" %}
         <a href="/admins" class="{{ 'nav-link-active' if path.startswith('/admins') else 'nav-link' }}">
           <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z"/></svg>
           <span class="hidden sm:inline">Admins</span>
         </a>
         {% endif %}
+        {% if not admin.subsidiary_scope %}
         <a href="/activity" class="{{ 'nav-link-active' if path.startswith('/activity') else 'nav-link' }}">
           <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>
           <span class="hidden sm:inline">Activity</span>
         </a>
+        {% endif %}
       </div>
       <div class="flex items-center gap-2 sm:gap-3 shrink-0">
         <button type="button" id="theme-toggle" class="btn-ghost !px-2" title="Toggle dark mode" aria-label="Toggle dark mode">

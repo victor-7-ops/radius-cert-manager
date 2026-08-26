@@ -20,8 +20,17 @@ from app import bulk_service, crl_health, db
 def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     router = APIRouter(tags=["bulk"])
 
+    def _require_unscoped(admin: db.Admin) -> None:
+        # Bulk issue takes a subsidiary per row (CSV column or pasted
+        # list), which a subsidiary-scoped admin could use to issue
+        # outside their own company — simplest safe rule is to keep bulk
+        # issue as an unscoped-admin tool entirely.
+        if admin.subsidiary_scope:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "bulk issue isn't available to a subsidiary-scoped admin")
+
     @router.get("/certs/bulk")
     def bulk_form(request: Request, admin: db.Admin = Depends(deps.require_admin)):
+        _require_unscoped(admin)
         session = deps.get_db_session()
         return templates.TemplateResponse(
             request, "bulk.html", {"admin": admin, **crl_health.banner_context(session)}
@@ -49,6 +58,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         csv_file: UploadFile | None = None,
         admin: db.Admin = Depends(deps.require_admin),
     ):
+        _require_unscoped(admin)
         session = deps.get_db_session()
         input_rows = bulk_service.parse_identifiers(identifiers_text)
         if csv_file is not None and csv_file.filename:
@@ -98,6 +108,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         export_password: str = Form(...),
         admin: db.Admin = Depends(deps.require_admin),
     ):
+        _require_unscoped(admin)
         input_rows = deps.take_pending_preview(batch_token)
         if input_rows is None:
             raise HTTPException(status.HTTP_410_GONE, "preview expired or already confirmed")

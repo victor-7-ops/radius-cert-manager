@@ -57,6 +57,19 @@ def _effective_status(cert: db.Certificate) -> str:
     return cert.status.value if hasattr(cert.status, "value") else cert.status
 
 
+def _require_cert_scope(admin: db.Admin, cert: db.Certificate) -> None:
+    """A subsidiary-scoped admin can only act on certs for their own
+    company. Unscoped admins (subsidiary_scope is None/blank) are
+    unrestricted, same as before this feature existed."""
+    if admin.subsidiary_scope and cert.subsidiary != admin.subsidiary_scope:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not permitted for this subsidiary")
+
+
+def _require_unscoped(admin: db.Admin, detail: str) -> None:
+    if admin.subsidiary_scope:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail)
+
+
 def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     router = APIRouter(tags=["web"])
 
@@ -72,7 +85,10 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         now = datetime.datetime.now(datetime.timezone.utc)
         thirty_days = now + datetime.timedelta(days=30)
 
-        rows = session.scalars(select(db.Certificate)).all()
+        cert_stmt = select(db.Certificate)
+        if admin.subsidiary_scope:
+            cert_stmt = cert_stmt.where(db.Certificate.subsidiary == admin.subsidiary_scope)
+        rows = session.scalars(cert_stmt).all()
         counts = {"active": 0, "expiring_soon": 0, "suspended": 0, "revoked": 0, "expired": 0}
         expiring = []
         for c in rows:
@@ -167,11 +183,24 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             for key, label in month_labels
         ]
 
-        orphans = reconcile.reconcile_issued_dir(session, deps.pki_path / "issued")
+        orphans = reconcile.reconcile_issued_dir(session, deps.pki_path / "issued") if not admin.subsidiary_scope else []
 
-        recent = session.scalars(
-            select(db.AuditLog).order_by(db.AuditLog.timestamp.desc()).limit(10)
-        ).all()
+        if admin.subsidiary_scope:
+            # AuditLog has no subsidiary column, so filter by matching
+            # target against this admin's own certs — that also drops
+            # admin-management entries (their target is a username, which
+            # won't match any cn), which a scoped admin shouldn't see anyway.
+            own_cns = {c.cn for c in rows}
+            recent = [
+                a for a in session.scalars(
+                    select(db.AuditLog).order_by(db.AuditLog.timestamp.desc()).limit(200)
+                ).all()
+                if a.target in own_cns
+            ][:10]
+        else:
+            recent = session.scalars(
+                select(db.AuditLog).order_by(db.AuditLog.timestamp.desc()).limit(10)
+            ).all()
 
         health = crl_health.get_health(session)
 
@@ -212,10 +241,15 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             },
         )
 
-    def _cert_filter_stmt(q, status, employee, subsidiary):
+    def _cert_filter_stmt(q, status, employee, subsidiary, admin=None):
         """Shared by the list page and the CSV export so the two can
         never silently drift apart on what a filter means."""
         stmt = select(db.Certificate)
+        if admin is not None and admin.subsidiary_scope:
+            # Scoped admin: hard-filter to their own subsidiary regardless
+            # of what's in the query string — this is the enforcement
+            # point, the UI-level subsidiary filter is just a convenience.
+            stmt = stmt.where(db.Certificate.subsidiary == admin.subsidiary_scope)
         if q:
             normalized_mac = normalize_mac(q)
             match = (
@@ -267,7 +301,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     ):
         session = deps.get_db_session()
         page_size = 50
-        stmt = _cert_filter_stmt(q, status, employee, subsidiary).offset((page - 1) * page_size).limit(page_size)
+        stmt = _cert_filter_stmt(q, status, employee, subsidiary, admin).offset((page - 1) * page_size).limit(page_size)
         rows = session.scalars(stmt).all()
 
         items = [
@@ -295,8 +329,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "q": q,
                 "status_filter": status,
                 "employee_filter": employee,
-                "subsidiary_filter": subsidiary,
-                "subsidiaries": db.SUBSIDIARIES,
+                "subsidiary_filter": admin.subsidiary_scope or subsidiary,
+                "subsidiaries": [admin.subsidiary_scope] if admin.subsidiary_scope else db.SUBSIDIARIES,
                 **_crl_banner_context(session),
             },
         )
@@ -312,7 +346,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         # Whatever filter the admin currently has applied on the list
         # page — the export is "what I'm looking at", not "everything".
         session = deps.get_db_session()
-        rows = session.scalars(_cert_filter_stmt(q, status, employee, subsidiary)).all()
+        rows = session.scalars(_cert_filter_stmt(q, status, employee, subsidiary, admin)).all()
 
         buf = io.StringIO()
         writer = csv.writer(buf)
@@ -356,7 +390,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "admin": admin,
                 "request_id": str(uuid.uuid4()),
                 "device_types": db.DEVICE_TYPES,
-                "subsidiaries": db.SUBSIDIARIES,
+                "subsidiaries": [admin.subsidiary_scope] if admin.subsidiary_scope else db.SUBSIDIARIES,
+                "form": {"subsidiary": admin.subsidiary_scope} if admin.subsidiary_scope else None,
                 **_crl_banner_context(session),
             },
         )
@@ -376,11 +411,16 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         admin: db.Admin = Depends(deps.require_admin),
     ):
         session = deps.get_db_session()
+        if admin.subsidiary_scope:
+            # Scoped admin: the subsidiary isn't a free-text choice, it's
+            # who they are. Ignore whatever the form sent (hidden/disabled
+            # client-side, but never trust that alone) and force it.
+            subsidiary = admin.subsidiary_scope
         form_context = {
             "admin": admin,
             "request_id": request_id,
             "device_types": db.DEVICE_TYPES,
-            "subsidiaries": db.SUBSIDIARIES,
+            "subsidiaries": [admin.subsidiary_scope] if admin.subsidiary_scope else db.SUBSIDIARIES,
             "form": {
                 "cn": cn,
                 "employee_name": employee_name,
@@ -468,6 +508,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "nothing to deliver")
         session = deps.get_db_session()
         cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+        if cert is not None:
+            _require_cert_scope(admin, cert)
 
         # The device that needs the .p12 usually isn't logged into this
         # app (an employee's phone, not the admin's browser), so the QR
@@ -510,6 +552,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     def download_bundle(serial: str, admin: db.Admin = Depends(deps.require_admin)):
         from fastapi import Response
 
+        if admin.subsidiary_scope:
+            session = deps.get_db_session()
+            cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+            if cert is not None:
+                _require_cert_scope(admin, cert)
         bundle = deps.take_pending_bundle(serial)
         if bundle is None:
             raise HTTPException(status.HTTP_410_GONE, "bundle already consumed or not found")
@@ -525,6 +572,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
         if cert is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        _require_cert_scope(admin, cert)
 
         history_rows = session.scalars(
             select(db.AuditLog)
@@ -582,9 +630,17 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             },
         )
 
+    def _load_cert_or_404_in_scope(session, admin: db.Admin, serial: str) -> db.Certificate:
+        cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+        if cert is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        _require_cert_scope(admin, cert)
+        return cert
+
     @router.post("/certs/{serial}/reissue")
     def reissue(request: Request, serial: str, admin: db.Admin = Depends(deps.require_admin)):
         session = deps.get_db_session()
+        _load_cert_or_404_in_scope(session, admin, serial)
         try:
             result = cert_service.reissue_certificate(
                 session,
@@ -606,6 +662,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     @router.post("/certs/{serial}/suspend")
     def suspend(request: Request, serial: str, reason: str = "", admin: db.Admin = Depends(deps.require_admin)):
         session = deps.get_db_session()
+        _load_cert_or_404_in_scope(session, admin, serial)
         try:
             cert = cert_service.suspend(session, deps.pki_path, serial, reason or "not specified", admin.username)
         except KeyError:
@@ -617,6 +674,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     @router.post("/certs/{serial}/unsuspend")
     def unsuspend(request: Request, serial: str, admin: db.Admin = Depends(deps.require_super_admin)):
         session = deps.get_db_session()
+        _load_cert_or_404_in_scope(session, admin, serial)
         try:
             cert = cert_service.unsuspend(session, deps.pki_path, serial, admin.username)
         except KeyError:
@@ -627,6 +685,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     @router.post("/certs/{serial}/revoke")
     def revoke(request: Request, serial: str, reason: str = "", admin: db.Admin = Depends(deps.require_super_admin)):
         session = deps.get_db_session()
+        _load_cert_or_404_in_scope(session, admin, serial)
         try:
             cert = cert_service.revoke(session, deps.pki_path, serial, reason or "not specified", admin.username)
         except KeyError:
@@ -652,6 +711,16 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         done = 0
         missing = 0
         for serial in dict.fromkeys(serials):  # de-dupe, preserve order
+            cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+            if cert is None:
+                missing += 1
+                continue
+            # Silently skip out-of-scope certs rather than 403ing the
+            # whole batch — the checkbox UI is already scope-filtered, so
+            # this only fires against a hand-crafted request.
+            if admin.subsidiary_scope and cert.subsidiary != admin.subsidiary_scope:
+                missing += 1
+                continue
             try:
                 fn(session, deps.pki_path, serial, reason or "bulk action", admin.username)
                 done += 1
@@ -685,7 +754,10 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         items = []
         for a in rows:
             is_last = a.role == db.AdminRole.super_admin and a.is_active and super_count == 1
-            items.append({"id": a.id, "username": a.username, "role": a.role.value, "is_active": a.is_active, "is_last_super_admin": is_last})
+            items.append({
+                "id": a.id, "username": a.username, "role": a.role.value, "is_active": a.is_active,
+                "is_last_super_admin": is_last, "subsidiary_scope": a.subsidiary_scope,
+            })
         return templates.TemplateResponse(
             request,
             "admin_list.html",
@@ -694,13 +766,14 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/admins/new-form")
     def admin_new_form(request: Request, admin: db.Admin = Depends(deps.require_super_admin)):
-        return templates.TemplateResponse(request, "admin_new_form.html", {})
+        return templates.TemplateResponse(request, "admin_new_form.html", {"subsidiaries": db.SUBSIDIARIES})
 
     @router.post("/admins")
     def admin_create(
         request: Request,
         username: str = Form(...),
         role: str = Form(...),
+        subsidiary_scope: str = Form(""),
         admin: db.Admin = Depends(deps.require_super_admin),
     ):
         session = deps.get_db_session()
@@ -713,6 +786,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             role=db.AdminRole(role),
             must_change_password=True,
             created_by=admin.username,
+            subsidiary_scope=subsidiary_scope.strip() or None,
         )
         session.add(new_admin)
         db.audit(session, actor=admin.username, action="create_admin", target=username)
@@ -771,6 +845,10 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         date_to: str | None = None,
         admin: db.Admin = Depends(deps.require_admin),
     ):
+        # AuditLog has no subsidiary column, so there's no clean way to
+        # scope this view — keep it unscoped-admin only rather than
+        # showing a scoped admin other subsidiaries' activity.
+        _require_unscoped(admin, "activity log isn't available to a subsidiary-scoped admin")
         session = deps.get_db_session()
         LIMIT = 200
         stmt = select(db.AuditLog).order_by(db.AuditLog.timestamp.desc())

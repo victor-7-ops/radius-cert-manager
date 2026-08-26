@@ -17,6 +17,14 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **Per-subsidiary admin scoping**: an admin created with a "Restrict to
+  subsidiary" set can only see/manage certs for that one company —
+  enforced at the route layer (cert list/detail/export/dashboard, not
+  just hidden UI). Issuing forces the subsidiary to their own regardless
+  of what the form sends. Bulk issue and the activity log are unscoped-
+  admin-only (bulk issue lets a subsidiary override per row; the audit
+  log has no subsidiary column to filter by, so a scoped admin gets 403
+  rather than seeing everyone's activity).
 - **Duplicate MAC/serial warning at issue time**: reusing a MAC or
   serial that's already on another *active* certificate shows a
   warning with a link to the existing cert, rather than silently
@@ -111,8 +119,8 @@ device on the network. MAC addresses are validated and normalized to
 `aa:bb:cc:dd:ee:ff` regardless of how they're typed in (colon, dash,
 Cisco dotted, or bare hex). None of this touches the certificate
 itself — it's tracking metadata in SQLite only. Existing databases are
-migrated in place on startup (`db.py`'s `_migrate_certificate_columns`
-adds the new columns via `ALTER TABLE` if they're missing — there's no
+migrated in place on startup (`db.py`'s `_migrate_columns` adds the
+new columns via `ALTER TABLE` if they're missing — there's no
 Alembic in this project, so this is the whole migration story; it only
 ever adds columns, never drops or renames).
 

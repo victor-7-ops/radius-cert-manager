@@ -120,6 +120,12 @@ class Admin(Base):
     locked_until: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    subsidiary_scope: Mapped[str | None] = mapped_column(String, nullable=True)
+    # None/blank = unrestricted (sees every subsidiary, same as today).
+    # Set = this admin can only see/manage certs for that one company —
+    # scoping is a role, so a super_admin should generally stay
+    # unscoped; the UI doesn't prevent scoping one, but it isn't the
+    # intended use.
 
 
 class AuditLog(Base):
@@ -193,19 +199,25 @@ def subsidiary_color(name: str | None) -> str:
     return SUBSIDIARY_COLORS.get(name, SUBSIDIARY_COLOR_UNASSIGNED)
 
 
-def _migrate_certificate_columns(engine) -> None:
+_ADMIN_COLUMN_MIGRATIONS = [
+    ("subsidiary_scope", "VARCHAR"),
+]
+
+
+def _migrate_columns(engine, table: str, migrations: list[tuple[str, str]]) -> None:
     with engine.begin() as conn:
-        existing = {row[1] for row in conn.execute(text("PRAGMA table_info(certificates)"))}
+        existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
         if not existing:
             return  # table doesn't exist yet — create_all will make it with all columns
-        for column_name, sql_type in _CERTIFICATE_COLUMN_MIGRATIONS:
+        for column_name, sql_type in migrations:
             if column_name not in existing:
-                conn.execute(text(f"ALTER TABLE certificates ADD COLUMN {column_name} {sql_type}"))
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column_name} {sql_type}"))
 
 
 def init_db(engine) -> None:
     Base.metadata.create_all(engine)
-    _migrate_certificate_columns(engine)
+    _migrate_columns(engine, "certificates", _CERTIFICATE_COLUMN_MIGRATIONS)
+    _migrate_columns(engine, "admins", _ADMIN_COLUMN_MIGRATIONS)
 
 
 def audit(
