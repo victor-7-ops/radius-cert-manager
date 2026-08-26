@@ -18,7 +18,7 @@ import qrcode.image.svg
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app import auth, cert_service, crl_health, db, reconcile
 from app.validation import CN_RE, normalize_mac
@@ -372,6 +372,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         device_serial: str = Form(""),
         subsidiary: str = Form(""),
         request_id: str = Form(...),
+        confirm_duplicate: str = Form(""),
         admin: db.Admin = Depends(deps.require_admin),
     ):
         session = deps.get_db_session()
@@ -405,6 +406,28 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                     {**form_context, "error": "Invalid MAC address format."},
                     status_code=400,
                 )
+
+        stripped_serial = device_serial.strip()
+        if (normalized_mac or stripped_serial) and not confirm_duplicate:
+            # A reused MAC/serial usually means a typo or a device that
+            # was never decommissioned in this system, not an intentional
+            # reissue — flag it but let the admin push through anyway,
+            # since a legitimate reuse (repurposed hardware) does happen.
+            conds = []
+            if normalized_mac:
+                conds.append(db.Certificate.device_mac == normalized_mac)
+            if stripped_serial:
+                conds.append(db.Certificate.device_serial == stripped_serial)
+            duplicates = session.scalars(
+                select(db.Certificate).where(db.Certificate.status == db.CertStatus.active, or_(*conds))
+            ).all()
+            if duplicates:
+                return templates.TemplateResponse(
+                    request,
+                    "issue.html",
+                    {**form_context, "duplicate_matches": duplicates},
+                )
+
         try:
             result = cert_service.issue_certificate(
                 session,

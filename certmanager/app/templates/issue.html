@@ -13,9 +13,21 @@
     {{ error }}
   </div>
   {% endif %}
+  {% if duplicate_matches %}
+  <div role="alert" class="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+    <div class="font-medium mb-1">This MAC and/or serial is already on an active certificate:</div>
+    <ul class="list-disc list-inside space-y-0.5">
+      {% for c in duplicate_matches %}
+      <li><a href="/certs/{{ c.serial }}" class="underline hover:no-underline" target="_blank">{{ c.cn }}</a>{% if c.employee_name %} — {{ c.employee_name }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    <div class="mt-1.5">Double-check the CN below, or continue if this is intentional (repurposed hardware, corrected record, etc).</div>
+  </div>
+  {% endif %}
   <form method="post" action="/certs/issue" class="space-y-4"
-        onsubmit="const b=this.querySelector('button'); b.disabled=true; b.innerText='Issuing…';">
+        onsubmit="const b=this.querySelector('button[type=submit]'); b.disabled=true; b.innerText='Issuing…';">
     <input type="hidden" name="request_id" value="{{ request_id }}">
+    <input type="hidden" name="confirm_duplicate" value="{{ '1' if duplicate_matches else '' }}">
     <div>
       <label for="cn" class="field-label">Identifier (CN)</label>
       <input id="cn" name="cn" type="text" required autofocus value="{{ form.cn if form else '' }}"
@@ -77,9 +89,9 @@
       <label for="note" class="field-label">Note (optional)</label>
       <input id="note" name="note" type="text" value="{{ form.note if form else '' }}" class="field-input">
     </div>
-    <button type="submit" class="btn-primary w-full">
+    <button type="submit" class="{{ 'btn-warn' if duplicate_matches else 'btn-primary' }} w-full">
       <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
-      Issue certificate
+      {{ "Issue anyway" if duplicate_matches else "Issue certificate" }}
     </button>
   </form>
 </div>

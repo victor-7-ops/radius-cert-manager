@@ -17,6 +17,13 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **Duplicate MAC/serial warning at issue time**: reusing a MAC or
+  serial that's already on another *active* certificate shows a
+  warning with a link to the existing cert, rather than silently
+  issuing a second one — catches typos and forgotten-decommission
+  mistakes. Doesn't fire against suspended/revoked certs, since
+  reusing a serial after decommissioning the old cert is normal. One
+  click ("Issue anyway") overrides it.
 - **Certificate search** now also matches device MAC (any input format,
   normalized the same way as at issue time) and device serial/asset
   tag, not just CN/employee.

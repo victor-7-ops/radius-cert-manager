@@ -433,3 +433,71 @@ def test_delivery_page_qr_download_rejects_bad_token(app_settings, throwaway_pki
     other_token = auth.make_bundle_qr_token(app_settings.secret_key, "some-other-serial")
     resp2 = anon_client.get(f"/certs/{cert.serial}/bundle/qr", params={"token": other_token})
     assert resp2.status_code == 403
+
+
+def test_issue_warns_on_duplicate_mac_and_can_be_overridden(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "dup-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={
+        "cn": "dup-mac-first", "request_id": str(uuid.uuid4()), "device_mac": "aa:bb:cc:11:22:33",
+    })
+
+    # a second device with the same MAC (typed in a different format) is
+    # flagged rather than silently issued
+    resp = client.post("/certs/issue", data={
+        "cn": "dup-mac-second", "request_id": str(uuid.uuid4()), "device_mac": "AA-BB-CC-11-22-33",
+    })
+    assert resp.status_code == 200
+    assert "already on an active certificate" in resp.text
+    assert "dup-mac-first" in resp.text
+
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    assert session.query(db.Certificate).filter_by(cn="dup-mac-second").first() is None
+
+    # re-submitting with confirm_duplicate=1 (what the "Issue anyway"
+    # button sends) goes through
+    resp2 = client.post("/certs/issue", data={
+        "cn": "dup-mac-second", "request_id": str(uuid.uuid4()),
+        "device_mac": "AA-BB-CC-11-22-33", "confirm_duplicate": "1",
+    })
+    assert resp2.status_code == 200
+    session.expire_all()
+    assert session.query(db.Certificate).filter_by(cn="dup-mac-second").one().device_mac == "aa:bb:cc:11:22:33"
+
+
+def test_issue_warns_on_duplicate_serial_but_not_against_revoked_certs(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "dup-serial-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={
+        "cn": "dup-serial-first", "request_id": str(uuid.uuid4()), "device_serial": "ASSET-9999",
+    })
+
+    resp = client.post("/certs/issue", data={
+        "cn": "dup-serial-second", "request_id": str(uuid.uuid4()), "device_serial": "ASSET-9999",
+    })
+    assert "already on an active certificate" in resp.text
+
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    first = session.query(db.Certificate).filter_by(cn="dup-serial-first").one()
+    client.post(f"/certs/{first.serial}/revoke", data={"reason": "decommissioned"})
+
+    # once the original is revoked, reusing its serial/asset tag no
+    # longer needs an override — this is the normal hardware-reuse case
+    resp2 = client.post("/certs/issue", data={
+        "cn": "dup-serial-third", "request_id": str(uuid.uuid4()), "device_serial": "ASSET-9999",
+    })
+    assert "already on an active certificate" not in resp2.text
+    session.expire_all()
+    assert session.query(db.Certificate).filter_by(cn="dup-serial-third").one().device_serial == "ASSET-9999"
