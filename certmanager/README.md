@@ -28,9 +28,16 @@ design rationale and Phase A/F–I work not yet built.
 - Topline branding (logo, favicon), boosted nav transitions, colored
   avatars, and a general visual pass (see git log for the blow-by-blow).
 
-Not done: dark mode (explicitly out of scope in the handoff's §6.1
-decision — flagged, not silently skipped) and anything requiring the
-live hosts (Phase A — see below).
+- **Dark mode** (explicit request, overriding the handoff's §6.1 "no
+  dark mode in v1" decision): toggle button in the nav, persisted to
+  `localStorage`, defaults to OS preference on first visit. FOUC-safe
+  (theme class applied before the stylesheet loads). Component classes
+  carry `dark:` variants directly; raw Tailwind utility classes already
+  in use across templates (`text-slate-900`, `bg-white`, ...) are
+  overridden via targeted `.dark .{class}` rules in `input.css` rather
+  than touching every template.
+
+Not done: anything requiring the live hosts (Phase A — see below).
 
 ## Status
 
