@@ -167,6 +167,80 @@ def test_parse_csv_reads_subsidiary_as_sixth_column():
     assert rows[0].subsidiary == "Bay Mall"
 
 
+def test_parse_csv_by_name_header_any_column_order():
+    # Same fields as the app's own template, but shuffled and with an
+    # identifier/cn/hostname column present — should map by name, not
+    # position, and ignore nothing since every header is recognized.
+    data = (
+        b"Device Serial,Employee Name,Identifier,Device MAC,Subsidiary,Device Type\n"
+        b"C02XG2JMQ6L9,Jordan Ellis,device-a,AA:BB:CC:DD:EE:FF,Bay Mall,Laptop\n"
+    )
+    rows = bulk_service.parse_csv(data)
+    assert len(rows) == 1
+    r = rows[0]
+    assert r.identifier == "device-a"
+    assert r.employee_name == "Jordan Ellis"
+    assert r.device_type == "Laptop"
+    assert r.device_mac == "aa:bb:cc:dd:ee:ff"
+    assert r.device_serial == "C02XG2JMQ6L9"
+    assert r.subsidiary == "Bay Mall"
+
+
+def test_parse_csv_by_name_header_ignores_unrecognized_columns():
+    data = (
+        b"Name,Device Type,MAC Address,Serial Number,Model,Is it a Company issued device?\n"
+        b"John Jake Quino,Laptop,A8-E2-91-95-BD-66,5CD5Q94X37,VICTUS,Yes\n"
+    )
+    rows = bulk_service.parse_csv(data)
+    assert len(rows) == 1
+    r = rows[0]
+    # no identifier/cn/hostname column exists, so the CN is generated
+    # from the fields that do — never left blank or set to "Model"/"Yes"
+    assert r.identifier != ""
+    assert bulk_service.CN_RE.match(r.identifier)
+    assert "quino" in r.identifier.lower()
+    assert r.employee_name == "John Jake Quino"
+    assert r.device_type == "Laptop"
+    assert r.device_serial == "5CD5Q94X37"
+    assert r.device_mac == "a8:e2:91:95:bd:66"
+
+
+def test_parse_csv_by_name_header_generated_cns_are_distinct_per_row():
+    data = (
+        b"Name,Device Type,Serial Number\n"
+        b"John Jake Quino,Laptop,5CD5Q94X37\n"
+        b"Crizaldi Reyes,Laptop,5CD5094XMK\n"
+        b"Rodjohn Tuingco,Laptop,5CD4033N1C\n"
+    )
+    rows = bulk_service.parse_csv(data)
+    identifiers = [r.identifier for r in rows]
+    assert len(identifiers) == len(set(identifiers)) == 3
+    for i in identifiers:
+        assert bulk_service.CN_RE.match(i)
+
+
+def test_parse_csv_by_name_header_with_no_device_columns_still_generates_cn():
+    data = b"Name\nJordan Ellis\n"
+    rows = bulk_service.parse_csv(data)
+    assert len(rows) == 1
+    assert bulk_service.CN_RE.match(rows[0].identifier)
+    assert "jordan" in rows[0].identifier.lower()
+
+
+def test_parse_csv_by_name_header_skips_fully_blank_row():
+    # a trailing CSV line where every recognized column is empty (only
+    # an unmapped column, like a stray checkbox answer, has a value)
+    # must not turn into a fabricated "device" placeholder row
+    data = (
+        b"Name,Device Type,Is it a Company issued device?\n"
+        b"Jordan Ellis,Laptop,Yes\n"
+        b",,Yes\n"
+    )
+    rows = bulk_service.parse_csv(data)
+    assert len(rows) == 1
+    assert "jordan" in rows[0].identifier.lower()
+
+
 def test_issue_batch_stores_subsidiary_and_includes_it_in_manifest(session, tmp_path, throwaway_pki):
     input_rows = [
         bulk_service.BatchInputRow(identifier="bmead-device", subsidiary="BMEAD"),

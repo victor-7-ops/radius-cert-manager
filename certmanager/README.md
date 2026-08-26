@@ -17,6 +17,19 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **Bulk-issue CSV accepts any column order** — headers are matched by
+  name (`Name`/`Employee`/`Owner` → employee_name, `MAC Address` →
+  device_mac, etc, case-insensitive, unrecognized columns like a
+  vendor's `Model` field are just ignored) instead of requiring the
+  app's exact `cn, employee_name, device_type, device_mac,
+  device_serial, subsidiary` order. If the sheet has no
+  identifier/cn/hostname column at all — a real device-inventory export
+  usually doesn't — a CN is generated from employee name + device type
+  + serial (slugified to fit the CN format) instead of failing every
+  row. A fully-blank row is dropped rather than turning into a bogus
+  placeholder cert. Falls back to the old strict positional format
+  when the header row doesn't match anything recognized, so the app's
+  own template and a plain identifier-per-line paste are unaffected.
 - **Fixed a real connection-pool leak**: every route called
   `deps.get_db_session()` straight into `session_factory()` with
   nothing ever closing the result — each request quietly leaked a

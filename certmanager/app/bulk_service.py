@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import zipfile
 from dataclasses import dataclass, field
 
@@ -28,6 +29,31 @@ from app.validation import CN_RE, normalize_mac
 
 MAX_BATCH_SIZE = 100
 _CSV_HEADER_HINTS = {"cn", "identifier", "hostname"}
+
+# Header-name aliases for the by-name CSV path (see parse_csv). Keys are
+# lowercased/stripped header text as it might realistically show up in
+# an inventory export someone already has — not just the app's own
+# template — mapped to the BatchInputRow field it fills. A column whose
+# header matches nothing here (e.g. "Model") is ignored rather than
+# rejected, so an extra column doesn't break the import.
+_HEADER_ALIASES = {
+    "identifier": {"cn", "identifier", "hostname"},
+    "employee_name": {"employee_name", "employee", "name", "owner", "full name", "employee name"},
+    "device_type": {"device_type", "device type", "type"},
+    "device_mac": {"device_mac", "mac", "mac address", "device mac address", "device mac"},
+    "device_serial": {"device_serial", "serial", "serial number", "asset tag", "device serial"},
+    "subsidiary": {"subsidiary", "company", "company / subsidiary", "company/subsidiary"},
+}
+
+
+def _slugify_cn(*parts: str | None) -> str:
+    """Turn free-text (a person's name, a serial number) into something
+    that passes CN_RE — used when a by-name CSV has no identifier/cn/
+    hostname column of its own to use as the certificate CN."""
+    raw = "-".join(p for p in parts if p).lower()
+    slug = re.sub(r"[^a-z0-9._-]+", "-", raw).strip("-")
+    slug = re.sub(r"-{2,}", "-", slug)
+    return slug[:63] or "device"
 
 
 class BatchTooLargeError(Exception):
@@ -60,14 +86,72 @@ def parse_identifiers(raw_text: str) -> list[BatchInputRow]:
     return [BatchInputRow(identifier=line.strip()) for line in raw_text.splitlines() if line.strip()]
 
 
+def _match_header_field(cell: str) -> str | None:
+    cell = cell.strip().lower()
+    for field_name, aliases in _HEADER_ALIASES.items():
+        if cell in aliases:
+            return field_name
+    return None
+
+
 def parse_csv(data: bytes) -> list[BatchInputRow]:
-    """Columns, in order: identifier, employee_name, device_type,
-    device_mac, device_serial, subsidiary. Only the first is required. A
-    header row is detected and skipped if its first cell looks like one."""
+    """Two supported shapes:
+
+    1. By-name header: the first row's cells are matched against
+       _HEADER_ALIASES in any order, any subset, plus any number of
+       unrecognized columns (ignored) — so a CSV exported from wherever
+       device inventory already lives doesn't need reshuffling to match
+       this app's column order. If no column matches identifier/cn/
+       hostname, the CN is generated from employee_name + device_serial
+       (or whatever's available) instead of left missing.
+
+    2. Positional (no recognized header): identifier, employee_name,
+       device_type, device_mac, device_serial, subsidiary, in that
+       order — only the first is required. This is what the app's own
+       "download a starter CSV" produces, and how a plain identifier-
+       per-line paste has always been read as a 1-column CSV.
+    """
     text = data.decode("utf-8-sig")
     reader = csv.reader(io.StringIO(text))
     rows = [r for r in reader if r]
-    if rows and rows[0] and rows[0][0].strip().lower() in _CSV_HEADER_HINTS:
+    if not rows:
+        return []
+
+    header_map = {i: _match_header_field(cell) for i, cell in enumerate(rows[0])}
+    has_named_header = any(header_map.values())
+
+    if has_named_header:
+        rows = rows[1:]
+        has_identifier_column = "identifier" in header_map.values()
+        out = []
+        for row in rows:
+            values = {}
+            for i, cell in enumerate(row):
+                field_name = header_map.get(i)
+                if field_name:
+                    values[field_name] = cell.strip() or None
+            if values.get("device_mac"):
+                values["device_mac"] = normalize_mac(values["device_mac"]) or values["device_mac"]
+            if not any(values.values()):
+                continue  # a blank row (e.g. a trailing CSV line with only an unmapped column set)
+            identifier = values.get("identifier")
+            if not identifier and not has_identifier_column:
+                identifier = _slugify_cn(
+                    values.get("employee_name"), values.get("device_type"), values.get("device_serial")
+                )
+            if not identifier:
+                continue
+            out.append(BatchInputRow(
+                identifier=identifier,
+                employee_name=values.get("employee_name"),
+                device_type=values.get("device_type"),
+                device_mac=values.get("device_mac"),
+                device_serial=values.get("device_serial"),
+                subsidiary=values.get("subsidiary"),
+            ))
+        return out
+
+    if rows[0] and rows[0][0].strip().lower() in _CSV_HEADER_HINTS:
         rows = rows[1:]
 
     out = []
