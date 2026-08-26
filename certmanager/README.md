@@ -17,6 +17,16 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **Bulk suspend/revoke**: checkbox per row (desktop table) + a floating
+  action bar once anything's selected. Suspend is any admin; revoke is
+  gated to super admin same as the single-cert route (`/certs/bulk-action`).
+  De-dupes serials and reports a not-found count without failing the
+  whole batch.
+- **Activity log filters**: action is now an exact-match dropdown driven
+  by the distinct actions actually in the DB (was a substring match that
+  could cross-match, e.g. "issue" inside "reissue"-adjacent text), plus
+  an inclusive date-from/date-to range. Truncation at the 200-row cap
+  is now surfaced instead of silent.
 - **Toast notifications** on suspend/unsuspend/revoke/admin actions,
   carried via a one-shot `?flash=` query param on the redirect, stripped
   from the URL client-side after showing.

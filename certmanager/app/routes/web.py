@@ -560,6 +560,40 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         deps.regenerate_and_push_crl()
         return RedirectResponse(_flash(f"/certs/{serial}", f"{cert.cn} revoked.", "danger"), status_code=303)
 
+    @router.post("/certs/bulk-action")
+    def cert_bulk_action(
+        request: Request,
+        serials: list[str] = Form(...),
+        bulk_action: str = Form(..., alias="action"),
+        reason: str = "",
+        admin: db.Admin = Depends(deps.require_admin),
+    ):
+        if bulk_action not in ("suspend", "revoke"):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid action")
+        if bulk_action == "revoke" and admin.role != db.AdminRole.super_admin:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "only a super admin can revoke")
+
+        session = deps.get_db_session()
+        fn = cert_service.suspend if bulk_action == "suspend" else cert_service.revoke
+        done = 0
+        missing = 0
+        for serial in dict.fromkeys(serials):  # de-dupe, preserve order
+            try:
+                fn(session, deps.pki_path, serial, reason or "bulk action", admin.username)
+                done += 1
+            except KeyError:
+                missing += 1
+        if done:
+            deps.regenerate_and_push_crl()
+
+        verb = "suspended" if bulk_action == "suspend" else "revoked"
+        kind = "warn" if bulk_action == "suspend" else "danger"
+        msg = f"{done} certificate{'s' if done != 1 else ''} {verb}."
+        if missing:
+            msg += f" {missing} not found."
+        dest = request.headers.get("referer", "/certs")
+        return RedirectResponse(_flash(dest, msg, kind), status_code=303)
+
     # --- Admin management (Super Admin only) ---
 
     def _active_super_admin_count(session) -> int:

@@ -275,3 +275,76 @@ def test_activity_log_action_and_date_filters(app_settings, throwaway_pki, monke
     resp = client.get("/activity", params={"date_from": "not-a-date"})
     assert resp.status_code == 200
     assert "activity-device" in resp.text
+
+
+def test_bulk_suspend(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "bulk-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={"cn": "bulk-a", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "bulk-b", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "bulk-c", "request_id": str(uuid.uuid4())})
+
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    a = session.query(db.Certificate).filter_by(cn="bulk-a").one()
+    b = session.query(db.Certificate).filter_by(cn="bulk-b").one()
+
+    resp = client.post(
+        "/certs/bulk-action",
+        data={"action": "suspend", "reason": "quarterly sweep", "serials": [a.serial, b.serial, "does-not-exist"]},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    location = resp.headers["location"]
+    assert "flash=" in location
+    assert "flash_kind=warn" in location
+
+    session.expire_all()
+    assert session.query(db.Certificate).filter_by(cn="bulk-a").one().status == db.CertStatus.suspended
+    assert session.query(db.Certificate).filter_by(cn="bulk-b").one().status == db.CertStatus.suspended
+    assert session.query(db.Certificate).filter_by(cn="bulk-c").one().status == db.CertStatus.active
+
+
+def test_bulk_revoke_requires_super_admin(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    plain_admin = _seed_admin(app_settings, "not-super", db.AdminRole.admin)
+    super_admin = _seed_admin(app_settings, "is-super", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+
+    _login(client, app_settings, plain_admin)
+    client.post("/certs/issue", data={"cn": "bulk-revoke-target", "request_id": str(uuid.uuid4())})
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    cert = session.query(db.Certificate).filter_by(cn="bulk-revoke-target").one()
+
+    resp = client.post("/certs/bulk-action", data={"action": "revoke", "serials": [cert.serial]})
+    assert resp.status_code == 403
+    session.expire_all()
+    assert session.query(db.Certificate).filter_by(cn="bulk-revoke-target").one().status == db.CertStatus.active
+
+    _login(client, app_settings, super_admin)
+    resp = client.post("/certs/bulk-action", data={"action": "revoke", "serials": [cert.serial]}, follow_redirects=False)
+    assert resp.status_code == 303
+    assert "flash_kind=danger" in resp.headers["location"]
+    session.expire_all()
+    assert session.query(db.Certificate).filter_by(cn="bulk-revoke-target").one().status == db.CertStatus.revoked
+
+
+def test_bulk_action_rejects_invalid_action_name(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "bulk-invalid-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    resp = client.post("/certs/bulk-action", data={"action": "delete-everything", "serials": ["whatever"]})
+    assert resp.status_code == 400

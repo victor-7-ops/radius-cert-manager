@@ -81,6 +81,9 @@
     <table>
       <thead>
         <tr>
+          <th class="w-10">
+            <input type="checkbox" id="bulk-select-all" class="rounded border-slate-300 dark:border-slate-600" aria-label="Select all">
+          </th>
           <th>CN</th>
           <th>Employee</th>
           <th>Device</th>
@@ -93,6 +96,11 @@
       <tbody>
         {% for c in items %}
         <tr class="anim-rise" style="animation-delay: {{ [loop.index0, 12] | min * 30 }}ms">
+          <td>
+            {% if c.status != "revoked" %}
+            <input type="checkbox" class="bulk-select rounded border-slate-300 dark:border-slate-600" value="{{ c.serial }}" data-cn="{{ c.cn }}" aria-label="Select {{ c.cn }}">
+            {% endif %}
+          </td>
           <td>
             <a href="/certs/{{ c.serial }}" class="text-slate-900 font-medium hover:underline">{{ c.cn }}</a>
             {% if c.subsidiary %}
@@ -166,4 +174,78 @@
   </div>
   {% endif %}
 </div>
+
+<div id="bulk-bar" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-20 card px-4 py-3 flex items-center gap-3 shadow-lg">
+  <span id="bulk-count" class="text-sm font-medium text-slate-700 dark:text-slate-200">0 selected</span>
+  <button type="button" id="bulk-suspend-btn" class="btn-warn">Suspend</button>
+  {% if admin.role.value == "super_admin" %}
+  <button type="button" id="bulk-revoke-btn" class="btn-danger">Revoke</button>
+  {% endif %}
+  <button type="button" id="bulk-clear-btn" class="btn-ghost">Clear</button>
+</div>
+
+<form id="bulk-action-form" method="post" action="/certs/bulk-action" class="hidden"></form>
+
+<script>
+  (function () {
+    var bar = document.getElementById('bulk-bar');
+    var count = document.getElementById('bulk-count');
+
+    function selected() {
+      return Array.prototype.slice.call(document.querySelectorAll('.bulk-select:checked'));
+    }
+
+    function sync() {
+      var n = selected().length;
+      bar.classList.toggle('hidden', n === 0);
+      count.textContent = n + (n === 1 ? ' selected' : ' selected');
+    }
+
+    // Delegated so it survives htmx swapping #cert-results on filter changes.
+    document.addEventListener('change', function (e) {
+      if (e.target.id === 'bulk-select-all') {
+        document.querySelectorAll('.bulk-select').forEach(function (cb) { cb.checked = e.target.checked; });
+        sync();
+      } else if (e.target.classList.contains('bulk-select')) {
+        sync();
+      }
+    });
+
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      if (e.target.id === 'cert-results') sync();
+    });
+
+    document.getElementById('bulk-clear-btn').addEventListener('click', function () {
+      document.querySelectorAll('.bulk-select, #bulk-select-all').forEach(function (cb) { cb.checked = false; });
+      sync();
+    });
+
+    function submitBulk(action, verb) {
+      var rows = selected();
+      if (!rows.length) return;
+      var reason = window.prompt('Reason for ' + verb + ' ' + rows.length + ' certificate' + (rows.length === 1 ? '' : 's') + '?', '');
+      if (reason === null) return;
+      if (!window.confirm(verb.charAt(0).toUpperCase() + verb.slice(1) + ' ' + rows.length + ' certificate' + (rows.length === 1 ? '' : 's') + '?')) return;
+
+      var form = document.getElementById('bulk-action-form');
+      form.innerHTML = '';
+      var actionInput = document.createElement('input');
+      actionInput.type = 'hidden'; actionInput.name = 'action'; actionInput.value = action;
+      form.appendChild(actionInput);
+      var reasonInput = document.createElement('input');
+      reasonInput.type = 'hidden'; reasonInput.name = 'reason'; reasonInput.value = reason;
+      form.appendChild(reasonInput);
+      rows.forEach(function (cb) {
+        var input = document.createElement('input');
+        input.type = 'hidden'; input.name = 'serials'; input.value = cb.value;
+        form.appendChild(input);
+      });
+      form.submit();
+    }
+
+    document.getElementById('bulk-suspend-btn').addEventListener('click', function () { submitBulk('suspend', 'suspend'); });
+    var revokeBtn = document.getElementById('bulk-revoke-btn');
+    if (revokeBtn) revokeBtn.addEventListener('click', function () { submitBulk('revoke', 'revoke'); });
+  })();
+</script>
 {% endblock %}
