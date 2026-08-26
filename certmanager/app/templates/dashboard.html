@@ -10,16 +10,16 @@
   <section class="card p-5 lg:col-span-1 flex flex-col items-center justify-center">
     <h2 class="font-semibold text-slate-900 self-start mb-2">Fleet status</h2>
     {% if donut_total %}
-    <div class="relative w-36 h-36 my-2"
+    <div class="relative w-36 h-36 my-2 anim-pop"
          style="border-radius: 9999px; background: conic-gradient({% for c in company_segments %}{{ c.color }} {{ c.start }}deg {{ c.end }}deg{{ "," if not loop.last }}{% endfor %});">
       <div class="absolute inset-3 rounded-full bg-white flex flex-col items-center justify-center">
-        <span class="text-2xl font-semibold text-slate-900 leading-none">{{ donut_total }}</span>
+        <span class="text-2xl font-semibold text-slate-900 leading-none" data-countup="{{ donut_total }}">0</span>
         <span class="text-[11px] text-slate-400 mt-1">certificates</span>
       </div>
     </div>
     <div class="w-full mt-3 space-y-1.5">
       {% for c in company_breakdown %}
-      <div class="flex items-center justify-between text-xs">
+      <div class="flex items-center justify-between text-xs anim-rise" style="animation-delay: {{ loop.index0 * 40 }}ms">
         <span class="flex items-center gap-1.5 text-slate-600 truncate">
           <span class="w-2 h-2 rounded-full shrink-0" style="background: {{ c.color }}"></span>
           {{ c.name }}
@@ -36,31 +36,31 @@
   </section>
 
   <div class="grid grid-cols-2 gap-3 lg:col-span-2">
-  <div class="stat-card border-l-4 !border-l-green-500">
+  <div class="stat-card border-l-4 !border-l-green-500 anim-rise" style="animation-delay: 0ms">
     <svg class="w-5 h-5 text-green-600 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/></svg>
     <div>
-      <div class="text-2xl font-semibold text-slate-900 leading-none">{{ counts.active }}</div>
+      <div class="text-2xl font-semibold text-slate-900 leading-none" data-countup="{{ counts.active }}">0</div>
       <div class="text-xs text-slate-500 mt-1">Active</div>
     </div>
   </div>
-  <div class="stat-card border-l-4 !border-l-amber-500">
+  <div class="stat-card border-l-4 !border-l-amber-500 anim-rise" style="animation-delay: 60ms">
     <svg class="w-5 h-5 text-amber-600 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>
     <div>
-      <div class="text-2xl font-semibold text-slate-900 leading-none">{{ counts.expiring_soon }}</div>
+      <div class="text-2xl font-semibold text-slate-900 leading-none" data-countup="{{ counts.expiring_soon }}">0</div>
       <div class="text-xs text-slate-500 mt-1">Expiring in 30 days</div>
     </div>
   </div>
-  <div class="stat-card border-l-4 !border-l-amber-500">
+  <div class="stat-card border-l-4 !border-l-amber-500 anim-rise" style="animation-delay: 120ms">
     <svg class="w-5 h-5 text-amber-600 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM7 10a1 1 0 0 1 1-1h4a1 1 0 1 1 0 2H8a1 1 0 0 1-1-1Z" clip-rule="evenodd"/></svg>
     <div>
-      <div class="text-2xl font-semibold text-slate-900 leading-none">{{ counts.suspended }}</div>
+      <div class="text-2xl font-semibold text-slate-900 leading-none" data-countup="{{ counts.suspended }}">0</div>
       <div class="text-xs text-slate-500 mt-1">Suspended</div>
     </div>
   </div>
-  <div class="stat-card border-l-4 !border-l-red-500">
+  <div class="stat-card border-l-4 !border-l-red-500 anim-rise" style="animation-delay: 180ms">
     <svg class="w-5 h-5 text-red-600 mt-0.5 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-8-5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-1.5 0v-4.5A.75.75 0 0 1 10 5Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
     <div>
-      <div class="text-2xl font-semibold text-slate-900 leading-none">{{ counts.revoked }}</div>
+      <div class="text-2xl font-semibold text-slate-900 leading-none" data-countup="{{ counts.revoked }}">0</div>
       <div class="text-xs text-slate-500 mt-1">Revoked</div>
     </div>
   </div>
@@ -71,23 +71,24 @@
 <section class="card p-5 mb-6">
   <div class="flex items-center justify-between mb-4">
     <h2 class="font-semibold text-slate-900">By company</h2>
-    <span class="text-xs text-slate-400">{{ company_total }} total</span>
+    <span class="text-xs text-slate-400"><span data-countup="{{ company_total }}">0</span> total</span>
   </div>
 
   <div class="w-full h-2.5 rounded-full overflow-hidden flex mb-4 bg-slate-100">
     {% for c in company_breakdown %}
-    <div style="width: {{ c.pct }}%; background: {{ c.color }}" title="{{ c.name }}: {{ c.count }}"></div>
+    <div class="bar-grow" style="width: 0; background: {{ c.color }}" data-grow-to="{{ c.pct }}%" title="{{ c.name }}: {{ c.count }}"></div>
     {% endfor %}
   </div>
 
   <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
     {% for c in company_breakdown %}
     <a href="/certs?subsidiary={{ c.name | urlencode }}"
-       class="flex items-center gap-2.5 text-sm rounded-lg px-2 py-1.5 -mx-2 hover:bg-slate-50 transition-colors {{ 'pointer-events-none' if c.name == 'Unassigned' else '' }}">
+       class="flex items-center gap-2.5 text-sm rounded-lg px-2 py-1.5 -mx-2 hover:bg-slate-50 transition-colors anim-rise {{ 'pointer-events-none' if c.name == 'Unassigned' else '' }}"
+       style="animation-delay: {{ loop.index0 * 40 }}ms">
       <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background: {{ c.color }}"></span>
       <span class="flex-1 min-w-0 truncate text-slate-700">{{ c.name }}</span>
       <span class="text-xs text-slate-400">{{ c.pct }}%</span>
-      <span class="font-medium text-slate-900 w-6 text-right">{{ c.count }}</span>
+      <span class="font-medium text-slate-900 w-6 text-right" data-countup="{{ c.count }}">0</span>
     </a>
     {% endfor %}
   </div>
@@ -122,7 +123,7 @@
     {% if expiring %}
     <ul class="text-sm divide-y divide-slate-100">
       {% for c in expiring %}
-      <li class="py-2 flex justify-between items-center">
+      <li class="py-2 flex justify-between items-center anim-rise" style="animation-delay: {{ loop.index0 * 40 }}ms">
         <a href="/certs/{{ c.serial }}" class="text-slate-700 hover:text-slate-900 hover:underline font-medium">{{ c.cn }}</a>
         <span class="text-amber-600 text-xs">expires {{ c.expires_at }}</span>
       </li>
@@ -149,7 +150,7 @@
     {% if recent_activity %}
     <ul class="text-sm divide-y divide-slate-100">
       {% for a in recent_activity %}
-      <li class="py-2.5 flex items-start gap-2">
+      <li class="py-2.5 flex items-start gap-2 anim-rise" style="animation-delay: {{ loop.index0 * 40 }}ms">
         <div class="w-6 h-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center uppercase shrink-0 mt-0.5"
              style="background: hsl({{ a.actor | avatar_hue }} 55% 45%)">
           {{ a.actor[0] }}

@@ -83,7 +83,7 @@
       </thead>
       <tbody>
         {% for c in items %}
-        <tr>
+        <tr class="anim-rise" style="animation-delay: {{ [loop.index0, 12] | min * 30 }}ms">
           <td>
             <a href="/certs/{{ c.serial }}" class="text-slate-900 font-medium hover:underline">{{ c.cn }}</a>
             {% if c.subsidiary %}
@@ -132,7 +132,7 @@
 
   <div class="md:hidden space-y-3">
     {% for c in items %}
-    <a href="/certs/{{ c.serial }}" class="card block p-4 hover:border-slate-300 hover:shadow-md transition-all">
+    <a href="/certs/{{ c.serial }}" class="card block p-4 hover:border-slate-300 hover:shadow-md transition-all anim-rise" style="animation-delay: {{ [loop.index0, 12] | min * 30 }}ms">
       <div class="flex items-center justify-between mb-2">
         <span class="font-medium text-slate-900">{{ c.cn }}</span>
         {{ badge.status_badge(c.status) }}

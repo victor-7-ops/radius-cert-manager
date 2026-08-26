@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Certificate Manager{% endblock %}</title>
   <link rel="icon" type="image/png" href="/static/favicon.png">
-  <link rel="stylesheet" href="/static/tailwind.css?v=11">
+  <link rel="stylesheet" href="/static/tailwind.css?v=12">
   <script src="/static/htmx.min.js"></script>
 </head>
 <body class="h-full text-slate-800 antialiased">
@@ -65,5 +65,57 @@
   <main class="max-w-6xl mx-auto px-4 py-8 page-fade">
     {% block content %}{% endblock %}
   </main>
+
+  <script>
+    // Count-up numbers and grow-in bars — small enough to just run on
+    // every page render and every htmx-boosted swap, no framework needed.
+    (function () {
+      var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      function runCountUps(root) {
+        root.querySelectorAll('[data-countup]').forEach(function (el) {
+          var target = parseInt(el.getAttribute('data-countup'), 10);
+          if (isNaN(target) || el.dataset.countupDone === '1') return;
+          el.dataset.countupDone = '1';
+          if (reduceMotion || target === 0) { el.textContent = target; return; }
+          var start = performance.now();
+          var duration = 600;
+          function tick(now) {
+            var t = Math.min(1, (now - start) / duration);
+            var eased = 1 - Math.pow(1 - t, 3);
+            el.textContent = Math.round(eased * target);
+            if (t < 1) requestAnimationFrame(tick);
+            else el.textContent = target;
+          }
+          requestAnimationFrame(tick);
+        });
+      }
+
+      function runBarGrows(root) {
+        root.querySelectorAll('[data-grow-to]').forEach(function (el) {
+          var target = el.getAttribute('data-grow-to');
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              el.style.width = target;
+            });
+          });
+        });
+      }
+
+      function run(root) {
+        runCountUps(root);
+        runBarGrows(root);
+      }
+
+      // Script sits at the end of <body>, so the DOM above it is already
+      // parsed — run immediately. htmx re-executes this block on every
+      // boosted swap (it replaces <body>'s contents, DOMContentLoaded
+      // never fires again), so that re-run doubles as the "new page"
+      // trigger; the listener below only matters for htmx-swapped
+      // fragments elsewhere on the page (search results, suspend rows).
+      run(document);
+      document.body.addEventListener('htmx:afterSettle', function (e) { run(e.target); });
+    })();
+  </script>
 </body>
 </html>
