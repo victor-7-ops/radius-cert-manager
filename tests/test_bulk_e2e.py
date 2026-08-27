@@ -142,6 +142,46 @@ def test_fix_row_corrects_a_malformed_identifier_without_restarting(app_settings
     assert session.query(db.Certificate).filter_by(cn="fixed-device").count() == 1
 
 
+def test_fix_row_preserves_fields_not_shown_inline(app_settings, throwaway_pki, monkeypatch):
+    # bulk_preview_row.html carries device_type/device_model/device_serial/
+    # subsidiary as hidden inputs in the fix-row form specifically so a
+    # save doesn't wipe them — this simulates that real submission shape.
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "fix-row-preserve-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    csv_bytes = b"bad cn!,Jordan Ellis,Laptop,,C02XG2JMQ6L9,Bay Mall\n"
+    preview_resp = client.post(
+        "/certs/bulk/preview",
+        files={"csv_file": ("devices.csv", csv_bytes, "text/csv")},
+    )
+    token = re.search(r'name="batch_token" value="([^"]+)"', preview_resp.text).group(1)
+
+    fix_resp = client.post(f"/certs/bulk/{token}/fix-row", data={
+        "row_index": "0", "identifier": "fixed-preserve-device",
+        "employee_name": "Jordan Ellis", "device_type": "Laptop", "device_model": "VICTUS 15",
+        "device_serial": "C02XG2JMQ6L9", "subsidiary": "Bay Mall",
+    })
+    assert fix_resp.status_code == 200
+    assert "bulk-valid-badge" in fix_resp.text
+
+    confirm_resp = client.post(
+        "/certs/bulk/confirm",
+        data={"batch_token": token, "export_password": "SharedBatchPassword123"},
+        follow_redirects=False,
+    )
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    cert = session.query(db.Certificate).filter_by(cn="fixed-preserve-device").one()
+    assert cert.device_type == "Laptop"
+    assert cert.device_model == "VICTUS 15"
+    assert cert.device_serial == "C02XG2JMQ6L9"
+    assert cert.subsidiary == "Bay Mall"
+
+
 def test_fix_row_can_reintroduce_a_new_problem(app_settings, throwaway_pki, monkeypatch):
     # fixing a malformed row with a value that's now a duplicate of
     # another row in the same batch must show as duplicate, not valid

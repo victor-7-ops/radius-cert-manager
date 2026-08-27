@@ -73,6 +73,12 @@
       </div>
 
       <div class="mb-3">
+        <label for="device_model" class="field-label">Device brand / model</label>
+        <input id="device_model" name="device_model" type="text" value="{{ form.device_model if form else '' }}"
+               placeholder="HP EliteBook 840" class="field-input">
+      </div>
+
+      <div class="mb-3">
         <label for="device_mac" class="field-label">Device MAC address</label>
         <input id="device_mac" name="device_mac" type="text" value="{{ form.device_mac if form else '' }}"
                placeholder="aa:bb:cc:dd:ee:ff" class="field-input font-mono">

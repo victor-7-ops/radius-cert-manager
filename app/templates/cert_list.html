@@ -118,10 +118,10 @@
             {% endif %}
           </td>
           <td class="text-slate-500">
-            {% if c.device_type %}
+            {% if c.device_type or c.device_model %}
             <div class="flex items-center gap-1.5">
-              <span class="text-slate-400">{{ dicon.device_icon(c.device_type) }}</span>
-              {{ c.device_type }}
+              {% if c.device_type %}<span class="text-slate-400">{{ dicon.device_icon(c.device_type) }}</span>{% endif %}
+              {{ c.device_type or "" }}{% if c.device_type and c.device_model %} · {% endif %}{{ c.device_model or "" }}
             </div>
             {% else %}
             <span class="text-slate-300">—</span>

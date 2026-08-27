@@ -34,6 +34,7 @@ class DeviceInfo:
 
     employee_name: str | None = None
     device_type: str | None = None
+    device_model: str | None = None
     device_mac: str | None = None
     device_serial: str | None = None
     subsidiary: str | None = None
@@ -122,6 +123,7 @@ def _issue_one_locked(
         batch_id=batch_id,
         employee_name=device.employee_name,
         device_type=device.device_type,
+        device_model=device.device_model,
         device_mac=device.device_mac,
         device_serial=device.device_serial,
         subsidiary=device.subsidiary,
@@ -192,6 +194,7 @@ def reissue_certificate(
         device = DeviceInfo(
             employee_name=old.employee_name,
             device_type=old.device_type,
+            device_model=old.device_model,
             device_mac=old.device_mac,
             device_serial=old.device_serial,
             subsidiary=old.subsidiary,

@@ -47,12 +47,14 @@ def test_issue_certificate_stores_device_info(tmp_path, throwaway_pki):
         device=cert_service.DeviceInfo(
             employee_name="Jordan Ellis",
             device_type="Laptop",
+            device_model="HP EliteBook 840",
             device_mac="aa:bb:cc:dd:ee:ff",
             device_serial="C02XG2JMQ6L9",
         ),
     )
     assert result.certificate.employee_name == "Jordan Ellis"
     assert result.certificate.device_type == "Laptop"
+    assert result.certificate.device_model == "HP EliteBook 840"
     assert result.certificate.device_mac == "aa:bb:cc:dd:ee:ff"
     assert result.certificate.device_serial == "C02XG2JMQ6L9"
 
@@ -105,6 +107,7 @@ def test_existing_db_without_device_columns_is_migrated_on_init(tmp_path):
     row = session.query(db.Certificate).filter_by(cn="pre-existing").one()
     assert row.employee_name is None
     assert row.device_type is None
+    assert row.device_model is None
     assert row.device_mac is None
     assert row.device_serial is None
     assert row.subsidiary is None
@@ -232,3 +235,74 @@ def test_issue_form_offers_subsidiary_choices(app_settings, throwaway_pki, monke
     assert resp.status_code == 200
     for name in db.SUBSIDIARIES:
         assert name in resp.text
+
+
+def test_issue_form_stores_and_shows_device_model(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "model-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    resp = client.post("/certs/issue", data={
+        "cn": "model-device", "request_id": str(uuid.uuid4()),
+        "device_type": "Laptop", "device_model": "VICTUS 15",
+    })
+    assert resp.status_code == 200  # delivery page after redirect-follow
+
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    cert = session.query(db.Certificate).filter_by(cn="model-device").one()
+    assert cert.device_model == "VICTUS 15"
+
+    detail_resp = client.get(f"/certs/{cert.serial}")
+    assert "VICTUS 15" in detail_resp.text
+
+    list_resp = client.get("/certs")
+    assert "VICTUS 15" in list_resp.text
+
+
+def test_search_matches_device_model(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "model-search-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={
+        "cn": "victus-device", "request_id": str(uuid.uuid4()), "device_model": "VICTUS 15",
+    })
+    client.post("/certs/issue", data={
+        "cn": "elitebook-device", "request_id": str(uuid.uuid4()), "device_model": "HP EliteBook 840",
+    })
+
+    resp = client.get("/certs", params={"q": "VICTUS"})
+    assert "victus-device" in resp.text
+    assert "elitebook-device" not in resp.text
+
+
+def test_reissue_carries_device_model_forward(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "reissue-model-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={
+        "cn": "reissue-model-device", "request_id": str(uuid.uuid4()), "device_model": "Acer Aspire 5",
+    })
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    original = session.query(db.Certificate).filter_by(cn="reissue-model-device").one()
+
+    client.post(f"/certs/{original.serial}/reissue", follow_redirects=False)
+
+    session.expire_all()
+    rows = session.query(db.Certificate).filter_by(cn="reissue-model-device").all()
+    assert len(rows) == 2
+    new_row = [r for r in rows if r.id != original.id][0]
+    assert new_row.device_model == "Acer Aspire 5"

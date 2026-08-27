@@ -7,9 +7,15 @@ design rationale and Phase A/F–I work not yet built.
 ## Beyond the handoff (added after v1)
 
 - **Device/owner tracking**: employee name, device type (with icon),
-  MAC (validated/normalized), device serial, and company/subsidiary
-  (fixed colorway) on every cert. Employee and subsidiary both drill
-  down into a filtered cert list from anywhere they appear.
+  device brand/model, MAC (validated/normalized), device serial, and
+  company/subsidiary (fixed colorway) on every cert. Employee and
+  subsidiary both drill down into a filtered cert list from anywhere
+  they appear. Model/brand is searchable and carries forward on reissue
+  like the rest of the device fields. Bulk CSV recognizes it under
+  "Model" / "Brand" / etc header names (or as an appended 7th
+  positional column, so an older 6-column CSV still parses unchanged)
+  — a real device-inventory export usually has exactly this column,
+  and it used to be silently dropped as unrecognized.
 - **Dashboard**: fleet-status donut (colored by company), by-company
   breakdown card, 6-month issuance trend bar chart, all with count-up
   numbers and staggered entrance animation.
@@ -43,7 +49,11 @@ design rationale and Phase A/F–I work not yet built.
   handling throws (`e.querySelectorAll is not a function`) if a
   response mixes a bare `<tr>` with non-table oob elements — so the
   valid-count/confirm-button sync happens client-side off a
-  `.bulk-valid-badge` count instead of server-rendered OOB swaps.
+  `.bulk-valid-badge` count instead of server-rendered OOB swaps. Also
+  fixed a real gap while adding device_model: the fix-row form only
+  ever submitted the fields shown inline (identifier/employee/MAC), so
+  saving a fix was silently wiping device_type/device_serial/subsidiary
+  — now carried through as hidden inputs.
 - **must_change_password is now actually enforced.** The flag was set
   by admin creation and password reset but nothing ever checked it — a
   temp password stayed valid forever. `require_admin` now redirects

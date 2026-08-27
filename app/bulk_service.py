@@ -11,9 +11,11 @@ soon) and reissue all of them under one shared export password, same
 partial-failure-doesn't-roll-back-the-rest rule.
 
 Each row optionally carries employee_name/device_type/device_mac/
-device_serial/subsidiary — paste input is identifier-only, CSV input may
-add up to five more columns in that order. Either way it's optional per
-row.
+device_serial/subsidiary/device_model — paste input is identifier-only,
+CSV input may add up to six more columns in that order (device_model
+is appended last rather than inserted, so a CSV built against the
+older 6-column order still parses unchanged). Either way it's optional
+per row.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ _HEADER_ALIASES = {
     "identifier": {"cn", "identifier", "hostname"},
     "employee_name": {"employee_name", "employee", "name", "owner", "full name", "employee name"},
     "device_type": {"device_type", "device type", "type"},
+    "device_model": {"device_model", "device model", "model", "brand", "brand/model", "brand and model", "make/model"},
     "device_mac": {"device_mac", "mac", "mac address", "device mac address", "device mac"},
     "device_serial": {"device_serial", "serial", "serial number", "asset tag", "device serial"},
     "subsidiary": {"subsidiary", "company", "company / subsidiary", "company/subsidiary"},
@@ -68,6 +71,7 @@ class BatchInputRow:
     identifier: str
     employee_name: str | None = None
     device_type: str | None = None
+    device_model: str | None = None
     device_mac: str | None = None
     device_serial: str | None = None
     subsidiary: str | None = None
@@ -80,6 +84,7 @@ class PreviewRow:
     reason: str | None = None
     employee_name: str | None = None
     device_type: str | None = None
+    device_model: str | None = None
     device_mac: str | None = None
     device_serial: str | None = None
     subsidiary: str | None = None
@@ -148,6 +153,7 @@ def parse_csv(data: bytes) -> list[BatchInputRow]:
                 identifier=identifier,
                 employee_name=values.get("employee_name"),
                 device_type=values.get("device_type"),
+                device_model=values.get("device_model"),
                 device_mac=values.get("device_mac"),
                 device_serial=values.get("device_serial"),
                 subsidiary=values.get("subsidiary"),
@@ -165,6 +171,10 @@ def parse_csv(data: bytes) -> list[BatchInputRow]:
         cells = [c.strip() or None for c in row[1:6]]
         cells += [None] * (5 - len(cells))
         employee_name, device_type, device_mac, device_serial, subsidiary = cells
+        # device_model is appended as an optional 7th column rather than
+        # inserted among the other five, so a CSV built against the old
+        # 6-column positional order still parses unchanged.
+        device_model = row[6].strip() or None if len(row) > 6 else None
         if device_mac:
             device_mac = normalize_mac(device_mac) or device_mac
         out.append(
@@ -172,6 +182,7 @@ def parse_csv(data: bytes) -> list[BatchInputRow]:
                 identifier=identifier,
                 employee_name=employee_name,
                 device_type=device_type,
+                device_model=device_model,
                 device_mac=device_mac,
                 device_serial=device_serial,
                 subsidiary=subsidiary,
@@ -190,6 +201,7 @@ def classify(session: Session, input_rows: list[BatchInputRow]) -> list[PreviewR
         common = {
             "employee_name": r.employee_name,
             "device_type": r.device_type,
+            "device_model": r.device_model,
             "device_mac": r.device_mac,
             "device_serial": r.device_serial,
             "subsidiary": r.subsidiary,
@@ -264,6 +276,7 @@ def issue_batch(
                 device = cert_service.DeviceInfo(
                     employee_name=r.employee_name,
                     device_type=r.device_type,
+                    device_model=r.device_model,
                     device_mac=r.device_mac,
                     device_serial=r.device_serial,
                     subsidiary=r.subsidiary,
@@ -292,6 +305,7 @@ def issue_batch(
                     cert.expires_at.isoformat(),
                     r.employee_name or "",
                     r.device_type or "",
+                    r.device_model or "",
                     r.device_mac or "",
                     r.device_serial or "",
                     r.subsidiary or "",
@@ -299,7 +313,7 @@ def issue_batch(
 
             manifest_buf = io.StringIO()
             writer = csv.writer(manifest_buf)
-            writer.writerow(["cn", "serial", "expires_at", "employee_name", "device_type", "device_mac", "device_serial", "subsidiary"])
+            writer.writerow(["cn", "serial", "expires_at", "employee_name", "device_type", "device_model", "device_mac", "device_serial", "subsidiary"])
             writer.writerows(manifest_rows)
             zf.writestr("manifest.csv", manifest_buf.getvalue())
 
@@ -353,6 +367,7 @@ def renew_batch(
                 cert.expires_at.isoformat(),
                 cert.employee_name or "",
                 cert.device_type or "",
+                cert.device_model or "",
                 cert.device_mac or "",
                 cert.device_serial or "",
                 cert.subsidiary or "",
@@ -360,7 +375,7 @@ def renew_batch(
 
         manifest_buf = io.StringIO()
         writer = csv.writer(manifest_buf)
-        writer.writerow(["cn", "serial", "expires_at", "employee_name", "device_type", "device_mac", "device_serial", "subsidiary"])
+        writer.writerow(["cn", "serial", "expires_at", "employee_name", "device_type", "device_model", "device_mac", "device_serial", "subsidiary"])
         writer.writerows(manifest_rows)
         zf.writestr("manifest.csv", manifest_buf.getvalue())
 

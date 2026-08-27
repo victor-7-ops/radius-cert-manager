@@ -5,7 +5,7 @@
   <td class="text-slate-600">{{ r.employee_name or "" }}</td>
   <td class="text-slate-500 text-xs">{{ r.subsidiary or "" }}</td>
   <td class="text-slate-500">
-    {% if r.device_type %}<span class="inline-flex items-center gap-1">{{ dicon.device_icon(r.device_type, "w-3.5 h-3.5 text-slate-400") }}{{ r.device_type }}</span>{% endif %}
+    {% if r.device_type or r.device_model %}<span class="inline-flex items-center gap-1">{% if r.device_type %}{{ dicon.device_icon(r.device_type, "w-3.5 h-3.5 text-slate-400") }}{{ r.device_type }}{% endif %}{% if r.device_type and r.device_model %} · {% endif %}{{ r.device_model or "" }}</span>{% endif %}
     {% if r.device_mac %} <span class="font-mono text-xs">{{ r.device_mac }}</span>{% endif %}
   </td>
   <td>
@@ -24,6 +24,14 @@
     <form hx-post="/certs/bulk/{{ batch_token }}/fix-row" hx-target="#bulk-row-{{ index }}" hx-swap="outerHTML"
           class="flex flex-wrap items-center gap-1">
       <input type="hidden" name="row_index" value="{{ index }}">
+      <!-- Fields not shown inline still get carried through as hidden
+           inputs — a save previously wiped device_type/device_serial/
+           subsidiary/device_model silently since they weren't in the
+           submitted form at all. -->
+      <input type="hidden" name="device_type" value="{{ r.device_type or '' }}">
+      <input type="hidden" name="device_model" value="{{ r.device_model or '' }}">
+      <input type="hidden" name="device_serial" value="{{ r.device_serial or '' }}">
+      <input type="hidden" name="subsidiary" value="{{ r.subsidiary or '' }}">
       <input type="text" name="identifier" value="{{ r.identifier }}" placeholder="Identifier" required
              class="field-input text-xs !min-h-0 !h-7 w-28">
       <input type="text" name="employee_name" value="{{ r.employee_name or '' }}" placeholder="Employee"

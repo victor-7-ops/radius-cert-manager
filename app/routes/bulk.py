@@ -41,9 +41,9 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         # Registered before /certs/bulk/{batch_id} so "template.csv"
         # never gets swallowed as a batch_id path param.
         sample = (
-            "cn,employee_name,device_type,device_mac,device_serial,subsidiary\r\n"
-            f"alex-laptop,Jordan Ellis,{db.DEVICE_TYPES[0]},aa:bb:cc:dd:ee:ff,C02XG2JMQ6L9,{db.SUBSIDIARIES[0]}\r\n"
-            "jordan-phone,,,,,\r\n"
+            "cn,employee_name,device_type,device_mac,device_serial,subsidiary,device_model\r\n"
+            f"alex-laptop,Jordan Ellis,{db.DEVICE_TYPES[0]},aa:bb:cc:dd:ee:ff,C02XG2JMQ6L9,{db.SUBSIDIARIES[0]},HP EliteBook 840\r\n"
+            "jordan-phone,,,,,,\r\n"
         )
         return Response(
             content=sample,
@@ -104,6 +104,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         identifier: str = Form(...),
         employee_name: str = Form(""),
         device_type: str = Form(""),
+        device_model: str = Form(""),
         device_mac: str = Form(""),
         device_serial: str = Form(""),
         subsidiary: str = Form(""),
@@ -120,6 +121,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             identifier=identifier.strip(),
             employee_name=employee_name.strip() or None,
             device_type=device_type.strip() or None,
+            device_model=device_model.strip() or None,
             device_mac=device_mac.strip() or None,
             device_serial=device_serial.strip() or None,
             subsidiary=subsidiary.strip() or None,
@@ -162,6 +164,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 identifier=r.identifier,
                 employee_name=r.employee_name,
                 device_type=r.device_type,
+                device_model=r.device_model,
                 device_mac=r.device_mac,
                 device_serial=r.device_serial,
                 subsidiary=r.subsidiary,
