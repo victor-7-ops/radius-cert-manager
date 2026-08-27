@@ -1,10 +1,11 @@
 {% extends "base.html" %}
-{% import "_device_icon.html" as dicon %}
+{% import "_bulk_preview_row.html" as rowmacro %}
 {% block title %}Bulk issue preview — Certificate Manager{% endblock %}
 {% block content %}
 <h1 class="text-2xl font-semibold text-slate-900 tracking-tight mb-1">Bulk issue preview</h1>
 <p class="text-sm text-slate-500 mb-6">
-  Nothing is signed until you confirm. <span class="font-medium text-slate-700">{{ valid_count }} of {{ rows|length }}</span> identifiers are valid.
+  Nothing is signed until you confirm. <span class="font-medium text-slate-700"><span id="valid-count-summary">{{ valid_count }} of {{ total_count }}</span></span> identifiers are valid.
+  {% if valid_count < total_count %}Fix a malformed or duplicate row's identifier below and save — no need to start over.{% endif %}
 </p>
 
 <div class="table-shell mb-6">
@@ -16,54 +17,63 @@
         <th>Company</th>
         <th>Device</th>
         <th>Classification</th>
-        <th>Reason</th>
+        <th>Reason / fix</th>
       </tr>
     </thead>
-    <tbody>
+    <tbody id="bulk-rows-tbody">
       {% for r in rows %}
-      <tr>
-        <td class="font-mono text-slate-900">{{ r.identifier }}</td>
-        <td class="text-slate-600">{{ r.employee_name or "" }}</td>
-        <td class="text-slate-500 text-xs">{{ r.subsidiary or "" }}</td>
-        <td class="text-slate-500">
-          {% if r.device_type %}<span class="inline-flex items-center gap-1">{{ dicon.device_icon(r.device_type, "w-3.5 h-3.5 text-slate-400") }}{{ r.device_type }}</span>{% endif %}
-          {% if r.device_mac %} <span class="font-mono text-xs">{{ r.device_mac }}</span>{% endif %}
-        </td>
-        <td>
-          {% if r.classification == "valid" %}
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-green-50 text-green-700"><span class="w-1.5 h-1.5 rounded-full bg-green-600"></span> Valid</span>
-          {% elif r.classification == "duplicate" %}
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Duplicate</span>
-          {% else %}
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-red-50 text-red-700"><span class="w-1.5 h-1.5 rounded-full bg-red-600"></span> Malformed</span>
-          {% endif %}
-        </td>
-        <td class="text-slate-500">{{ r.reason or "" }}</td>
-      </tr>
+      {{ rowmacro.row(r, loop.index0, batch_token) }}
       {% endfor %}
     </tbody>
   </table>
 </div>
 
-{% if valid_count > 0 %}
-<div class="max-w-md card p-6">
-  <form method="post" action="/certs/bulk/confirm" class="space-y-4"
-        onsubmit="const b=this.querySelector('button'); b.disabled=true; b.innerText='Issuing…';">
-    <input type="hidden" name="batch_token" value="{{ batch_token }}">
-    <div>
-      <label for="export_password" class="field-label">
-        Export password for this batch
-      </label>
-      <input id="export_password" name="export_password" type="text" required minlength="12" class="field-input font-mono">
-      <p class="mt-1.5 text-xs text-slate-500">One password protects every .p12 in this batch. Shown once, on the results page.</p>
-    </div>
-    <button type="submit" class="btn-primary w-full">
-      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
-      Issue {{ valid_count }} certificate{{ "s" if valid_count != 1 else "" }}
-    </button>
-  </form>
+<div id="bulk-confirm-block" data-total="{{ total_count }}">
+  <div class="max-w-md card p-6" id="bulk-confirm-form-card" style="{{ '' if valid_count > 0 else 'display:none;' }}">
+    <form method="post" action="/certs/bulk/confirm" class="space-y-4"
+          onsubmit="const b=this.querySelector('button'); b.disabled=true; b.innerText='Issuing…';">
+      <input type="hidden" name="batch_token" value="{{ batch_token }}">
+      <div>
+        <label for="export_password" class="field-label">
+          Export password for this batch
+        </label>
+        <input id="export_password" name="export_password" type="text" required minlength="12" class="field-input font-mono">
+        <p class="mt-1.5 text-xs text-slate-500">One password protects every .p12 in this batch. Shown once, on the results page.</p>
+      </div>
+      <button type="submit" class="btn-primary w-full">
+        <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
+        <span id="bulk-confirm-btn-label">Issue {{ valid_count }} certificate{{ "s" if valid_count != 1 else "" }}</span>
+      </button>
+    </form>
+  </div>
+  <p class="text-sm text-slate-500" id="bulk-confirm-empty-message" style="{{ 'display:none;' if valid_count > 0 else '' }}">
+    No valid identifiers to issue. Fix a row above or go back and start over.
+  </p>
 </div>
-{% else %}
-<p class="text-sm text-slate-500">No valid identifiers to issue. Go back and fix the list.</p>
-{% endif %}
+
+<script>
+  (function () {
+    // fix-row's response is just the <tr> — no htmx oob elements mixed
+    // in (htmx 1.9's fragment parser chokes — "querySelectorAll is not
+    // a function" — when a response mixes a bare <tr> with non-table
+    // tags like <span>/<div> in one multi-root swap). So the valid
+    // count and the confirm button/message are kept in sync here
+    // instead, purely from what's actually in the table after any swap.
+    function sync() {
+      var total = document.querySelectorAll('#bulk-rows-tbody tr').length;
+      var valid = document.querySelectorAll('#bulk-rows-tbody tr .bulk-valid-badge').length;
+      var summary = document.getElementById('valid-count-summary');
+      if (summary) summary.textContent = valid + ' of ' + total;
+      var label = document.getElementById('bulk-confirm-btn-label');
+      if (label) label.textContent = 'Issue ' + valid + ' certificate' + (valid !== 1 ? 's' : '');
+      var card = document.getElementById('bulk-confirm-form-card');
+      var empty = document.getElementById('bulk-confirm-empty-message');
+      if (card) card.style.display = valid > 0 ? '' : 'none';
+      if (empty) empty.style.display = valid > 0 ? 'none' : '';
+    }
+    document.body.addEventListener('htmx:afterSwap', function (e) {
+      if (e.target.id && e.target.id.indexOf('bulk-row-') === 0) sync();
+    });
+  })();
+</script>
 {% endblock %}

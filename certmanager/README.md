@@ -17,6 +17,15 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **Fix a malformed/duplicate row inline in the bulk-issue preview**
+  instead of restarting the whole paste/CSV upload — an inline form on
+  each non-valid row re-classifies just that row via
+  `POST /certs/bulk/{token}/fix-row` and swaps it in place. Found and
+  fixed a real htmx bug while building this: htmx 1.9's response
+  handling throws (`e.querySelectorAll is not a function`) if a
+  response mixes a bare `<tr>` with non-table oob elements — so the
+  valid-count/confirm-button sync happens client-side off a
+  `.bulk-valid-badge` count instead of server-rendered OOB swaps.
 - **must_change_password is now actually enforced.** The flag was set
   by admin creation and password reset but nothing ever checked it — a
   temp password stayed valid forever. `require_admin` now redirects

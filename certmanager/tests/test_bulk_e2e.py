@@ -106,6 +106,92 @@ def test_bulk_preview_confirm_download_flow(app_settings, throwaway_pki, monkeyp
     assert len(rows) == 2
 
 
+def test_fix_row_corrects_a_malformed_identifier_without_restarting(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "fix-row-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    preview_resp = client.post("/certs/bulk/preview", data={"identifiers_text": "good-device\nbad cn!"})
+    assert "1 of 2" in preview_resp.text
+    token = re.search(r'name="batch_token" value="([^"]+)"', preview_resp.text).group(1)
+
+    fix_resp = client.post(f"/certs/bulk/{token}/fix-row", data={
+        "row_index": "1", "identifier": "fixed-device",
+    })
+    assert fix_resp.status_code == 200
+    assert "fixed-device" in fix_resp.text
+    assert "bulk-valid-badge" in fix_resp.text  # server marks it valid; the
+    # count itself is now recomputed client-side from these badges (see
+    # bulk_preview.html) rather than server-rendered in this response
+
+    # confirm now issues BOTH — the fixed row wasn't dropped
+    confirm_resp = client.post(
+        "/certs/bulk/confirm",
+        data={"batch_token": token, "export_password": "SharedBatchPassword123"},
+        follow_redirects=False,
+    )
+    result_resp = client.get(confirm_resp.headers["location"])
+    assert "good-device" in result_resp.text
+    assert "fixed-device" in result_resp.text
+
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    assert session.query(db.Certificate).filter_by(cn="fixed-device").count() == 1
+
+
+def test_fix_row_can_reintroduce_a_new_problem(app_settings, throwaway_pki, monkeypatch):
+    # fixing a malformed row with a value that's now a duplicate of
+    # another row in the same batch must show as duplicate, not valid
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "fix-row-admin2", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    preview_resp = client.post("/certs/bulk/preview", data={"identifiers_text": "existing-device\nbad cn!"})
+    token = re.search(r'name="batch_token" value="([^"]+)"', preview_resp.text).group(1)
+
+    fix_resp = client.post(f"/certs/bulk/{token}/fix-row", data={
+        "row_index": "1", "identifier": "existing-device",
+    })
+    assert "Duplicate" in fix_resp.text
+    assert "bulk-valid-badge" not in fix_resp.text  # not marked valid
+
+
+def test_fix_row_rejects_unknown_batch_token(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "fix-row-admin3", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    resp = client.post("/certs/bulk/does-not-exist/fix-row", data={"row_index": "0", "identifier": "device"})
+    assert resp.status_code == 410
+
+
+def test_fix_row_rejects_out_of_range_index(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "fix-row-admin4", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    preview_resp = client.post("/certs/bulk/preview", data={"identifiers_text": "one-device"})
+    token = re.search(r'name="batch_token" value="([^"]+)"', preview_resp.text).group(1)
+
+    resp = client.post(f"/certs/bulk/{token}/fix-row", data={"row_index": "5", "identifier": "device"})
+    assert resp.status_code == 400
+
+
 def test_bulk_regular_admin_can_issue(app_settings, throwaway_pki, monkeypatch):
     """Bulk issue uses require_admin (not super_admin) — matches single issue's role."""
     monkeypatch.setattr(

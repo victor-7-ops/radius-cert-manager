@@ -67,6 +67,7 @@ class RouteDeps:
     root_cert: object | None
     store_pending_preview: callable
     take_pending_preview: callable
+    peek_pending_preview: callable
     store_pending_batch: callable
     take_pending_batch: callable
     peek_pending_batch: callable
@@ -152,6 +153,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def take_pending_preview(token: str):
         return pending_previews.pop(token, None)
 
+    def peek_pending_preview(token: str):
+        # Non-consuming — the "fix a malformed row" flow mutates the
+        # list in place (same object, no re-store needed) while the
+        # batch is still under review; only /confirm consumes it.
+        return pending_previews.get(token)
+
     def store_pending_batch(batch_id: str, result, zip_bytes: bytes) -> None:
         pending_batches[batch_id] = (result, zip_bytes)
 
@@ -226,6 +233,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         root_cert=root_cert,
         store_pending_preview=store_pending_preview,
         take_pending_preview=take_pending_preview,
+        peek_pending_preview=peek_pending_preview,
         store_pending_batch=store_pending_batch,
         take_pending_batch=take_pending_batch,
         peek_pending_batch=peek_pending_batch,

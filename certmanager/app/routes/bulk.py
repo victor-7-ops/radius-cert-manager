@@ -75,19 +75,13 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             )
 
         batch_token = str(uuid.uuid4())
-        valid_rows = [
-            bulk_service.BatchInputRow(
-                identifier=r.identifier,
-                employee_name=r.employee_name,
-                device_type=r.device_type,
-                device_mac=r.device_mac,
-                device_serial=r.device_serial,
-                subsidiary=r.subsidiary,
-            )
-            for r in rows
-            if r.classification == "valid"
-        ]
-        deps.store_pending_preview(batch_token, valid_rows)
+        # The FULL row list is stored (not just the valid ones) — a
+        # malformed/duplicate row can still be fixed in place from the
+        # preview screen (see bulk_fix_row below) without starting the
+        # whole paste/upload over. /confirm re-classifies and filters to
+        # valid at that point, so this is the single source of truth
+        # throughout the review.
+        deps.store_pending_preview(batch_token, input_rows)
 
         return templates.TemplateResponse(
             request,
@@ -97,7 +91,51 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "rows": rows,
                 "batch_token": batch_token,
                 "valid_count": sum(1 for r in rows if r.classification == "valid"),
+                "total_count": len(rows),
                 **crl_health.banner_context(session),
+            },
+        )
+
+    @router.post("/certs/bulk/{batch_token}/fix-row")
+    def bulk_fix_row(
+        request: Request,
+        batch_token: str,
+        row_index: int = Form(...),
+        identifier: str = Form(...),
+        employee_name: str = Form(""),
+        device_type: str = Form(""),
+        device_mac: str = Form(""),
+        device_serial: str = Form(""),
+        subsidiary: str = Form(""),
+        admin: db.Admin = Depends(deps.require_admin),
+    ):
+        _require_unscoped(admin)
+        input_rows = deps.peek_pending_preview(batch_token)
+        if input_rows is None:
+            raise HTTPException(status.HTTP_410_GONE, "preview expired or already confirmed")
+        if not (0 <= row_index < len(input_rows)):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid row")
+
+        input_rows[row_index] = bulk_service.BatchInputRow(
+            identifier=identifier.strip(),
+            employee_name=employee_name.strip() or None,
+            device_type=device_type.strip() or None,
+            device_mac=device_mac.strip() or None,
+            device_serial=device_serial.strip() or None,
+            subsidiary=subsidiary.strip() or None,
+        )
+
+        session = deps.get_db_session()
+        rows = bulk_service.classify(session, input_rows)
+        return templates.TemplateResponse(
+            request,
+            "bulk_preview_row_response.html",
+            {
+                "row": rows[row_index],
+                "row_index": row_index,
+                "batch_token": batch_token,
+                "valid_count": sum(1 for r in rows if r.classification == "valid"),
+                "total_count": len(rows),
             },
         )
 
@@ -109,18 +147,36 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         admin: db.Admin = Depends(deps.require_admin),
     ):
         _require_unscoped(admin)
-        input_rows = deps.take_pending_preview(batch_token)
-        if input_rows is None:
+        all_rows = deps.take_pending_preview(batch_token)
+        if all_rows is None:
             raise HTTPException(status.HTTP_410_GONE, "preview expired or already confirmed")
 
         session = deps.get_db_session()
+        # Re-classify at confirm time rather than trusting whatever was
+        # valid at preview time — a row fixed via bulk_fix_row only ever
+        # updated the stored input, not a separately-cached valid list,
+        # so this is the one place that filter actually happens.
+        classified = bulk_service.classify(session, all_rows)
+        valid_rows = [
+            bulk_service.BatchInputRow(
+                identifier=r.identifier,
+                employee_name=r.employee_name,
+                device_type=r.device_type,
+                device_mac=r.device_mac,
+                device_serial=r.device_serial,
+                subsidiary=r.subsidiary,
+            )
+            for r in classified
+            if r.classification == "valid"
+        ]
+
         batch_id = str(uuid.uuid4())
         result, zip_bytes = bulk_service.issue_batch(
             session,
             deps.pki_path,
             deps.inter_cert,
             deps.inter_key,
-            input_rows,
+            valid_rows,
             batch_id=batch_id,
             export_password=export_password,
             issued_by=admin.username,

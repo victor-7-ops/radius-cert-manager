@@ -1,0 +1,39 @@
+{% import "_device_icon.html" as dicon %}
+{% macro row(r, index, batch_token) -%}
+<tr id="bulk-row-{{ index }}">
+  <td class="font-mono text-slate-900">{{ r.identifier }}</td>
+  <td class="text-slate-600">{{ r.employee_name or "" }}</td>
+  <td class="text-slate-500 text-xs">{{ r.subsidiary or "" }}</td>
+  <td class="text-slate-500">
+    {% if r.device_type %}<span class="inline-flex items-center gap-1">{{ dicon.device_icon(r.device_type, "w-3.5 h-3.5 text-slate-400") }}{{ r.device_type }}</span>{% endif %}
+    {% if r.device_mac %} <span class="font-mono text-xs">{{ r.device_mac }}</span>{% endif %}
+  </td>
+  <td>
+    {% if r.classification == "valid" %}
+    <span class="bulk-valid-badge inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-green-50 text-green-700"><span class="w-1.5 h-1.5 rounded-full bg-green-600"></span> Valid</span>
+    {% elif r.classification == "duplicate" %}
+    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Duplicate</span>
+    {% else %}
+    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-red-50 text-red-700"><span class="w-1.5 h-1.5 rounded-full bg-red-600"></span> Malformed</span>
+    {% endif %}
+  </td>
+  <td class="text-slate-500">
+    {% if r.classification == "valid" %}
+    {{ r.reason or "" }}
+    {% else %}
+    <form hx-post="/certs/bulk/{{ batch_token }}/fix-row" hx-target="#bulk-row-{{ index }}" hx-swap="outerHTML"
+          class="flex flex-wrap items-center gap-1">
+      <input type="hidden" name="row_index" value="{{ index }}">
+      <input type="text" name="identifier" value="{{ r.identifier }}" placeholder="Identifier" required
+             class="field-input text-xs !min-h-0 !h-7 w-28">
+      <input type="text" name="employee_name" value="{{ r.employee_name or '' }}" placeholder="Employee"
+             class="field-input text-xs !min-h-0 !h-7 w-24">
+      <input type="text" name="device_mac" value="{{ r.device_mac or '' }}" placeholder="MAC"
+             class="field-input text-xs !min-h-0 !h-7 w-24 font-mono">
+      <button type="submit" class="btn-secondary text-xs !min-h-0 !h-7 !px-2">Save</button>
+    </form>
+    <p class="text-xs text-red-600 mt-1">{{ r.reason or "" }}</p>
+    {% endif %}
+  </td>
+</tr>
+{% endmacro %}
