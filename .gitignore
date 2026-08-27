@@ -1,9 +1,10 @@
-certmanager/.venv/
-certmanager/.env
-certmanager/certmanager.db
-certmanager/pki/
-certmanager/node_modules/
+.venv/
+.env
+certmanager.db
+pki/
+node_modules/
 __pycache__/
 *.pyc
 .pytest_cache/
+.claude/
 /c/cmdemo/
