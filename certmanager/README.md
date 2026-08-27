@@ -17,6 +17,21 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **Certificate expiry alerts** (`app/expiry_alerts.py`, on standby):
+  active certs within `EXPIRY_ALERT_DAYS` (default 7) of expiring — or
+  already past expiry but not yet acted on — get bundled into one alert
+  (not one ping per cert) sent to `ALERT_WEBHOOK_URL`, the same webhook
+  CRL-push-failure alerts already used. Each cert is only ever alerted
+  once (`Certificate.expiry_alert_sent_at`), so re-checking doesn't
+  re-spam. There's no scheduler in this app, so the check runs
+  opportunistically on every `/health` page load rather than on a
+  timer — genuinely "on standby" until something with a clock (a cron
+  hitting `/health`, or a real scheduled task) triggers it periodically.
+  Also fixed the webhook payload itself while wiring this up: it was
+  POSTing `text/plain`, which Slack's incoming-webhook endpoint accepts
+  with a 200 but never actually posts anywhere — now sends the
+  `{"text": ...}` JSON shape Slack expects, so pointing
+  `ALERT_WEBHOOK_URL` at a Slack incoming webhook works today.
 - **Bulk-issue CSV accepts any column order** — headers are matched by
   name (`Name`/`Employee`/`Owner` → employee_name, `MAC Address` →
   device_mac, etc, case-insensitive, unrecognized columns like a

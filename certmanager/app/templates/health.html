@@ -90,7 +90,33 @@
       <div class="flex justify-between"><dt class="text-slate-500">Active sessions</dt><dd class="text-slate-700">{{ active_sessions }}</dd></div>
     </dl>
   </div>
+
+  <div class="card p-5">
+    <h2 class="font-semibold text-slate-900 mb-3">Expiry alerts</h2>
+    <dl class="text-sm space-y-2">
+      <div class="flex justify-between"><dt class="text-slate-500">Warning window</dt><dd class="text-slate-700">{{ expiry_alert_days }} days</dd></div>
+      <div class="flex justify-between">
+        <dt class="text-slate-500">Slack webhook</dt>
+        <dd class="{{ 'text-green-700' if slack_configured else 'text-slate-400' }}">{{ "Configured" if slack_configured else "On standby — no webhook URL set" }}</dd>
+      </div>
+    </dl>
+    <p class="text-xs text-slate-500 mt-2">Checked each time this page loads (no scheduler in this app yet) — not a live background job.</p>
+  </div>
 </div>
+
+{% if newly_alerted %}
+<div class="mt-6 card p-5 border-amber-200">
+  <h2 class="font-semibold text-amber-700 mb-3 flex items-center gap-1.5">
+    <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.516 2.63H3.72c-1.347 0-2.189-1.463-1.515-2.63L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
+    Just alerted{{ " (Slack)" if slack_configured else " (logged only — no webhook configured)" }}
+  </h2>
+  <ul class="text-sm divide-y divide-slate-100">
+    {% for c in newly_alerted %}
+    <li class="py-1.5 flex justify-between"><a href="/certs?q={{ c.cn | urlencode }}" class="text-slate-700 hover:text-slate-900 hover:underline">{{ c.cn }}</a><span class="text-slate-500">{{ c.expires_at }}</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 {% if ca_warnings or orphans %}
 <div class="mt-6 card p-5">

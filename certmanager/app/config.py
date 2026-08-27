@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     radius_ssh_user: str = "crlpush"
 
     alert_webhook_url: str | None = None
+    expiry_alert_days: int = 7
     initial_superadmin_user: str | None = None
 
     @field_validator("secret_key")

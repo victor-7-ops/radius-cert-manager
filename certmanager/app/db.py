@@ -86,6 +86,13 @@ class Certificate(Base):
     device_serial: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     subsidiary: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
+    expiry_alert_sent_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Set once expiry_alerts has notified about this cert nearing
+    # expiry, so re-checking (there's no scheduler — see
+    # app/expiry_alerts.py) doesn't re-alert on it every time.
+
     supersedes: Mapped["Certificate | None"] = relationship(
         remote_side=[id], back_populates="superseded_by", uselist=False
     )
@@ -178,6 +185,7 @@ _CERTIFICATE_COLUMN_MIGRATIONS = [
     ("device_mac", "VARCHAR"),
     ("device_serial", "VARCHAR"),
     ("subsidiary", "VARCHAR"),
+    ("expiry_alert_sent_at", "DATETIME"),
 ]
 
 DEVICE_TYPES = ["Laptop", "Phone", "Tablet", "Desktop", "Other"]

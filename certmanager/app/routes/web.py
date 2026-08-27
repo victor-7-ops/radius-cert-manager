@@ -786,6 +786,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
 
         orphans = reconcile.reconcile_issued_dir(session, deps.pki_path / "issued")
 
+        # Opportunistic, not scheduled — see app/expiry_alerts.py. Only
+        # ever alerts about certs that just crossed the window since the
+        # last time this page loaded, so reloading doesn't re-spam.
+        newly_alerted = deps.check_expiry_alerts()
+
         return templates.TemplateResponse(
             request,
             "health.html",
@@ -803,6 +808,9 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "active_sessions": active_sessions,
                 "active_admins": active_admins,
                 "orphans": orphans,
+                "newly_alerted": [{"cn": c.cn, "expires_at": c.expires_at.date()} for c in newly_alerted],
+                "expiry_alert_days": deps.expiry_alert_days,
+                "slack_configured": bool(deps.alert_webhook_url),
                 **_crl_banner_context(session),
             },
         )

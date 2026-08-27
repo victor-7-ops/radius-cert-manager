@@ -7,6 +7,7 @@ a correlation ID. Raw tracebacks must never reach a client.
 from __future__ import annotations
 
 import contextvars
+import json
 import logging
 import uuid
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ from sqlalchemy.orm import Session, scoped_session
 import datetime
 import urllib.request
 
-from app import auth, cert_service, crl_health, crl_push, db, pki, reconcile
+from app import auth, cert_service, crl_health, crl_push, db, expiry_alerts, pki, reconcile
 from app.config import Settings, load_settings
 from app.db import init_db, make_engine, make_session_factory
 from app.routes.certs import get_router as get_certs_router
@@ -59,6 +60,9 @@ class RouteDeps:
     store_pending_password: callable
     take_pending_password: callable
     regenerate_and_push_crl: callable
+    check_expiry_alerts: callable
+    expiry_alert_days: int
+    alert_webhook_url: str | None
     secret_key: str
     root_cert: object | None
     store_pending_preview: callable
@@ -162,15 +166,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not settings.alert_webhook_url:
             return
         try:
+            # Slack incoming webhooks require a JSON body shaped
+            # {"text": ...} — a plain-text POST is silently accepted
+            # (200) but never posts anything, so this would have looked
+            # "on standby and working" right up until someone actually
+            # pointed it at Slack and nothing showed up.
             req = urllib.request.Request(
                 settings.alert_webhook_url,
-                data=message.encode(),
-                headers={"Content-Type": "text/plain"},
+                data=json.dumps({"text": message}).encode(),
+                headers={"Content-Type": "application/json"},
                 method="POST",
             )
             urllib.request.urlopen(req, timeout=10)
         except Exception:
             logger.exception("failed to deliver alert webhook")
+
+    def check_expiry_alerts() -> list:
+        session = request_scoped_db()
+        return expiry_alerts.check_and_alert(session, _alert, warning_days=settings.expiry_alert_days)
 
     def regenerate_and_push_crl() -> None:
         session = request_scoped_db()
@@ -206,6 +219,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         store_pending_password=store_pending_password,
         take_pending_password=take_pending_password,
         regenerate_and_push_crl=regenerate_and_push_crl,
+        check_expiry_alerts=check_expiry_alerts,
+        expiry_alert_days=settings.expiry_alert_days,
+        alert_webhook_url=settings.alert_webhook_url,
         secret_key=settings.secret_key,
         root_cert=root_cert,
         store_pending_preview=store_pending_preview,
