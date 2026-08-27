@@ -82,6 +82,7 @@ class Certificate(Base):
     # doesn't tell you who to call when a laptop goes missing.
     employee_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     device_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    device_model: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     device_mac: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     device_serial: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     subsidiary: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
@@ -182,6 +183,7 @@ def make_session_factory(engine) -> sessionmaker:
 _CERTIFICATE_COLUMN_MIGRATIONS = [
     ("employee_name", "VARCHAR"),
     ("device_type", "VARCHAR"),
+    ("device_model", "VARCHAR"),
     ("device_mac", "VARCHAR"),
     ("device_serial", "VARCHAR"),
     ("subsidiary", "VARCHAR"),

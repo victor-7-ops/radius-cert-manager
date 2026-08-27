@@ -258,3 +258,49 @@ def test_issue_batch_stores_subsidiary_and_includes_it_in_manifest(session, tmp_
 
     row = session.query(db.Certificate).filter_by(cn="bmead-device").one()
     assert row.subsidiary == "BMEAD"
+
+
+def test_parse_csv_reads_device_model_as_seventh_positional_column():
+    data = b"device-a,Jordan Ellis,Laptop,AA:BB:CC:DD:EE:FF,C02XG2JMQ6L9,Bay Mall,VICTUS 15\n"
+    rows = bulk_service.parse_csv(data)
+    assert rows[0].device_model == "VICTUS 15"
+
+
+def test_parse_csv_positional_without_model_column_still_works():
+    # a CSV built against the pre-device_model 6-column order must not break
+    data = b"device-a,Jordan Ellis,Laptop,AA:BB:CC:DD:EE:FF,C02XG2JMQ6L9,Bay Mall\n"
+    rows = bulk_service.parse_csv(data)
+    assert rows[0].device_model is None
+    assert rows[0].subsidiary == "Bay Mall"
+
+
+def test_parse_csv_by_name_header_recognizes_model_and_brand_aliases():
+    data = (
+        b"Name,Device Type,Model\n"
+        b"Jordan Ellis,Laptop,VICTUS 15\n"
+    )
+    rows = bulk_service.parse_csv(data)
+    assert rows[0].device_model == "VICTUS 15"
+
+    data2 = b"Name,Brand\nJordan Ellis,Acer\n"
+    rows2 = bulk_service.parse_csv(data2)
+    assert rows2[0].device_model == "Acer"
+
+
+def test_issue_batch_stores_device_model_and_includes_it_in_manifest(session, tmp_path, throwaway_pki):
+    input_rows = [
+        bulk_service.BatchInputRow(identifier="model-device", device_model="HP EliteBook 840"),
+    ]
+    result, zip_bytes = bulk_service.issue_batch(
+        session, tmp_path, throwaway_pki["inter_cert"], throwaway_pki["inter_key"],
+        input_rows, batch_id="batch-model", export_password="sharedpassword123",
+        issued_by="alice", days=365,
+    )
+    assert len(result.succeeded) == 1
+
+    zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    manifest = zf.read("manifest.csv").decode()
+    assert "HP EliteBook 840" in manifest
+
+    row = session.query(db.Certificate).filter_by(cn="model-device").one()
+    assert row.device_model == "HP EliteBook 840"

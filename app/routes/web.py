@@ -278,6 +278,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 db.Certificate.cn.contains(q)
                 | db.Certificate.employee_name.contains(q)
                 | db.Certificate.device_serial.contains(q)
+                | db.Certificate.device_model.contains(q)
             )
             if normalized_mac:
                 # MAC can be typed in any of the formats normalize_mac
@@ -336,6 +337,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "issued_by": c.issued_by,
                 "employee_name": c.employee_name,
                 "device_type": c.device_type,
+                "device_model": c.device_model,
                 "device_mac": c.device_mac,
                 "device_serial": c.device_serial,
                 "subsidiary": c.subsidiary,
@@ -379,12 +381,12 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         writer = csv.writer(buf)
         writer.writerow([
             "cn", "serial", "status", "issued_at", "expires_at", "issued_by",
-            "employee_name", "device_type", "device_mac", "device_serial", "subsidiary",
+            "employee_name", "device_type", "device_model", "device_mac", "device_serial", "subsidiary",
         ])
         for c in rows:
             writer.writerow([
                 c.cn, c.serial, _effective_status(c), c.issued_at.isoformat(), c.expires_at.isoformat(),
-                c.issued_by, c.employee_name or "", c.device_type or "", c.device_mac or "",
+                c.issued_by, c.employee_name or "", c.device_type or "", c.device_model or "", c.device_mac or "",
                 c.device_serial or "", c.subsidiary or "",
             ])
         return Response(
@@ -430,6 +432,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         note: str = Form(""),
         employee_name: str = Form(""),
         device_type: str = Form(""),
+        device_model: str = Form(""),
         device_mac: str = Form(""),
         device_serial: str = Form(""),
         subsidiary: str = Form(""),
@@ -452,6 +455,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "cn": cn,
                 "employee_name": employee_name,
                 "device_type": device_type,
+                "device_model": device_model,
                 "device_mac": device_mac,
                 "device_serial": device_serial,
                 "subsidiary": subsidiary,
@@ -510,6 +514,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 device=cert_service.DeviceInfo(
                     employee_name=employee_name.strip() or None,
                     device_type=device_type.strip() or None,
+                    device_model=device_model.strip() or None,
                     device_mac=normalized_mac,
                     device_serial=device_serial.strip() or None,
                     subsidiary=subsidiary.strip() or None,
@@ -644,6 +649,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                     "note": cert.note,
                     "employee_name": cert.employee_name,
                     "device_type": cert.device_type,
+                    "device_model": cert.device_model,
                     "device_mac": cert.device_mac,
                     "device_serial": cert.device_serial,
                     "subsidiary": cert.subsidiary,

@@ -49,7 +49,7 @@
   </div>
 </div>
 
-{% if cert.employee_name or cert.device_type or cert.device_mac or cert.device_serial or cert.subsidiary %}
+{% if cert.employee_name or cert.device_type or cert.device_model or cert.device_mac or cert.device_serial or cert.subsidiary %}
 <section class="card p-5 mb-6 relative overflow-hidden">
   <div class="absolute -right-6 -top-6 w-28 h-28 rounded-full bg-slate-50 opacity-60"></div>
   <div class="relative flex items-start gap-4">
@@ -66,7 +66,9 @@
           {% else %}
           <span class="text-base font-semibold text-slate-400">Unassigned</span>
           {% endif %}
-          <div class="text-sm text-slate-500">{{ cert.device_type or "Device type not set" }}</div>
+          <div class="text-sm text-slate-500">
+            {{ cert.device_type or "Device type not set" }}{% if cert.device_model %} · {{ cert.device_model }}{% endif %}
+          </div>
           {% if cert.subsidiary %}
           <a href="/certs?subsidiary={{ cert.subsidiary | urlencode }}"
              class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 mt-1 rounded-full transition-colors"
