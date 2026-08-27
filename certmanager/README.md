@@ -17,6 +17,14 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **must_change_password is now actually enforced.** The flag was set
+  by admin creation and password reset but nothing ever checked it — a
+  temp password stayed valid forever. `require_admin` now redirects
+  anywhere else to `/account/change-password` until it's cleared
+  (logout and the session-keepalive ping are exempt, so it can't
+  deadlock). Also added self-service password change for any admin at
+  any time — there was no way to change your own password at all
+  before this, only a Super Admin resetting it to a new temp one.
 - **Certificate expiry alerts** (`app/expiry_alerts.py`, on standby):
   active certs within `EXPIRY_ALERT_DAYS` (default 7) of expiring — or
   already past expiry but not yet acted on — get bundled into one alert

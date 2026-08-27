@@ -815,6 +815,62 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             },
         )
 
+    # --- Change your own password (self-service; also where
+    # must_change_password redirects, see auth.require_admin) ---
+
+    @router.get(auth.PASSWORD_CHANGE_PATH)
+    def change_password_form(request: Request, admin: db.Admin = Depends(deps.require_admin)):
+        session = deps.get_db_session()
+        return templates.TemplateResponse(
+            request,
+            "change_password.html",
+            {
+                "admin": admin,
+                "forced": admin.must_change_password,
+                "min_length": auth.MIN_PASSWORD_LENGTH,
+                **_crl_banner_context(session),
+            },
+        )
+
+    @router.post(auth.PASSWORD_CHANGE_PATH)
+    def change_password_submit(
+        request: Request,
+        current_password: str = Form(...),
+        new_password: str = Form(...),
+        confirm_password: str = Form(...),
+        admin: db.Admin = Depends(deps.require_admin),
+    ):
+        session = deps.get_db_session()
+        error = None
+        if not auth.verify_password(current_password, admin.password_hash):
+            error = "Current password is incorrect."
+        elif new_password != confirm_password:
+            error = "New password and confirmation don't match."
+        elif len(new_password) < auth.MIN_PASSWORD_LENGTH:
+            error = f"New password must be at least {auth.MIN_PASSWORD_LENGTH} characters."
+        elif new_password == current_password:
+            error = "New password must be different from your current password."
+
+        if error:
+            return templates.TemplateResponse(
+                request,
+                "change_password.html",
+                {
+                    "admin": admin,
+                    "forced": admin.must_change_password,
+                    "min_length": auth.MIN_PASSWORD_LENGTH,
+                    "error": error,
+                    **_crl_banner_context(session),
+                },
+                status_code=400,
+            )
+
+        admin.password_hash = auth.hash_password(new_password)
+        admin.must_change_password = False
+        db.audit(session, actor=admin.username, action="change_password", target=admin.username)
+        session.commit()
+        return RedirectResponse(_flash("/dashboard", "Password changed.", "success"), status_code=303)
+
     # --- Your sessions (any admin, own sessions only) ---
 
     @router.get("/account/sessions")

@@ -15,7 +15,7 @@ import datetime
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from fastapi import Cookie, Depends, HTTPException, Response, status
+from fastapi import Cookie, Depends, HTTPException, Request, Response, status
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -210,12 +210,24 @@ def decode_session_cookie(secret_key: str, token: str) -> SessionData | None:
     )
 
 
+# A temp password (new admin, or a Super Admin's reset) sets
+# must_change_password — these are the only paths a request carrying
+# that flag is allowed to reach; everything else redirects to the
+# change-password page first. Kept as an app.auth constant since the
+# 428 handler in main.py needs the same target path.
+PASSWORD_CHANGE_PATH = "/account/change-password"
+PASSWORD_CHANGE_EXEMPT_PATHS = {PASSWORD_CHANGE_PATH, "/auth/logout", "/auth/ping"}
+PASSWORD_CHANGE_REQUIRED_STATUS = 428  # Precondition Required
+MIN_PASSWORD_LENGTH = 12
+
+
 def get_current_admin_factory(get_db_session, get_secret_key):
     """Build the require_admin FastAPI dependency, bound to app-specific
     session-factory and settings providers (kept out of module globals
     so auth.py has no hidden app-wide state — testable in isolation)."""
 
     def require_admin(
+        request: Request,
         response: Response,
         cm_session: str | None = Cookie(default=None),
     ) -> Admin:
@@ -238,6 +250,14 @@ def get_current_admin_factory(get_db_session, get_secret_key):
 
         # Silent refresh: slide the inactivity window forward, same session id.
         issue_session_cookie(response, secret_key, admin, session_id=record.id)
+
+        if (
+            admin.must_change_password
+            and not request.url.path.startswith("/api")
+            and request.url.path not in PASSWORD_CHANGE_EXEMPT_PATHS
+        ):
+            raise HTTPException(PASSWORD_CHANGE_REQUIRED_STATUS, "Password change required")
+
         return admin
 
     def require_super_admin(admin: Admin = Depends(require_admin)) -> Admin:

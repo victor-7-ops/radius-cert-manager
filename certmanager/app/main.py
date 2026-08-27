@@ -270,6 +270,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         is_web_route = not request.url.path.startswith("/api")
         if exc.status_code == 401 and is_web_route:
             return RedirectResponse("/login", status_code=303)
+        if exc.status_code == auth.PASSWORD_CHANGE_REQUIRED_STATUS and is_web_route:
+            return RedirectResponse(auth.PASSWORD_CHANGE_PATH, status_code=303)
         if is_web_route and request.method == "GET":
             # A raw JSON error body is a "raw error text" failure mode for
             # a page a human is looking at (handoff §6.1) — render the
