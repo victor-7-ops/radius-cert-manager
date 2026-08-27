@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select
 
-from app import auth, cert_service, crl_health, db, rate_limit, reconcile
+from app import auth, bulk_service, cert_service, crl_health, db, rate_limit, reconcile
 from app.validation import CN_RE, normalize_mac
 
 
@@ -733,14 +733,42 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         serials: list[str] = Form(...),
         bulk_action: str = Form(..., alias="action"),
         reason: str = "",
+        export_password: str = Form(""),
         admin: db.Admin = Depends(deps.require_admin),
     ):
-        if bulk_action not in ("suspend", "revoke"):
+        if bulk_action not in ("suspend", "revoke", "renew"):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid action")
         if bulk_action == "revoke" and admin.role != db.AdminRole.super_admin:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "only a super admin can revoke")
 
         session = deps.get_db_session()
+
+        if bulk_action == "renew":
+            if len(export_password) < 12:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "export password must be at least 12 characters")
+            in_scope_serials = []
+            for serial in dict.fromkeys(serials):  # de-dupe, preserve order
+                cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+                if cert is None:
+                    continue
+                # Same silent-skip-out-of-scope rule as suspend/revoke
+                # below — the checkbox UI is already scope-filtered.
+                if admin.subsidiary_scope and cert.subsidiary != admin.subsidiary_scope:
+                    continue
+                in_scope_serials.append(serial)
+            batch_id = str(uuid.uuid4())
+            result, zip_bytes = bulk_service.renew_batch(
+                session, deps.pki_path, deps.inter_cert, deps.inter_key,
+                in_scope_serials, batch_id=batch_id, export_password=export_password,
+                issued_by=admin.username, days=deps.client_cert_days,
+            )
+            deps.store_pending_batch(batch_id, result, zip_bytes)
+            # Reissue doesn't touch the old cert's status (handoff §8.1 —
+            # coexistence until an admin separately suspends/revokes the
+            # old one), so unlike suspend/revoke there's nothing new for
+            # the CRL to reflect here.
+            return RedirectResponse(f"/certs/bulk/{batch_id}", status_code=303)
+
         fn = cert_service.suspend if bulk_action == "suspend" else cert_service.revoke
         done = 0
         missing = 0

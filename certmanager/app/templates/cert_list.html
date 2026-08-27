@@ -177,6 +177,7 @@
 
 <div id="bulk-bar" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-20 card px-4 py-3 flex items-center gap-3 shadow-lg">
   <span id="bulk-count" class="text-sm font-medium text-slate-700 dark:text-slate-200">0 selected</span>
+  <button type="button" id="bulk-renew-btn" class="btn-secondary">Renew</button>
   <button type="button" id="bulk-suspend-btn" class="btn-warn">Suspend</button>
   {% if admin.role.value == "super_admin" %}
   <button type="button" id="bulk-revoke-btn" class="btn-danger">Revoke</button>
@@ -246,6 +247,34 @@
     document.getElementById('bulk-suspend-btn').addEventListener('click', function () { submitBulk('suspend', 'suspend'); });
     var revokeBtn = document.getElementById('bulk-revoke-btn');
     if (revokeBtn) revokeBtn.addEventListener('click', function () { submitBulk('revoke', 'revoke'); });
+
+    document.getElementById('bulk-renew-btn').addEventListener('click', function () {
+      var rows = selected();
+      if (!rows.length) return;
+      var n = rows.length;
+      var password = window.prompt(
+        'Export password for ' + n + ' renewed certificate' + (n === 1 ? '' : 's') +
+        ' (one shared password, at least 12 characters):', ''
+      );
+      if (password === null) return;
+      if (password.length < 12) { window.alert('Export password must be at least 12 characters.'); return; }
+      if (!window.confirm('Renew ' + n + ' certificate' + (n === 1 ? '' : 's') + '? The old certificate(s) stay active until you suspend or revoke them yourself.')) return;
+
+      var form = document.getElementById('bulk-action-form');
+      form.innerHTML = '';
+      var actionInput = document.createElement('input');
+      actionInput.type = 'hidden'; actionInput.name = 'action'; actionInput.value = 'renew';
+      form.appendChild(actionInput);
+      var pwInput = document.createElement('input');
+      pwInput.type = 'hidden'; pwInput.name = 'export_password'; pwInput.value = password;
+      form.appendChild(pwInput);
+      rows.forEach(function (cb) {
+        var input = document.createElement('input');
+        input.type = 'hidden'; input.name = 'serials'; input.value = cb.value;
+        form.appendChild(input);
+      });
+      form.submit();
+    });
   })();
 </script>
 {% endblock %}

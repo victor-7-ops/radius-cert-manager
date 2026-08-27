@@ -17,6 +17,17 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **Bulk "renew"** from the cert list's bulk action bar (alongside
+  suspend/revoke): select certs (e.g. everything expiring soon),
+  reissue all of them under one shared export password, download one
+  ZIP of the new `.p12`s + manifest.csv. Same coexistence rule as a
+  single reissue — old certs are never touched, only linked via
+  `supersedes_id`; suspending/revoking them once the new ones are
+  installed is still a separate, deliberate action. A per-row failure
+  (e.g. a selected cert is already revoked) doesn't block the rest of
+  the batch. `bulk_service.renew_batch()` reuses the exact
+  `(BatchResult, zip_bytes)` shape `issue_batch()` already produces, so
+  the existing bulk-issue results page renders either one unmodified.
 - **Rate limiting on CSV export and .p12/QR bundle downloads**
   (`app/rate_limit.py`, in-process sliding window): CSV export capped
   at 10 per 5 minutes per admin, `.p12` bundle download at 30/minute
