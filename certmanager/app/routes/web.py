@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select
 
-from app import auth, cert_service, crl_health, db, reconcile
+from app import auth, cert_service, crl_health, db, rate_limit, reconcile
 from app.validation import CN_RE, normalize_mac
 
 
@@ -365,6 +365,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         subsidiary: str | None = None,
         admin: db.Admin = Depends(deps.require_admin),
     ):
+        if rate_limit.is_rate_limited(f"export:{admin.id}", max_requests=10, window_seconds=300):
+            # 429 literal, not status.HTTP_429_TOO_MANY_REQUESTS — this
+            # function's own `status` query param (cert status filter)
+            # shadows the fastapi.status module import within this scope.
+            raise HTTPException(429, "Too many exports — wait a few minutes and try again.")
         # Whatever filter the admin currently has applied on the list
         # page — the export is "what I'm looking at", not "everything".
         session = deps.get_db_session()
@@ -556,9 +561,14 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         )
 
     @router.get("/certs/{serial}/bundle/qr")
-    def download_bundle_via_qr(serial: str, token: str = ""):
+    def download_bundle_via_qr(request: Request, serial: str, token: str = ""):
         from fastapi import Response
 
+        # No auth on this route by design (see delivery() above) — rate
+        # limit by IP instead of admin id, since there's no admin here.
+        ip = request.client.host if request.client else "unknown"
+        if rate_limit.is_rate_limited(f"bundle-qr:{ip}", max_requests=20, window_seconds=60):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts — wait a minute and try again.")
         if auth.verify_bundle_qr_token(deps.secret_key, token) != serial:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "invalid or expired QR link")
         bundle = deps.take_pending_bundle(serial)
@@ -574,6 +584,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     def download_bundle(serial: str, admin: db.Admin = Depends(deps.require_admin)):
         from fastapi import Response
 
+        if rate_limit.is_rate_limited(f"bundle:{admin.id}", max_requests=30, window_seconds=60):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts — wait a minute and try again.")
         if admin.subsidiary_scope:
             session = deps.get_db_session()
             cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))

@@ -270,6 +270,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         404: "Not found",
         409: "Conflict",
         410: "No longer available",
+        429: "Slow down",
         500: "Something went wrong",
     }
 

@@ -17,6 +17,13 @@ design rationale and Phase A/F–I work not yet built.
   untouched (handoff §8.1's overlap window) — `cert_service.reissue_certificate`.
 - **CSV export** of the cert list (respects whatever filter is active)
   and a **bulk-issue CSV template** download.
+- **Rate limiting on CSV export and .p12/QR bundle downloads**
+  (`app/rate_limit.py`, in-process sliding window): CSV export capped
+  at 10 per 5 minutes per admin, `.p12` bundle download at 30/minute
+  per admin, the unauthenticated QR bundle link at 20/minute per IP.
+  Guards against scraping the cert list and against enumerating serials
+  to catch someone else's pending one-time bundle before they download
+  it themselves.
 - **Fix a malformed/duplicate row inline in the bulk-issue preview**
   instead of restarting the whole paste/CSV upload — an inline form on
   each non-valid row re-classifies just that row via
