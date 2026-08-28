@@ -13,8 +13,9 @@ checkpoint before the next one.
 
 - SSH access to both `192.168.200.18` (CA/admin machine) and
   `192.168.200.19` (`radius-test` user, the CM4).
-- The `certmanager/` repo checked out on `192.168.200.18`, with the venv
-  built (`README.md` → Setup).
+- This repo checked out on `192.168.200.18`, with the venv built
+  (`README.md` → Setup) — Linux venv layout (`.venv/bin/python`), not
+  the Windows `.venv/Scripts/python` this was developed against.
 - `eapol_test` available somewhere you can run it against the CM4 —
   this is the only real verification that any of this worked.
 
@@ -36,8 +37,7 @@ Checkpoint: `ping` both from a third machine after a reboot.
 On `192.168.200.18`, inside the repo:
 
 ```bash
-cd certmanager
-.venv/Scripts/python -m scripts.restructure_pki \
+.venv/bin/python -m scripts.restructure_pki \
     --out-root /media/<your-removable-drive>/ca-root \
     --out-service /opt/certmanager/pki
 ```
