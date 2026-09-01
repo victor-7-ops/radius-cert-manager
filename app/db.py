@@ -195,6 +195,13 @@ class Site(Base):
     )
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    last_alerted_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Edge-triggered dedup for app/fleet_watch.py (HANDOFF-FLEET.md §5.1
+    # TRAP): a SILENT site must fire exactly one alert, not one per
+    # scheduler run for as long as it stays SILENT. Set to the status
+    # that was last alerted on; scripts/fleet_watch.py only alerts again
+    # when the derived status changes.
+
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
@@ -275,6 +282,10 @@ _ADMIN_COLUMN_MIGRATIONS = [
     ("subsidiary_scope", "VARCHAR"),
 ]
 
+_SITE_COLUMN_MIGRATIONS = [
+    ("last_alerted_status", "VARCHAR"),
+]
+
 
 def _migrate_columns(engine, table: str, migrations: list[tuple[str, str]]) -> None:
     with engine.begin() as conn:
@@ -290,6 +301,7 @@ def init_db(engine) -> None:
     Base.metadata.create_all(engine)
     _migrate_columns(engine, "certificates", _CERTIFICATE_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "admins", _ADMIN_COLUMN_MIGRATIONS)
+    _migrate_columns(engine, "sites", _SITE_COLUMN_MIGRATIONS)
 
 
 def audit(

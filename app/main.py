@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, scoped_session
 import datetime
 import urllib.request
 
-from app import auth, cert_service, crl_health, crl_push, db, expiry_alerts, pki, reconcile, site_auth, site_service
+from app import auth, cert_service, crl_health, crl_push, db, expiry_alerts, fleet_watch, pki, reconcile, site_auth, site_service
 from app.config import Settings, load_settings
 from app.db import init_db, make_engine, make_session_factory
 from app.routes.certs import get_router as get_certs_router
@@ -211,6 +211,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session = request_scoped_db()
         return expiry_alerts.check_and_alert(session, _alert, warning_days=settings.expiry_alert_days)
 
+    def run_fleet_watch() -> list:
+        session = request_scoped_db()
+        return fleet_watch.check_and_alert(session, _alert)
+
     def regenerate_and_push_crl() -> None:
         session = request_scoped_db()
         pem = cert_service.regenerate_crl(
@@ -284,6 +288,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(get_sites_admin_router(deps))
     app.include_router(get_web_router(deps, templates))
     app.state.regenerate_and_push_crl = regenerate_and_push_crl
+    app.state.run_fleet_watch = run_fleet_watch
 
     from fastapi import HTTPException
     from fastapi.responses import RedirectResponse

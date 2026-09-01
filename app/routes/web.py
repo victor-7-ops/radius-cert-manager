@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select
 
-from app import auth, bulk_service, cert_service, crl_health, db, rate_limit, reconcile
+from app import auth, bulk_service, cert_service, crl_health, db, fleet_health, rate_limit, reconcile
 from app.validation import CN_RE, normalize_mac
 
 
@@ -842,6 +842,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         # last time this page loaded, so reloading doesn't re-spam.
         newly_alerted = deps.check_expiry_alerts()
 
+        # Scheduled separately (scripts/fleet_watch.py) for the alerting
+        # side — this is just the read for the page (handoff §5.1: a
+        # SILENT site must be caught even if nobody opens this page).
+        fleet = fleet_health.evaluate_fleet(session, now)
+
         return templates.TemplateResponse(
             request,
             "health.html",
@@ -860,6 +865,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "active_admins": active_admins,
                 "orphans": orphans,
                 "newly_alerted": [{"cn": c.cn, "expires_at": c.expires_at.date()} for c in newly_alerted],
+                "fleet": fleet,
                 "expiry_alert_days": deps.expiry_alert_days,
                 "slack_configured": bool(deps.alert_webhook_url),
                 **_crl_banner_context(session),

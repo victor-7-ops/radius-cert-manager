@@ -161,3 +161,48 @@ def test_health_page_load_triggers_expiry_alert_and_posts_slack_json(app_setting
     resp2 = client.get("/health")
     assert "Just alerted" not in resp2.text
     assert not captured
+
+
+def test_health_page_shows_fleet_table(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    super_admin = _seed_admin(app_settings, "health-super5", db.AdminRole.super_admin)
+
+    # Seeded site (from RADIUS_HOST) shows up with no check-in yet, i.e. SILENT.
+    app = create_app(app_settings)
+    client = TestClient(app)
+    login_as(client, app_settings, super_admin)
+
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert "Fleet" in resp.text
+    assert "SILENT" in resp.text
+
+
+def test_api_health_fleet_requires_super_admin(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    plain_admin = _seed_admin(app_settings, "plain-fleet-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    login_as(client, app_settings, plain_admin)
+
+    resp = client.get("/api/health/fleet")
+    assert resp.status_code == 403
+
+
+def test_api_health_fleet_returns_seeded_site(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    super_admin = _seed_admin(app_settings, "health-super6", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    login_as(client, app_settings, super_admin)
+
+    resp = client.get("/api/health/fleet")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["status"] == "SILENT"
