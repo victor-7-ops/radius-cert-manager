@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, scoped_session
 import datetime
 import urllib.request
 
-from app import auth, cert_service, crl_health, crl_push, db, expiry_alerts, pki, reconcile
+from app import auth, cert_service, crl_health, crl_push, db, expiry_alerts, pki, reconcile, site_auth, site_service
 from app.config import Settings, load_settings
 from app.db import init_db, make_engine, make_session_factory
 from app.routes.certs import get_router as get_certs_router
@@ -30,6 +30,8 @@ from app.routes.health import get_router as get_health_router
 from app.routes.web import get_router as get_web_router
 from app.routes.web_auth import get_router as get_web_auth_router
 from app.routes.bulk import get_router as get_bulk_router
+from app.routes.site import get_router as get_site_router
+from app.routes.sites_admin import get_router as get_sites_admin_router
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -49,12 +51,14 @@ def _avatar_hue(name: str) -> int:
 class RouteDeps:
     require_admin: callable
     require_super_admin: callable
+    require_site: callable
     get_db_session: callable
     pki_path: Path
     db_path: Path
     inter_cert: object
     inter_key: object
     client_cert_days: int
+    server_cert_days: int
     store_pending_bundle: callable
     take_pending_bundle: callable
     store_pending_password: callable
@@ -112,12 +116,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     orphans = reconcile.reconcile_issued_dir(bootstrap_session, issued_dir)
     if orphans:
         logger.warning("startup reconciliation found orphaned certs: %s", orphans)
+
+    # Seed one site row from the existing RADIUS_HOST env value so the
+    # working push-based test rig keeps functioning while pull is proven
+    # (HANDOFF-FLEET.md §4.1) — do not break the existing push path here.
+    from sqlalchemy import select as _select
+
+    if bootstrap_session.scalar(_select(db.Site)) is None:
+        site_service.create_site(
+            bootstrap_session,
+            name=settings.radius_host,
+            radius_cn=settings.radius_host,
+            actor="system",
+            crl_validity_days=settings.crl_validity_days,
+        )
     bootstrap_session.close()
 
     require_admin, require_super_admin = auth.get_current_admin_factory(
         get_db_session=request_scoped_db,
         get_secret_key=lambda: settings.secret_key,
     )
+    require_site = site_auth.get_current_site_factory(get_db_session=request_scoped_db)
 
     # One-time bundle store: serial -> Pkcs12Bundle, consumed on first read
     # (handoff §6.4 — a second request for the same bundle returns 410).
@@ -215,12 +234,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     deps = RouteDeps(
         require_admin=require_admin,
         require_super_admin=require_super_admin,
+        require_site=require_site,
         get_db_session=request_scoped_db,
         pki_path=settings.pki_path,
         db_path=settings.db_path,
         inter_cert=inter_cert,
         inter_key=inter_key,
         client_cert_days=settings.client_cert_days,
+        server_cert_days=settings.server_cert_days,
         store_pending_bundle=store_pending_bundle,
         take_pending_bundle=take_pending_bundle,
         store_pending_password=store_pending_password,
@@ -259,6 +280,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(get_health_router(deps))
     app.include_router(get_web_auth_router(deps, templates))
     app.include_router(get_bulk_router(deps, templates))
+    app.include_router(get_site_router(deps))
+    app.include_router(get_sites_admin_router(deps))
     app.include_router(get_web_router(deps, templates))
     app.state.regenerate_and_push_crl = regenerate_and_push_crl
 

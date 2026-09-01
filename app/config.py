@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     crl_validity_days: int = 7
     crl_regen_hours: int = 24
 
+    server_cert_days: int = 365
+    site_renewal_stagger_window_days: int = 14
+
     radius_host: str
     radius_ssh_key: Path
     radius_ssh_user: str = "crlpush"
