@@ -146,7 +146,10 @@ def _issue_one_locked(
         audit_detail += f" employee={device.employee_name}"
     if supersedes_id:
         audit_detail += f" supersedes={supersedes_id}"
-    db.audit(session, actor=issued_by, action="issue", target=cn, detail=audit_detail)
+    db.audit(
+        session, actor=issued_by, action="issue", target=cn, detail=audit_detail,
+        subsidiary=device.subsidiary,
+    )
     session.commit()
     session.refresh(row)
 
@@ -240,6 +243,8 @@ def _set_status(
             action=new_status.value,
             target=cert.cn,
             detail=reason,
+            subsidiary=cert.subsidiary,
+            site_id=cert.site_id,
         )
         session.commit()
         session.refresh(cert)
@@ -293,10 +298,6 @@ def issue_server_cert(
         issued_dir.mkdir(parents=True, exist_ok=True)
         (issued_dir / f"{site_cn}.{serial}.crt").write_bytes(pki.cert_to_pem(cert))
 
-        # site_id isn't a Certificate column yet — the sites table lands in
-        # the site-registry phase (HANDOFF-FLEET.md §4.1). Recorded in the
-        # audit detail below so the link isn't lost; site_id param is kept
-        # here so callers don't need to change once the column exists.
         row = db.Certificate(
             cn=site_cn,
             serial=str(serial),
@@ -306,11 +307,13 @@ def issue_server_cert(
             issued_by=issued_by,
             request_id=request_id,
             cert_type="server",
+            site_id=site_id,
         )
         session.add(row)
         db.audit(
             session, actor=issued_by, action="issue_server_cert", target=site_cn,
             detail=f"serial={serial} site_id={site_id}",
+            site_id=site_id,
         )
         session.commit()
         session.refresh(row)
