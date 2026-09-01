@@ -1,0 +1,14 @@
+[Unit]
+Description=Run the certmanager site agent on a schedule
+
+[Timer]
+# Matches checkin_interval_seconds' default (1 hour) on the hub side —
+# adjust both together if you change one. RandomizedDelaySec spreads
+# fleet-wide load without needing per-site config on this side.
+OnBootSec=2min
+OnUnitActiveSec=1h
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
