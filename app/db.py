@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     String,
     create_engine,
+    select,
     text,
 )
 from sqlalchemy.orm import (
@@ -215,6 +216,19 @@ class AuditLog(Base):
     target: Mapped[str] = mapped_column(String)
     detail: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    subsidiary: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    site_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # HANDOFF-FLEET.md §8.3: populated on write where the calling code
+    # already knows it (a cert's subsidiary, a site's id/subsidiary).
+    # Rows written before this column existed are backfilled once at
+    # startup — see backfill_audit_log_subsidiary() — by joining target
+    # (a cert's CN for cert-related actions) back to certificates.subsidiary.
+    # NULL stays NULL for actions with no subsidiary dimension at all
+    # (admin management, global CRL push) or where the target CN no
+    # longer matches any certificate (e.g. it was later overwritten by a
+    # same-CN reissue chain with a different subsidiary — ambiguous,
+    # left alone rather than guessed).
+
 
 def make_engine(db_path: str):
     return create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
@@ -286,6 +300,11 @@ _SITE_COLUMN_MIGRATIONS = [
     ("last_alerted_status", "VARCHAR"),
 ]
 
+_AUDIT_LOG_COLUMN_MIGRATIONS = [
+    ("subsidiary", "VARCHAR"),
+    ("site_id", "VARCHAR"),
+]
+
 
 def _migrate_columns(engine, table: str, migrations: list[tuple[str, str]]) -> None:
     with engine.begin() as conn:
@@ -302,9 +321,53 @@ def init_db(engine) -> None:
     _migrate_columns(engine, "certificates", _CERTIFICATE_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "admins", _ADMIN_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "sites", _SITE_COLUMN_MIGRATIONS)
+    _migrate_columns(engine, "audit_log", _AUDIT_LOG_COLUMN_MIGRATIONS)
+    backfill_audit_log_subsidiary(engine)
+
+
+def backfill_audit_log_subsidiary(engine) -> int:
+    """HANDOFF-FLEET.md §8.3: for rows written before AuditLog.subsidiary
+    existed, derive it from the target certificate's CN where possible.
+    Idempotent (only touches subsidiary IS NULL rows) and safe to run
+    every boot — it does nothing once the backfill has already happened.
+    Returns the number of rows updated."""
+    with Session(engine) as session:
+        cn_to_subsidiary = dict(
+            session.execute(
+                select(Certificate.cn, Certificate.subsidiary).where(
+                    Certificate.subsidiary.is_not(None)
+                )
+            ).all()
+        )
+        if not cn_to_subsidiary:
+            return 0
+
+        rows = session.scalars(
+            select(AuditLog).where(AuditLog.subsidiary.is_(None))
+        ).all()
+        updated = 0
+        for row in rows:
+            subsidiary = cn_to_subsidiary.get(row.target)
+            if subsidiary is not None:
+                row.subsidiary = subsidiary
+                updated += 1
+        if updated:
+            session.commit()
+        return updated
 
 
 def audit(
-    session: Session, actor: str, action: str, target: str, detail: str | None = None
+    session: Session,
+    actor: str,
+    action: str,
+    target: str,
+    detail: str | None = None,
+    subsidiary: str | None = None,
+    site_id: str | None = None,
 ) -> None:
-    session.add(AuditLog(actor=actor, action=action, target=target, detail=detail))
+    session.add(
+        AuditLog(
+            actor=actor, action=action, target=target, detail=detail,
+            subsidiary=subsidiary, site_id=site_id,
+        )
+    )

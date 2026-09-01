@@ -69,6 +69,7 @@ def get_router(deps) -> APIRouter:
         db.audit(
             session, actor=f"site:{site.radius_cn}", action="checkin", target=site.radius_cn,
             detail=f"freeradius_ok={freeradius_ok} agent_version={agent_version}",
+            subsidiary=site.subsidiary, site_id=site.id,
         )
         session.commit()
 
@@ -92,7 +93,10 @@ def get_router(deps) -> APIRouter:
         data = crl_path.read_bytes()
         etag = hashlib.sha256(data).hexdigest()
 
-        db.audit(session, actor=f"site:{site.radius_cn}", action="crl_pull", target=site.radius_cn, detail=f"etag={etag}")
+        db.audit(
+            session, actor=f"site:{site.radius_cn}", action="crl_pull", target=site.radius_cn,
+            detail=f"etag={etag}", subsidiary=site.subsidiary, site_id=site.id,
+        )
         session.commit()
 
         if request.headers.get("if-none-match") == etag:

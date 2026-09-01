@@ -47,21 +47,31 @@ def create_site(
         notes=notes,
     )
     session.add(site)
-    db.audit(session, actor=actor, action="site_create", target=radius_cn, detail=f"name={name}")
     session.commit()
     session.refresh(site)
+    db.audit(
+        session, actor=actor, action="site_create", target=radius_cn, detail=f"name={name}",
+        subsidiary=site.subsidiary, site_id=site.id,
+    )
+    session.commit()
     return CreateSiteResult(site=site, token=token)
 
 
 def rotate_token(session: Session, site: db.Site, actor: str) -> str:
     token = site_auth.generate_token()
     site.auth_token_hash = site_auth.hash_token(token)
-    db.audit(session, actor=actor, action="site_rotate_token", target=site.radius_cn)
+    db.audit(
+        session, actor=actor, action="site_rotate_token", target=site.radius_cn,
+        subsidiary=site.subsidiary, site_id=site.id,
+    )
     session.commit()
     return token
 
 
 def deactivate(session: Session, site: db.Site, actor: str) -> None:
     site.is_active = False
-    db.audit(session, actor=actor, action="site_deactivate", target=site.radius_cn)
+    db.audit(
+        session, actor=actor, action="site_deactivate", target=site.radius_cn,
+        subsidiary=site.subsidiary, site_id=site.id,
+    )
     session.commit()
