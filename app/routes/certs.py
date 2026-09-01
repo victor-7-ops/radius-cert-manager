@@ -38,7 +38,7 @@ def get_router(deps) -> APIRouter:
         admin: db.Admin = Depends(deps.require_admin),
     ):
         session = deps.get_db_session()
-        stmt = select(db.Certificate)
+        stmt = select(db.Certificate).where(db.Certificate.cert_type == "client")
         if q:
             stmt = stmt.where(db.Certificate.cn.contains(q))
         if status_filter:

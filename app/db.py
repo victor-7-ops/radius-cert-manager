@@ -94,6 +94,13 @@ class Certificate(Base):
     # expiry, so re-checking (there's no scheduler — see
     # app/expiry_alerts.py) doesn't re-alert on it every time.
 
+    cert_type: Mapped[str] = mapped_column(String, default="client", index=True)
+    # "client" (device cert, the whole app until now) or "server" (a
+    # site's FreeRADIUS server cert — infrastructure, not a device).
+    # Excluded from client cert lists/counts/bulk ops by default; see
+    # HANDOFF-FLEET.md §3.1. site_id (linking a server cert to its site)
+    # is deferred to the site-registry phase.
+
     supersedes: Mapped["Certificate | None"] = relationship(
         remote_side=[id], back_populates="superseded_by", uselist=False
     )
@@ -188,6 +195,7 @@ _CERTIFICATE_COLUMN_MIGRATIONS = [
     ("device_serial", "VARCHAR"),
     ("subsidiary", "VARCHAR"),
     ("expiry_alert_sent_at", "DATETIME"),
+    ("cert_type", "VARCHAR DEFAULT 'client'"),
 ]
 
 DEVICE_TYPES = ["Laptop", "Phone", "Tablet", "Desktop", "Other"]

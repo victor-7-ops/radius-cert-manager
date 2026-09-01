@@ -214,7 +214,9 @@ def classify(session: Session, input_rows: list[BatchInputRow]) -> list[PreviewR
             continue
         active = session.scalar(
             select(db.Certificate).where(
-                db.Certificate.cn == r.identifier, db.Certificate.status == db.CertStatus.active
+                db.Certificate.cn == r.identifier,
+                db.Certificate.status == db.CertStatus.active,
+                db.Certificate.cert_type == "client",
             )
         )
         if active is not None:

@@ -57,6 +57,7 @@ def check_and_alert(session: Session, alert_fn, warning_days: int = DEFAULT_WARN
         select(Certificate).where(
             Certificate.status == CertStatus.active,
             Certificate.expiry_alert_sent_at.is_(None),
+            Certificate.cert_type == "client",
         )
     ).all()
     # Also catches already-expired-but-still-active rows (handoff
