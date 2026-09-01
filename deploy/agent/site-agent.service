@@ -1,0 +1,18 @@
+[Unit]
+Description=Certmanager site agent — check in, pull CRL, renew server cert
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=certmgr-agent
+Group=certmgr-agent
+EnvironmentFile=/opt/certmanager-agent/.env
+ExecStart=/usr/bin/python3 /opt/certmanager-agent/site_agent.py
+
+# Single pass per run (triggered by site-agent.timer), not a daemon —
+# matches this repo's existing regenerate_crl_cron.py pattern.
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/etc/freeradius/3.0/certs /var/lib/certmanager-agent
