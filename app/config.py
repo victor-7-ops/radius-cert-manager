@@ -30,6 +30,21 @@ class Settings(BaseSettings):
     expiry_alert_days: int = 7
     initial_superadmin_user: str | None = None
 
+    # Hub self-monitoring (HANDOFF-FLEET.md §8.2) — when the hub itself is
+    # down, the fleet view is down with it, so it needs a signal that
+    # doesn't depend on the hub's own alerting path staying up.
+    liveness_token: str | None = None
+    # If set, GET /api/live/{liveness_token} returns 200 with no auth —
+    # for an external check (CloudWatch Synthetics, healthchecks.io) that
+    # can't hold an admin session. Unset disables the route entirely
+    # (always 404), so it's opt-in, not exposed by default.
+    heartbeat_url: str | None = None
+    # If set, scripts/fleet_watch.py pings this URL on every successful
+    # run — a dead-man's-switch endpoint (e.g. a CloudWatch alarm fed by
+    # a Lambda, or healthchecks.io). Must be a DIFFERENT alerting path
+    # than alert_webhook_url: if the hub is down, it can't tell you it's
+    # down over its own webhook.
+
     @field_validator("secret_key")
     @classmethod
     def secret_key_min_length(cls, v: str) -> str:

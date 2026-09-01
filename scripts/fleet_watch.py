@@ -17,6 +17,9 @@ from app.main import create_app
 def main() -> int:
     app = create_app()
     app.state.run_fleet_watch()
+    # Only sent after a successful run — a heartbeat that fires even when
+    # the run itself failed would defeat the point (handoff §8.2).
+    app.state.send_heartbeat()
     return 0
 
 
