@@ -32,6 +32,7 @@ from app.routes.web_auth import get_router as get_web_auth_router
 from app.routes.bulk import get_router as get_bulk_router
 from app.routes.site import get_router as get_site_router
 from app.routes.sites_admin import get_router as get_sites_admin_router
+from app.routes.liveness import get_router as get_liveness_router
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -59,6 +60,7 @@ class RouteDeps:
     inter_key: object
     client_cert_days: int
     server_cert_days: int
+    liveness_token: str | None
     store_pending_bundle: callable
     take_pending_bundle: callable
     store_pending_password: callable
@@ -215,6 +217,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session = request_scoped_db()
         return fleet_watch.check_and_alert(session, _alert)
 
+    def send_heartbeat() -> None:
+        # Deliberately independent of _alert's webhook (handoff §8.2): if
+        # the hub itself is down, it can't tell you over its own path —
+        # this is meant to feed an external dead-man's-switch instead.
+        if not settings.heartbeat_url:
+            return
+        try:
+            req = urllib.request.Request(settings.heartbeat_url, method="GET")
+            urllib.request.urlopen(req, timeout=10)
+        except Exception:
+            logger.exception("failed to send heartbeat")
+
     def regenerate_and_push_crl() -> None:
         session = request_scoped_db()
         pem = cert_service.regenerate_crl(
@@ -246,6 +260,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         inter_key=inter_key,
         client_cert_days=settings.client_cert_days,
         server_cert_days=settings.server_cert_days,
+        liveness_token=settings.liveness_token,
         store_pending_bundle=store_pending_bundle,
         take_pending_bundle=take_pending_bundle,
         store_pending_password=store_pending_password,
@@ -286,9 +301,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(get_bulk_router(deps, templates))
     app.include_router(get_site_router(deps))
     app.include_router(get_sites_admin_router(deps))
+    app.include_router(get_liveness_router(deps))
     app.include_router(get_web_router(deps, templates))
     app.state.regenerate_and_push_crl = regenerate_and_push_crl
     app.state.run_fleet_watch = run_fleet_watch
+    app.state.send_heartbeat = send_heartbeat
 
     from fastapi import HTTPException
     from fastapi.responses import RedirectResponse
