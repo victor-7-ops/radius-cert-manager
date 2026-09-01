@@ -98,8 +98,13 @@ class Certificate(Base):
     # "client" (device cert, the whole app until now) or "server" (a
     # site's FreeRADIUS server cert — infrastructure, not a device).
     # Excluded from client cert lists/counts/bulk ops by default; see
-    # HANDOFF-FLEET.md §3.1. site_id (linking a server cert to its site)
-    # is deferred to the site-registry phase.
+    # HANDOFF-FLEET.md §3.1.
+
+    site_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # Set for cert_type="server" — which site's RADIUS box this cert
+    # belongs to. No FK constraint (SQLite + this project's hand-rolled
+    # migrations don't enforce them elsewhere either); site.py validates
+    # the relationship at the application layer instead.
 
     supersedes: Mapped["Certificate | None"] = relationship(
         remote_side=[id], back_populates="superseded_by", uselist=False
@@ -162,6 +167,35 @@ class AdminSession(Base):
     revoked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class Site(Base):
+    """A remote FreeRADIUS site (HANDOFF-FLEET.md §4.1). Pulls the CRL and
+    renews its own server cert via app/routes/site.py; never pushed to,
+    never trusted with the admin session cookie."""
+
+    __tablename__ = "sites"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String, index=True)
+    subsidiary: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    radius_cn: Mapped[str] = mapped_column(String, unique=True, index=True)
+    address: Mapped[str | None] = mapped_column(String, nullable=True)
+    auth_token_hash: Mapped[str] = mapped_column(String)
+    crl_validity_days: Mapped[int] = mapped_column(Integer, default=30)
+    checkin_interval_seconds: Mapped[int] = mapped_column(Integer, default=3600)
+    last_seen_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_reported_crl_sha256: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_reported_freeradius_ok: Mapped[bool | None] = mapped_column(nullable=True)
+    server_cert_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    agent_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 
@@ -196,6 +230,7 @@ _CERTIFICATE_COLUMN_MIGRATIONS = [
     ("subsidiary", "VARCHAR"),
     ("expiry_alert_sent_at", "DATETIME"),
     ("cert_type", "VARCHAR DEFAULT 'client'"),
+    ("site_id", "VARCHAR"),
 ]
 
 DEVICE_TYPES = ["Laptop", "Phone", "Tablet", "Desktop", "Other"]
