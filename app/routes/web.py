@@ -114,7 +114,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         now = datetime.datetime.now(datetime.timezone.utc)
         thirty_days = now + datetime.timedelta(days=30)
 
-        cert_stmt = select(db.Certificate)
+        cert_stmt = select(db.Certificate).where(db.Certificate.cert_type == "client")
         if admin.subsidiary_scope:
             cert_stmt = cert_stmt.where(db.Certificate.subsidiary == admin.subsidiary_scope)
         rows = session.scalars(cert_stmt).all()
@@ -266,7 +266,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     def _cert_filter_stmt(q, status, employee, subsidiary, admin=None):
         """Shared by the list page and the CSV export so the two can
         never silently drift apart on what a filter means."""
-        stmt = select(db.Certificate)
+        stmt = select(db.Certificate).where(db.Certificate.cert_type == "client")
         if admin is not None and admin.subsidiary_scope:
             # Scoped admin: hard-filter to their own subsidiary regardless
             # of what's in the query string — this is the enforcement
@@ -490,7 +490,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             if stripped_serial:
                 conds.append(db.Certificate.device_serial == stripped_serial)
             duplicates = session.scalars(
-                select(db.Certificate).where(db.Certificate.status == db.CertStatus.active, or_(*conds))
+                select(db.Certificate).where(
+                    db.Certificate.status == db.CertStatus.active,
+                    db.Certificate.cert_type == "client",
+                    or_(*conds),
+                )
             ).all()
             if duplicates:
                 return templates.TemplateResponse(
@@ -816,7 +820,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         crl = crl_health.get_health(session)
 
         status_counts = {"active": 0, "suspended": 0, "revoked": 0, "expired": 0}
-        for c in session.scalars(select(db.Certificate)).all():
+        client_certs_stmt = select(db.Certificate).where(db.Certificate.cert_type == "client")
+        for c in session.scalars(client_certs_stmt).all():
             status_counts[_effective_status(c)] = status_counts.get(_effective_status(c), 0) + 1
 
         db_size = deps.db_path.stat().st_size if deps.db_path.exists() else 0

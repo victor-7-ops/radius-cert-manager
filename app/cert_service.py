@@ -11,9 +11,12 @@ timeout-and-retry so it never mints two certificates.
 from __future__ import annotations
 
 import datetime
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
+from cryptography import x509
+from cryptography.x509.oid import NameOID
 from filelock import FileLock
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,6 +26,12 @@ from app import db, pki
 
 class CNConflictError(Exception):
     pass
+
+
+class CSRCNMismatchError(Exception):
+    """CSR's CN doesn't match the requesting site's registered CN — a site
+    must never be able to obtain a certificate for another site
+    (HANDOFF-FLEET.md §3.2)."""
 
 
 @dataclass
@@ -91,7 +100,9 @@ def _issue_one_locked(
     if not skip_conflict_check:
         active_conflict = session.scalar(
             select(db.Certificate).where(
-                db.Certificate.cn == cn, db.Certificate.status == db.CertStatus.active
+                db.Certificate.cn == cn,
+                db.Certificate.status == db.CertStatus.active,
+                db.Certificate.cert_type == "client",
             )
         )
         if active_conflict is not None:
@@ -245,6 +256,92 @@ def unsuspend(session: Session, pki_path: Path, serial: str, actor: str):
 
 def revoke(session: Session, pki_path: Path, serial: str, reason: str, actor: str):
     return _set_status(session, pki_path, serial, db.CertStatus.revoked, reason, actor)
+
+
+def issue_server_cert(
+    session: Session,
+    pki_path: Path,
+    inter_cert,
+    inter_key,
+    csr_pem: bytes,
+    site_id: str,
+    site_cn: str,
+    request_id: str,
+    days: int,
+    issued_by: str,
+) -> IssueResult:
+    """Sign a RADIUS server cert from a site-supplied CSR (HANDOFF-FLEET.md
+    §3.2). The private key never travels: the site generates it and sends
+    only the CSR. The CSR's CN must match the site's own registered CN, or
+    one site could obtain a cert for another site's identity."""
+    csr = x509.load_pem_x509_csr(csr_pem)
+    csr_cn = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    if csr_cn != site_cn:
+        raise CSRCNMismatchError(f"CSR CN {csr_cn!r} does not match site CN {site_cn!r}")
+
+    with _lock(pki_path):
+        existing = session.scalar(
+            select(db.Certificate).where(db.Certificate.request_id == request_id)
+        )
+        if existing is not None:
+            return IssueResult(certificate=existing, bundle=None, deduped=True)
+
+        serial = _unique_serial(session)
+        cert = pki.sign_server_cert(csr, inter_cert, inter_key, serial, days)
+
+        issued_dir = pki_path / "issued"
+        issued_dir.mkdir(parents=True, exist_ok=True)
+        (issued_dir / f"{site_cn}.{serial}.crt").write_bytes(pki.cert_to_pem(cert))
+
+        # site_id isn't a Certificate column yet — the sites table lands in
+        # the site-registry phase (HANDOFF-FLEET.md §4.1). Recorded in the
+        # audit detail below so the link isn't lost; site_id param is kept
+        # here so callers don't need to change once the column exists.
+        row = db.Certificate(
+            cn=site_cn,
+            serial=str(serial),
+            issued_at=cert.not_valid_before_utc,
+            expires_at=cert.not_valid_after_utc,
+            status=db.CertStatus.active,
+            issued_by=issued_by,
+            request_id=request_id,
+            cert_type="server",
+        )
+        session.add(row)
+        db.audit(
+            session, actor=issued_by, action="issue_server_cert", target=site_cn,
+            detail=f"serial={serial} site_id={site_id}",
+        )
+        session.commit()
+        session.refresh(row)
+
+        return IssueResult(certificate=row, bundle=None)
+
+
+def renewal_due(cert: db.Certificate, now: datetime.datetime | None = None) -> bool:
+    """True when less than one third of the cert's lifetime remains
+    (HANDOFF-FLEET.md §3.3) — renewal is due early, not at the last
+    minute."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    issued_at = cert.issued_at
+    expires_at = cert.expires_at
+    if issued_at.tzinfo is None:
+        issued_at = issued_at.replace(tzinfo=datetime.timezone.utc)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
+    lifetime = expires_at - issued_at
+    renew_at = issued_at + (lifetime * 2 / 3)
+    return now >= renew_at
+
+
+def renewal_offset(site_id: str, window_days: int) -> int:
+    """Deterministic per-site offset (in days, [0, window_days)) so a
+    fleet of sites doesn't renew on the same night (HANDOFF-FLEET.md
+    §3.3) — a bad automated renewal breaks one site, not all of them."""
+    if window_days <= 0:
+        return 0
+    digest = hashlib.sha256(site_id.encode()).hexdigest()
+    return int(digest, 16) % window_days
 
 
 def regenerate_crl(
