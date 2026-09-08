@@ -13,7 +13,9 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from urllib.parse import urlparse
+
+from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -293,6 +295,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             request_scoped_db.remove()
             _request_db_key.reset(token)
+
+    _CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+    @app.middleware("http")
+    async def _check_csrf_origin(request: Request, call_next):
+        # Cross-site request forgery defense-in-depth for the admin UI.
+        # The session cookie is already SameSite=Strict (app/auth.py),
+        # which blocks the vast majority of CSRF vectors on its own — this
+        # is a second, independent check in case that ever regresses (a
+        # future samesite=lax change, a browser quirk, a subdomain
+        # sharing the cookie). It only ever looks at requests carrying the
+        # admin session cookie; require_site's Authorization-header auth
+        # (app/site_auth.py) and the unauthenticated /auth/login route are
+        # untouched.
+        #
+        # Checked only when Origin/Referer is present: every mainstream
+        # browser attaches Origin to same-origin and cross-origin
+        # state-changing requests alike, so a genuine forged
+        # cross-origin POST always carries a (mismatching) Origin header.
+        # Absence just means a non-browser client or a test client with
+        # no session cookie in play, which this check doesn't apply to.
+        if (
+            request.method not in _CSRF_SAFE_METHODS
+            and auth.SESSION_COOKIE in request.cookies
+        ):
+            origin = request.headers.get("origin") or request.headers.get("referer")
+            if origin is not None:
+                origin_host = urlparse(origin).netloc
+                if origin_host and origin_host != request.headers.get("host", ""):
+                    return JSONResponse(
+                        {"detail": "Cross-origin request rejected"}, status_code=status.HTTP_403_FORBIDDEN
+                    )
+        return await call_next(request)
 
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
     app.include_router(get_certs_router(deps))
