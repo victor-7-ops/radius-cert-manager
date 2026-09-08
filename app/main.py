@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -142,54 +143,83 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     require_site = site_auth.get_current_site_factory(get_db_session=request_scoped_db)
 
+    # These four stores hold secret material (private keys, p12 export
+    # passwords) purely in RAM, consumed-once by design — but "consumed
+    # once" only fires if the admin actually completes the flow. An
+    # abandoned delivery page or bulk-preview leaves its entry sitting in
+    # memory indefinitely: unbounded growth, and a private key or
+    # password outliving the request that should have been its only
+    # consumer. Each store is opportunistically swept for stale entries
+    # (by insertion time, not last access) on every write, bounding both
+    # how long secrets linger and how large these dicts can grow.
+    _PENDING_TTL_SECONDS = 15 * 60
+
+    def _sweep_stale(store: dict[str, tuple[float, object]], now: float, ttl: float) -> None:
+        for stale_key in [k for k, (ts, _) in store.items() if now - ts > ttl]:
+            del store[stale_key]
+
     # One-time bundle store: serial -> Pkcs12Bundle, consumed on first read
     # (handoff §6.4 — a second request for the same bundle returns 410).
-    pending_bundles: dict[str, object] = {}
+    pending_bundles: dict[str, tuple[float, object]] = {}
 
     def store_pending_bundle(serial: str, bundle) -> None:
+        now = time.monotonic()
+        _sweep_stale(pending_bundles, now, _PENDING_TTL_SECONDS)
         if bundle is not None:
-            pending_bundles[serial] = bundle
+            pending_bundles[serial] = (now, bundle)
 
     def take_pending_bundle(serial: str):
-        return pending_bundles.pop(serial, None)
+        entry = pending_bundles.pop(serial, None)
+        return entry[1] if entry is not None else None
 
     # Export password shown once on the delivery screen (handoff §6.4) —
     # never persisted, never logged, consumed alongside the bundle.
-    pending_passwords: dict[str, str] = {}
+    pending_passwords: dict[str, tuple[float, str]] = {}
 
     def store_pending_password(serial: str, password: str) -> None:
-        pending_passwords[serial] = password
+        now = time.monotonic()
+        _sweep_stale(pending_passwords, now, _PENDING_TTL_SECONDS)
+        pending_passwords[serial] = (now, password)
 
     def take_pending_password(serial: str):
-        return pending_passwords.pop(serial, None)
+        entry = pending_passwords.pop(serial, None)
+        return entry[1] if entry is not None else None
 
     # Bulk issue (handoff §6.5): a preview token maps to the classified
     # valid-identifier list, consumed on confirm so a resubmitted preview
     # can't reissue the same batch twice. A batch entry (result + zip)
     # is kept until its ZIP is downloaded once (410 after).
-    pending_previews: dict[str, list[str]] = {}
-    pending_batches: dict[str, tuple[object, bytes]] = {}
+    pending_previews: dict[str, tuple[float, list[str]]] = {}
+    pending_batches: dict[str, tuple[float, tuple[object, bytes]]] = {}
 
     def store_pending_preview(token: str, identifiers: list[str]) -> None:
-        pending_previews[token] = identifiers
+        now = time.monotonic()
+        _sweep_stale(pending_previews, now, _PENDING_TTL_SECONDS)
+        pending_previews[token] = (now, identifiers)
 
     def take_pending_preview(token: str):
-        return pending_previews.pop(token, None)
+        entry = pending_previews.pop(token, None)
+        return entry[1] if entry is not None else None
 
     def peek_pending_preview(token: str):
         # Non-consuming — the "fix a malformed row" flow mutates the
         # list in place (same object, no re-store needed) while the
         # batch is still under review; only /confirm consumes it.
-        return pending_previews.get(token)
+        entry = pending_previews.get(token)
+        return entry[1] if entry is not None else None
 
     def store_pending_batch(batch_id: str, result, zip_bytes: bytes) -> None:
-        pending_batches[batch_id] = (result, zip_bytes)
+        now = time.monotonic()
+        _sweep_stale(pending_batches, now, _PENDING_TTL_SECONDS)
+        pending_batches[batch_id] = (now, (result, zip_bytes))
 
     def peek_pending_batch(batch_id: str):
-        return pending_batches.get(batch_id)
+        entry = pending_batches.get(batch_id)
+        return entry[1] if entry is not None else None
 
     def take_pending_batch(batch_id: str):
-        return pending_batches.pop(batch_id, None)
+        entry = pending_batches.pop(batch_id, None)
+        return entry[1] if entry is not None else None
 
     def _alert(message: str) -> None:
         logger.error("ALERT: %s", message)
