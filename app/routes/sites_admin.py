@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 
 from app import db, site_service
+from app.validation import CN_RE
 
 
 def get_router(deps) -> APIRouter:
@@ -35,11 +36,21 @@ def get_router(deps) -> APIRouter:
         radius_cn = payload.get("radius_cn")
         if not name or not radius_cn:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "name and radius_cn are required")
+        if not CN_RE.match(radius_cn):
+            # radius_cn ends up unvalidated in a filesystem path at
+            # server-cert issuance/renewal time (app/routes/site.py:
+            # pki_path/"issued"/f"{site.radius_cn}.{serial}.crt") — same
+            # charset restriction cert CNs already get, for the same
+            # reason (no slashes, no traversal, no surprises on disk).
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid radius_cn format")
+        subsidiary = payload.get("subsidiary")
+        if subsidiary is not None and subsidiary not in db.SUBSIDIARIES:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid subsidiary")
 
         try:
             result = site_service.create_site(
                 session, name=name, radius_cn=radius_cn, actor=admin.username,
-                subsidiary=payload.get("subsidiary"), address=payload.get("address"),
+                subsidiary=subsidiary, address=payload.get("address"),
                 crl_validity_days=payload.get("crl_validity_days", 30),
                 checkin_interval_seconds=payload.get("checkin_interval_seconds", 3600),
                 notes=payload.get("notes"),
