@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from cryptography.x509.oid import NameOID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -24,9 +25,7 @@ def import_existing_certs(session: Session, issued_dir: Path) -> list[str]:
         existing = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
         if existing is not None:
             continue
-        cn = cert.subject.get_attributes_for_oid(
-            __import__("cryptography.x509.oid", fromlist=["NameOID"]).NameOID.COMMON_NAME
-        )[0].value
+        cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
         row = db.Certificate(
             cn=cn,
             serial=serial,
