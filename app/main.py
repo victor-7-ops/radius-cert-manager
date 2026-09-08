@@ -31,6 +31,9 @@ from app.db import init_db, make_engine, make_session_factory
 from app.routes.certs import get_router as get_certs_router
 from app.routes.health import get_router as get_health_router
 from app.routes.web import get_router as get_web_router
+from app.routes.web_account import get_router as get_web_account_router
+from app.routes.web_admins import get_router as get_web_admins_router
+from app.routes.web_certs import get_router as get_web_certs_router
 from app.routes.web_auth import get_router as get_web_auth_router
 from app.routes.bulk import get_router as get_bulk_router
 from app.routes.site import get_router as get_site_router
@@ -367,6 +370,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(get_site_router(deps))
     app.include_router(get_sites_admin_router(deps))
     app.include_router(get_liveness_router(deps))
+    app.include_router(get_web_certs_router(deps, templates))
+    app.include_router(get_web_account_router(deps, templates))
+    app.include_router(get_web_admins_router(deps, templates))
     app.include_router(get_web_router(deps, templates))
     app.state.regenerate_and_push_crl = regenerate_and_push_crl
     app.state.run_fleet_watch = run_fleet_watch
