@@ -31,6 +31,21 @@ LOCKOUT_WINDOW_MINUTES = 15
 
 _hasher = PasswordHasher()
 
+# Argon2 verify() is ~100ms; a lookup miss short-circuits before ever
+# calling it. That difference is a timing oracle for username
+# enumeration. Hash a fixed dummy password with the live hasher (lazily,
+# so it always matches whatever _hasher is currently in use — including
+# the low-cost one tests swap in) and verify against it on every unknown
+# username, so a miss costs the same as a real failed attempt.
+_dummy_hash: str | None = None
+
+
+def _get_dummy_hash() -> str:
+    global _dummy_hash
+    if _dummy_hash is None:
+        _dummy_hash = _hasher.hash("no-such-admin-dummy-password")
+    return _dummy_hash
+
 
 def hash_password(password: str) -> str:
     return _hasher.hash(password)
@@ -152,6 +167,7 @@ def attempt_login(session: Session, username: str, password: str) -> LoginResult
     now = _now()
 
     if admin is None:
+        verify_password("no-such-admin-dummy-password", _get_dummy_hash())
         return LoginResult(ok=False)
 
     if _aware(admin.locked_until) is not None:
