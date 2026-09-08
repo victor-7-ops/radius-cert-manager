@@ -56,6 +56,15 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         subsidiary_scope: str = Form(""),
         admin: db.Admin = Depends(deps.require_super_admin),
     ):
+        subsidiary_scope = subsidiary_scope.strip() or None
+        if subsidiary_scope is not None and subsidiary_scope not in db.SUBSIDIARIES:
+            # The form only ever offers db.SUBSIDIARIES as a dropdown — a
+            # typo'd or hand-crafted value here would silently scope this
+            # admin to a company name that (in the normal case) no cert
+            # is ever tagged with, leaving their cert list permanently
+            # empty with no obvious reason why.
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid subsidiary")
+
         session = deps.get_db_session()
         temp_password = secrets.token_urlsafe(12)
         new_admin = db.Admin(
@@ -64,7 +73,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             role=db.AdminRole(role),
             must_change_password=True,
             created_by=admin.username,
-            subsidiary_scope=subsidiary_scope.strip() or None,
+            subsidiary_scope=subsidiary_scope,
         )
         session.add(new_admin)
         db.audit(session, actor=admin.username, action="create_admin", target=username)
