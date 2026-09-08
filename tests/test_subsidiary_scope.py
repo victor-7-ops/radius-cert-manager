@@ -153,6 +153,44 @@ def test_scoped_admin_blocked_from_bulk_issue_and_activity_log(app_settings, thr
     assert client.get("/activity").status_code == 403
 
 
+def test_json_api_enforces_subsidiary_scope(app_settings, throwaway_pki, monkeypatch):
+    # The /api/certs JSON router (app/routes/certs.py) is a separate code
+    # path from the HTML routes above — it used to check role
+    # (require_admin/require_super_admin) but never subsidiary scope, so
+    # a scoped admin hitting it directly could see and revoke certs
+    # outside their own subsidiary.
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    unscoped = _seed_admin(app_settings, "unscoped-api-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, unscoped)
+
+    client.post("/certs/issue", data={"cn": "api-boracay-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Boracay"})
+    client.post("/certs/issue", data={"cn": "api-cebu-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu"})
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    cebu_serial = session.query(db.Certificate).filter_by(cn="api-cebu-device").one().serial
+
+    scoped = _seed_admin(app_settings, "boracay-api-admin", db.AdminRole.super_admin, subsidiary_scope="Lezzgo Boracay")
+    _login(client, app_settings, scoped)
+
+    list_resp = client.get("/api/certs")
+    cns = [c["cn"] for c in list_resp.json()["items"]]
+    assert "api-boracay-device" in cns
+    assert "api-cebu-device" not in cns
+
+    assert client.get(f"/api/certs/{cebu_serial}").status_code == 403
+    assert client.post(f"/api/certs/{cebu_serial}/suspend", json={"reason": "test"}).status_code == 403
+    assert client.post(f"/api/certs/{cebu_serial}/revoke", json={"reason": "test"}).status_code == 403
+
+    verify_session = db.make_session_factory(engine)()
+    cebu_cert = verify_session.query(db.Certificate).filter_by(cn="api-cebu-device").one()
+    assert cebu_cert.status == db.CertStatus.active
+
+
 def test_unscoped_admin_is_unaffected(app_settings, throwaway_pki, monkeypatch):
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
     _write_throwaway_pki(app_settings, throwaway_pki)

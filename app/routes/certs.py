@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app import cert_service, db
+from app.routes.web_helpers import require_cert_scope
 
 
 class IssueRequest(BaseModel):
@@ -30,6 +31,13 @@ def get_router(deps) -> APIRouter:
     hidden global state."""
     router = APIRouter(prefix="/api/certs", tags=["certs"])
 
+    def _load_cert_or_404_in_scope(session, admin: db.Admin, serial: str) -> db.Certificate:
+        cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+        if cert is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        require_cert_scope(admin, cert)
+        return cert
+
     @router.get("")
     def list_certs(
         q: str | None = None,
@@ -39,6 +47,11 @@ def get_router(deps) -> APIRouter:
     ):
         session = deps.get_db_session()
         stmt = select(db.Certificate).where(db.Certificate.cert_type == "client")
+        if admin.subsidiary_scope:
+            # Same enforcement point as the web UI's cert list
+            # (app/routes/web_certs.py) — a scoped admin only ever sees
+            # their own subsidiary's certs through this API too.
+            stmt = stmt.where(db.Certificate.subsidiary == admin.subsidiary_scope)
         if q:
             stmt = stmt.where(db.Certificate.cn.contains(q))
         if status_filter:
@@ -54,6 +67,7 @@ def get_router(deps) -> APIRouter:
         cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
         if cert is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        require_cert_scope(admin, cert)
         return _serialize(cert)
 
     @router.post("", status_code=status.HTTP_201_CREATED)
@@ -79,6 +93,11 @@ def get_router(deps) -> APIRouter:
 
     @router.get("/{serial}/bundle")
     def get_bundle(serial: str, admin: db.Admin = Depends(deps.require_admin)):
+        if admin.subsidiary_scope:
+            session = deps.get_db_session()
+            cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+            if cert is not None:
+                require_cert_scope(admin, cert)
         bundle = deps.take_pending_bundle(serial)
         if bundle is None:
             raise HTTPException(status.HTTP_410_GONE, "bundle already consumed or not found")
@@ -91,6 +110,7 @@ def get_router(deps) -> APIRouter:
         serial: str, body: StatusChangeRequest, admin: db.Admin = Depends(deps.require_admin)
     ):
         session = deps.get_db_session()
+        _load_cert_or_404_in_scope(session, admin, serial)
         try:
             cert = cert_service.suspend(session, deps.pki_path, serial, body.reason, admin.username)
         except KeyError:
@@ -101,6 +121,7 @@ def get_router(deps) -> APIRouter:
     @router.post("/{serial}/unsuspend")
     def unsuspend(serial: str, admin: db.Admin = Depends(deps.require_super_admin)):
         session = deps.get_db_session()
+        _load_cert_or_404_in_scope(session, admin, serial)
         try:
             cert = cert_service.unsuspend(session, deps.pki_path, serial, admin.username)
         except KeyError:
@@ -113,6 +134,7 @@ def get_router(deps) -> APIRouter:
         serial: str, body: StatusChangeRequest, admin: db.Admin = Depends(deps.require_super_admin)
     ):
         session = deps.get_db_session()
+        _load_cert_or_404_in_scope(session, admin, serial)
         try:
             cert = cert_service.revoke(session, deps.pki_path, serial, body.reason, admin.username)
         except KeyError:
