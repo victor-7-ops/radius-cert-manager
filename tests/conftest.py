@@ -11,10 +11,20 @@ import sys
 from pathlib import Path
 
 import pytest
+from argon2 import PasswordHasher
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import auth, db, pki  # noqa: E402
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _cheap_password_hashing():
+    # Production argon2 params are deliberately expensive (~100ms/hash) —
+    # fine for real logins, but hundreds of test logins/admin-creations
+    # at that cost is most of this suite's wall-clock time. Lowest-cost
+    # params here since test security guarantees don't depend on them.
+    auth._hasher = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
 
 
 def login_as(client, app_settings, admin):

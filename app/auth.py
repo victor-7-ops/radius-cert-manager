@@ -154,8 +154,17 @@ def attempt_login(session: Session, username: str, password: str) -> LoginResult
     if admin is None:
         return LoginResult(ok=False)
 
-    if _aware(admin.locked_until) is not None and _aware(admin.locked_until) > now:
-        return LoginResult(ok=False, locked=True)
+    if _aware(admin.locked_until) is not None:
+        if _aware(admin.locked_until) > now:
+            return LoginResult(ok=False, locked=True)
+        # Lockout window has expired — this is a fresh window, not a
+        # continuation of the last one. Without this reset,
+        # failed_login_count stays >= LOCKOUT_MAX_ATTEMPTS forever, so a
+        # single wrong password any time after expiry (even a harmless
+        # typo) instantly re-locks the account for another full window.
+        admin.failed_login_count = 0
+        admin.locked_until = None
+        session.commit()
 
     if not admin.is_active:
         return LoginResult(ok=False)
@@ -248,8 +257,13 @@ def get_current_admin_factory(get_db_session, get_secret_key):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session invalid")
         touch_admin_session(db_session, record)
 
-        # Silent refresh: slide the inactivity window forward, same session id.
-        issue_session_cookie(response, secret_key, admin, session_id=record.id)
+        # Silent refresh: slide the inactivity window forward, same session id
+        # and same session_start — preserving session_start is what makes
+        # SESSION_ABSOLUTE_SECONDS an actual hard cap instead of resetting
+        # on every request.
+        issue_session_cookie(
+            response, secret_key, admin, session_id=record.id, session_start=data.session_start.isoformat()
+        )
 
         if (
             admin.must_change_password
