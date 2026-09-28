@@ -102,6 +102,16 @@
     </dl>
     <p class="text-xs text-slate-500 mt-2">Checked each time this page loads (no scheduler in this app yet) — not a live background job.</p>
   </div>
+
+  <div class="card p-5">
+    <h2 class="font-semibold text-slate-900 mb-3">Retention</h2>
+    <dl class="text-sm space-y-2">
+      <div class="flex justify-between"><dt class="text-slate-500">Certificates eligible</dt><dd class="text-slate-700">{{ retention.certs_eligible if retention.cert_retention_days is not none else "off" }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">Audit rows eligible</dt><dd class="text-slate-700">{{ retention.audit_rows_eligible if retention.audit_retention_days is not none else "off" }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">Sessions eligible</dt><dd class="text-slate-700">{{ retention.sessions_eligible if retention.session_retention_days is not none else "off" }}</dd></div>
+    </dl>
+    <p class="text-xs text-slate-500 mt-2">Run by scripts/retention.py on a timer. "off" means that period is unset — nothing is ever deleted or minimised until the DPO sets it.</p>
+  </div>
 </div>
 
 {% if fleet %}

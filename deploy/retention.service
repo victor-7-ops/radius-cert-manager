@@ -1,0 +1,25 @@
+[Unit]
+Description=Certmanager data retention/minimisation (HANDOFF-COMPLIANCE.md §1)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=certmgr
+Group=certmgr
+WorkingDirectory=/opt/certmanager
+EnvironmentFile=/opt/certmanager/.env
+ExecStart=/opt/certmanager/.venv/bin/python scripts/retention.py
+
+# Single pass per run (triggered by retention.timer), not a daemon —
+# matches this repo's existing regenerate_crl_cron.py / fleet_watch.py
+# pattern. Every *_retention_days is unset by default (see .env.example),
+# so an unconfigured deployment runs this as a safe no-op.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/certmanager
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

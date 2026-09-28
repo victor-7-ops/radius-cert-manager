@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     # Hub self-monitoring (HANDOFF-FLEET.md §8.2) — when the hub itself is
     # down, the fleet view is down with it, so it needs a signal that
     # doesn't depend on the hub's own alerting path staying up.
+    # Data retention (HANDOFF-COMPLIANCE.md §1) — all optional and unset by
+    # default. Unset means "do nothing": a deployment that hasn't been told
+    # a period must not start clearing data on upgrade. Only the DPO sets
+    # these (OI-13); this app must never guess a value.
+    cert_retention_days: int | None = None
+    audit_retention_days: int | None = None
+    session_retention_days: int | None = None
+
     liveness_token: str | None = None
     # If set, GET /api/live/{liveness_token} returns 200 with no auth —
     # for an external check (CloudWatch Synthetics, healthchecks.io) that
