@@ -170,7 +170,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             return HTMLResponse('<span class="text-red-600">Invalid characters — use letters, numbers, dot, dash, underscore.</span>')
         session = deps.get_db_session()
         existing = session.scalar(
-            select(db.Certificate).where(db.Certificate.cn == cn, db.Certificate.status == db.CertStatus.active)
+            select(db.Certificate).where(
+                db.Certificate.cn == cn,
+                db.Certificate.status == db.CertStatus.active,
+                db.Certificate.cert_type == "client",
+            )
         )
         if existing is not None:
             return HTMLResponse(f'<span class="text-red-600">An active certificate for "{cn}" already exists.</span>')

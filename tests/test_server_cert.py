@@ -139,6 +139,15 @@ def test_renewal_due_true_past_expiry():
     assert cert_service.renewal_due(cert, now) is True
 
 
+def test_renewal_due_offset_delays_the_threshold():
+    now = datetime.datetime.now(datetime.timezone.utc)
+    # Exactly at the two-thirds mark — due with no offset, not yet due
+    # once a site's stagger offset pushes the threshold later.
+    cert = _cert(now, issued_days_ago=60, total_days=90)
+    assert cert_service.renewal_due(cert, now, offset_days=0) is True
+    assert cert_service.renewal_due(cert, now, offset_days=5) is False
+
+
 def test_renewal_offset_is_deterministic():
     a = cert_service.renewal_offset("site-1", 30)
     b = cert_service.renewal_offset("site-1", 30)

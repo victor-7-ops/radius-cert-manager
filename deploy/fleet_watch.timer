@@ -1,0 +1,13 @@
+[Unit]
+Description=Run certmanager fleet watch on a schedule comfortably shorter than any site's check-in interval
+
+[Timer]
+# Default checkin_interval_seconds is 1h (app/db.py Site.checkin_interval_seconds)
+# — this must stay comfortably shorter than the shortest site's interval,
+# or a SILENT site can go several intervals before this ever runs.
+OnBootSec=2min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
