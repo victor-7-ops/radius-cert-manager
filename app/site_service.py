@@ -75,3 +75,12 @@ def deactivate(session: Session, site: db.Site, actor: str) -> None:
         subsidiary=site.subsidiary, site_id=site.id,
     )
     session.commit()
+
+
+def reactivate(session: Session, site: db.Site, actor: str) -> None:
+    site.is_active = True
+    db.audit(
+        session, actor=actor, action="site_reactivate", target=site.radius_cn,
+        subsidiary=site.subsidiary, site_id=site.id,
+    )
+    session.commit()
