@@ -253,6 +253,18 @@ class AuditLog(Base):
     # left alone rather than guessed).
 
 
+class MigrationFlag(Base):
+    """One-shot migration markers (HANDOFF-COMPLIANCE.md §6) — a step that
+    should run once ever, not on every boot, records its name here after
+    it runs. To force a deliberate re-run, delete the row (or the whole
+    table; init_db recreates it) and restart."""
+
+    __tablename__ = "migration_flags"
+
+    name: Mapped[str] = mapped_column(String, primary_key=True)
+    ran_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 def make_engine(db_path: str):
     return create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
 
@@ -347,14 +359,32 @@ def init_db(engine) -> None:
     _migrate_columns(engine, "admins", _ADMIN_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "sites", _SITE_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "audit_log", _AUDIT_LOG_COLUMN_MIGRATIONS)
-    backfill_audit_log_subsidiary(engine)
+    run_once(engine, "audit_log_subsidiary_backfill", lambda: backfill_audit_log_subsidiary(engine))
+
+
+def run_once(engine, name: str, fn) -> bool:
+    """Runs fn() and records `name` as done, unless it already is. Used to
+    guard a startup migration step that scans a table (like the audit-log
+    subsidiary backfill below) behind a flag instead of re-scanning every
+    boot forever (HANDOFF-COMPLIANCE.md §6). Returns True if fn() ran."""
+    with Session(engine) as session:
+        if session.get(MigrationFlag, name) is not None:
+            return False
+        fn()
+        session.add(MigrationFlag(name=name))
+        session.commit()
+        return True
 
 
 def backfill_audit_log_subsidiary(engine) -> int:
     """HANDOFF-FLEET.md §8.3: for rows written before AuditLog.subsidiary
     existed, derive it from the target certificate's CN where possible.
-    Idempotent (only touches subsidiary IS NULL rows) and safe to run
-    every boot — it does nothing once the backfill has already happened.
+    Idempotent (only touches subsidiary IS NULL rows). init_db() runs this
+    exactly once (via run_once/MigrationFlag, HANDOFF-COMPLIANCE.md §6)
+    rather than scanning the whole audit_log table on every boot forever;
+    call it directly (as this function, or via scripts/rerun_audit_backfill.py)
+    to deliberately re-run it — e.g. after correcting a certificate's
+    subsidiary that audit rows should now pick up.
     Returns the number of rows updated."""
     with Session(engine) as session:
         cn_to_subsidiary = dict(
