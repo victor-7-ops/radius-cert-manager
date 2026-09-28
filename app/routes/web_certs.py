@@ -132,7 +132,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         status: str | None = None,
         employee: str | None = None,
         subsidiary: str | None = None,
-        admin: db.Admin = Depends(deps.require_admin),
+        admin: db.Admin = Depends(deps.require_write),
     ):
         if rate_limit.is_rate_limited(f"export:{admin.id}", max_requests=10, window_seconds=300):
             # 429 literal, not status.HTTP_429_TOO_MANY_REQUESTS — this
@@ -205,7 +205,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         subsidiary: str = Form(""),
         request_id: str = Form(...),
         confirm_duplicate: str = Form(""),
-        admin: db.Admin = Depends(deps.require_admin),
+        admin: db.Admin = Depends(deps.require_write),
     ):
         session = deps.get_db_session()
         if admin.subsidiary_scope:
@@ -311,7 +311,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         return RedirectResponse(f"/certs/{result.certificate.serial}/delivery", status_code=303)
 
     @router.get("/certs/{serial}/delivery")
-    def delivery(request: Request, serial: str, admin: db.Admin = Depends(deps.require_admin)):
+    def delivery(request: Request, serial: str, admin: db.Admin = Depends(deps.require_write)):
         password = deps.take_pending_password(serial)
         if password is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "nothing to deliver")
@@ -361,7 +361,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         )
 
     @router.get("/certs/{serial}/bundle")
-    def download_bundle(serial: str, admin: db.Admin = Depends(deps.require_admin)):
+    def download_bundle(serial: str, admin: db.Admin = Depends(deps.require_write)):
         if rate_limit.is_rate_limited(f"bundle:{admin.id}", max_requests=30, window_seconds=60):
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts — wait a minute and try again.")
         if admin.subsidiary_scope:
@@ -451,7 +451,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         return cert
 
     @router.post("/certs/{serial}/reissue")
-    def reissue(request: Request, serial: str, admin: db.Admin = Depends(deps.require_admin)):
+    def reissue(request: Request, serial: str, admin: db.Admin = Depends(deps.require_write)):
         session = deps.get_db_session()
         _load_cert_or_404_in_scope(session, admin, serial)
         try:
@@ -473,7 +473,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         return RedirectResponse(f"/certs/{result.certificate.serial}/delivery", status_code=303)
 
     @router.post("/certs/{serial}/suspend")
-    def suspend(request: Request, serial: str, reason: str = "", admin: db.Admin = Depends(deps.require_admin)):
+    def suspend(request: Request, serial: str, reason: str = "", admin: db.Admin = Depends(deps.require_write)):
         session = deps.get_db_session()
         _load_cert_or_404_in_scope(session, admin, serial)
         try:
@@ -513,7 +513,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         bulk_action: str = Form(..., alias="action"),
         reason: str = "",
         export_password: str = Form(""),
-        admin: db.Admin = Depends(deps.require_admin),
+        admin: db.Admin = Depends(deps.require_write),
     ):
         if bulk_action not in ("suspend", "revoke", "renew"):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid action")

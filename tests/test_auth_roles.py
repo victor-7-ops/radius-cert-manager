@@ -21,7 +21,7 @@ def secret_key():
 
 @pytest.fixture
 def app_client(session_factory, secret_key):
-    require_admin, require_super_admin = auth.get_current_admin_factory(
+    require_admin, require_super_admin, require_write = auth.get_current_admin_factory(
         get_db_session=lambda: session_factory(),
         get_secret_key=lambda: secret_key,
     )
