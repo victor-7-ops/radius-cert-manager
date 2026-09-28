@@ -37,6 +37,7 @@ def _make_cfg(tmp_path):
     cfg.ca_chain_filename = "ca-chain.pem"
     cfg.freeradius_service = "freeradius"
     cfg.request_timeout = 5.0
+    cfg.hub_ca_bundle = str(tmp_path / "ca-chain.pem")
     return cfg
 
 
@@ -227,3 +228,56 @@ def _fake_keypair(work_dir: Path):
     key_path.write_bytes(b"FAKE KEY BYTES")
     csr_path.write_text("FAKE CSR PEM")
     return key_path, csr_path
+
+
+def _set_base_env(monkeypatch):
+    monkeypatch.setenv("HUB_URL", "https://hub.example")
+    monkeypatch.setenv("SITE_TOKEN", "tok")
+    monkeypatch.setenv("SITE_CN", "radius-x.internal")
+
+
+def test_config_fails_closed_when_ca_bundle_unset(monkeypatch):
+    _set_base_env(monkeypatch)
+    monkeypatch.delenv("HUB_CA_BUNDLE", raising=False)
+    with pytest.raises(SystemExit, match="HUB_CA_BUNDLE"):
+        site_agent.Config()
+
+
+def test_config_fails_closed_when_ca_bundle_missing(monkeypatch, tmp_path):
+    _set_base_env(monkeypatch)
+    monkeypatch.setenv("HUB_CA_BUNDLE", str(tmp_path / "does-not-exist.pem"))
+    with pytest.raises(SystemExit, match="does not exist"):
+        site_agent.Config()
+
+
+def test_config_accepts_existing_ca_bundle(monkeypatch, tmp_path):
+    _set_base_env(monkeypatch)
+    bundle = tmp_path / "ca-chain.pem"
+    bundle.write_text("fake pem")
+    monkeypatch.setenv("HUB_CA_BUNDLE", str(bundle))
+    cfg = site_agent.Config()
+    assert cfg.hub_ca_bundle == str(bundle)
+
+
+def test_run_once_verifies_against_hub_ca_bundle(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    seen_sessions = []
+
+    class _FakeSession:
+        def __init__(self):
+            self.verify = None
+            seen_sessions.append(self)
+
+        def post(self, *a, **k):
+            return MagicMock(
+                status_code=200,
+                raise_for_status=lambda: None,
+                json=lambda: {"newer_crl_available": False, "renewal_due": False},
+            )
+
+    monkeypatch.setattr(site_agent.requests, "Session", _FakeSession)
+    monkeypatch.setattr(site_agent, "_freeradius_is_active", lambda service: True)
+
+    site_agent.run_once(cfg)
+
+    assert seen_sessions[0].verify == cfg.hub_ca_bundle
