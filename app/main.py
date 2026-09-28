@@ -83,6 +83,7 @@ class RouteDeps:
     store_pending_batch: callable
     take_pending_batch: callable
     peek_pending_batch: callable
+    settings: Settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -312,6 +313,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         store_pending_batch=store_pending_batch,
         take_pending_batch=take_pending_batch,
         peek_pending_batch=peek_pending_batch,
+        settings=settings,
     )
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -377,6 +379,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.regenerate_and_push_crl = regenerate_and_push_crl
     app.state.run_fleet_watch = run_fleet_watch
     app.state.send_heartbeat = send_heartbeat
+    app.state.settings = settings
+    app.state.get_db_session = request_scoped_db
 
     from fastapi import HTTPException
     from fastapi.responses import RedirectResponse

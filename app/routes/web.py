@@ -17,7 +17,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 
-from app import crl_health, db, fleet_health, reconcile
+from app import crl_health, db, fleet_health, reconcile, retention
 from app.routes import web_helpers as h
 
 
@@ -223,12 +223,22 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         # SILENT site must be caught even if nobody opens this page).
         fleet = fleet_health.evaluate_fleet(session, now)
 
+        retention_report = retention.build_report(session, deps.settings, now)
+
         return templates.TemplateResponse(
             request,
             "health.html",
             {
                 "admin": admin,
                 "crl": crl,
+                "retention": {
+                    "cert_retention_days": deps.settings.cert_retention_days,
+                    "audit_retention_days": deps.settings.audit_retention_days,
+                    "session_retention_days": deps.settings.session_retention_days,
+                    "certs_eligible": retention_report.cert_count,
+                    "audit_rows_eligible": retention_report.audit_count,
+                    "sessions_eligible": retention_report.session_count,
+                },
                 "status_counts": status_counts,
                 "cert_total": sum(status_counts.values()),
                 "db_size": h.human_bytes(db_size),

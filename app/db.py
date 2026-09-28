@@ -107,6 +107,15 @@ class Certificate(Base):
     # migrations don't enforce them elsewhere either); site.py validates
     # the relationship at the application layer instead.
 
+    minimised_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    # Set by scripts/retention.py (HANDOFF-COMPLIANCE.md §1) once the
+    # personal fields below have been cleared. serial/cn/issued_at/
+    # expires_at/status/subsidiary are kept — the CRL and audit trail
+    # still need them, and they aren't personal data once the identifiers
+    # are gone. Never set while the cert is active or still CRL-relevant.
+
     supersedes: Mapped["Certificate | None"] = relationship(
         remote_side=[id], back_populates="superseded_by", uselist=False
     )
@@ -218,6 +227,14 @@ class AuditLog(Base):
 
     subsidiary: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     site_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    minimised_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    # Set by scripts/retention.py once `detail` has been cleared under
+    # audit_retention_days (HANDOFF-COMPLIANCE.md §1). `actor`, `action`,
+    # `target`, `timestamp`, `subsidiary`, `site_id` are kept — they're
+    # what the audit trail itself needs. The row recording a retention run
+    # is never itself minimised by that same run.
     # HANDOFF-FLEET.md §8.3: populated on write where the calling code
     # already knows it (a cert's subsidiary, a site's id/subsidiary).
     # Rows written before this column existed are backfilled once at
@@ -252,6 +269,7 @@ _CERTIFICATE_COLUMN_MIGRATIONS = [
     ("expiry_alert_sent_at", "DATETIME"),
     ("cert_type", "VARCHAR DEFAULT 'client'"),
     ("site_id", "VARCHAR"),
+    ("minimised_at", "DATETIME"),
 ]
 
 DEVICE_TYPES = ["Laptop", "Phone", "Tablet", "Desktop", "Other"]
@@ -303,6 +321,7 @@ _SITE_COLUMN_MIGRATIONS = [
 _AUDIT_LOG_COLUMN_MIGRATIONS = [
     ("subsidiary", "VARCHAR"),
     ("site_id", "VARCHAR"),
+    ("minimised_at", "DATETIME"),
 ]
 
 
