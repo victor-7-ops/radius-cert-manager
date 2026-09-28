@@ -1,0 +1,42 @@
+<form hx-post="/sites" hx-target="#new-site-slot" hx-swap="innerHTML"
+      class="card p-5 space-y-4 max-w-sm">
+  {% if error %}
+  <div class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{{ error }}</div>
+  {% endif %}
+  <div>
+    <label class="field-label">Name</label>
+    <input name="name" required class="field-input">
+  </div>
+  <div>
+    <label class="field-label">RADIUS CN</label>
+    <input name="radius_cn" required class="field-input" placeholder="radius01.example.local">
+  </div>
+  <div>
+    <label class="field-label">Subsidiary (optional)</label>
+    <select name="subsidiary" class="field-input">
+      <option value="">Unset</option>
+      {% for s in subsidiaries %}
+      <option value="{{ s }}">{{ s }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="field-label">Address (optional)</label>
+    <input name="address" class="field-input">
+  </div>
+  <div class="grid grid-cols-2 gap-3">
+    <div>
+      <label class="field-label">CRL validity (days)</label>
+      <input name="crl_validity_days" type="number" value="30" min="1" class="field-input">
+    </div>
+    <div>
+      <label class="field-label">Check-in interval (seconds)</label>
+      <input name="checkin_interval_seconds" type="number" value="3600" min="60" class="field-input">
+    </div>
+  </div>
+  <div>
+    <label class="field-label">Notes (optional)</label>
+    <input name="notes" class="field-input">
+  </div>
+  <button type="submit" class="btn-primary">Create site</button>
+</form>

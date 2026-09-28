@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% import "_spinner.html" as spin %}
+{% block title %}Sites — Certificate Manager{% endblock %}
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Site management</h1>
+    <p class="text-sm text-slate-500 mt-1">Super Admin only — onboard, rotate, deactivate remote RADIUS sites.</p>
+  </div>
+  <button hx-get="/sites/new-form" hx-target="#new-site-slot" hx-swap="innerHTML" class="btn-primary">
+    {{ spin.spinner() }}
+    <svg class="w-4 h-4 htmx-hide-on-request" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
+    New site
+  </button>
+</div>
+<div id="new-site-slot" class="mb-4"></div>
+
+<div class="table-shell">
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>RADIUS CN</th>
+        <th>Subsidiary</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      {% set site = r.site %}
+      <tr>
+        <td class="text-slate-900 font-medium">{{ site.name }}</td>
+        <td class="text-slate-600 font-mono text-sm">{{ site.radius_cn }}</td>
+        <td>
+          {% if site.subsidiary %}
+          <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style="background: {{ site.subsidiary | subsidiary_color }}22; color: {{ site.subsidiary | subsidiary_color }};">{{ site.subsidiary }}</span>
+          {% else %}
+          <span class="text-slate-400 text-sm">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if r.status == "OK" %}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-green-700"><span class="w-1.5 h-1.5 rounded-full bg-green-600"></span> OK</span>
+          {% elif r.status == "WARN" %}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Warn</span>
+          {% elif r.status == "CRITICAL" %}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-red-700"><span class="w-1.5 h-1.5 rounded-full bg-red-600"></span> Critical</span>
+          {% elif r.status == "SILENT" %}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Silent</span>
+          {% else %}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400"><span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Inactive</span>
+          {% endif %}
+        </td>
+        <td class="text-right space-x-1">
+          <button hx-post="/sites/{{ site.id }}/rotate-token" hx-confirm="Rotate the auth token for {{ site.name }}? The old token stops working immediately." hx-target="#new-site-slot" hx-swap="innerHTML"
+                  class="text-slate-600 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+            {{ spin.spinner() }}<span class="htmx-hide-on-request">Rotate token</span>
+          </button>
+          {% if site.is_active %}
+          <button hx-post="/sites/{{ site.id }}/deactivate" hx-confirm="Deactivate {{ site.name }}?"
+                  class="text-red-700 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+            {{ spin.spinner() }}<span class="htmx-hide-on-request">Deactivate</span>
+          </button>
+          {% else %}
+          <button hx-post="/sites/{{ site.id }}/reactivate" hx-confirm="Reactivate {{ site.name }}?"
+                  class="text-green-700 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+            {{ spin.spinner() }}<span class="htmx-hide-on-request">Reactivate</span>
+          </button>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not rows %}
+      <tr><td colspan="5" class="text-center text-slate-400 py-6">No sites yet.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
