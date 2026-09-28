@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +14,15 @@ class Settings(BaseSettings):
     db_path: Path
     bind_host: str
     bind_port: int = 8443
+
+    # Optional TLS for uvicorn itself (HANDOFF-NANO-DEPLOY.md §6) — the
+    # session cookie is flagged Secure, which browsers silently refuse to
+    # send back over plain http:// on anything but localhost, so a
+    # deployment reached directly (not behind a TLS-terminating LB) needs
+    # this. Both unset (the default) means plain HTTP, same as before —
+    # this never changes behavior for a deployment that doesn't opt in.
+    web_ssl_keyfile: Path | None = None
+    web_ssl_certfile: Path | None = None
 
     client_cert_days: int = 365
     crl_validity_days: int = 7
@@ -66,6 +75,12 @@ class Settings(BaseSettings):
         if not v.is_absolute():
             raise ValueError(f"path must be absolute: {v}")
         return v
+
+    @model_validator(mode="after")
+    def web_ssl_both_or_neither(self) -> "Settings":
+        if bool(self.web_ssl_keyfile) != bool(self.web_ssl_certfile):
+            raise ValueError("WEB_SSL_KEYFILE and WEB_SSL_CERTFILE must both be set, or both unset")
+        return self
 
 
 def load_settings() -> Settings:

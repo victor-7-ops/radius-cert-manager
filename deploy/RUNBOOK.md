@@ -155,6 +155,22 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now certmanager
 ```
 
+### 6.1 TLS for the web app itself (HANDOFF-NANO-DEPLOY.md §6)
+
+The session cookie is flagged `Secure`. Browsers accept that over
+`https://` or over plain `http://localhost`, but **not** over plain HTTP
+to any other host or IP — reach this app directly (not behind a
+TLS-terminating load balancer) without TLS of its own and login silently
+bounces back to the login page.
+
+If reaching it directly, issue the box a server cert from the
+intermediate (same pattern as the RADIUS server cert in §3) and set both
+`WEB_SSL_KEYFILE` / `WEB_SSL_CERTFILE` in `.env` — see `.env.example`.
+Leave both unset when a load balancer or reverse proxy already terminates
+TLS in front of this app. `deploy/certmanager.service` runs
+`scripts/serve.py` rather than uvicorn directly specifically so this is
+config, not a manually-edited `ExecStart` line.
+
 Also disable `systemd-coredump` for this service and confirm the host
 has no swap, or encrypted swap only — the intermediate key is in process
 memory during every signing operation (handoff §4):

@@ -9,7 +9,12 @@ User=certmgr
 Group=certmgr
 WorkingDirectory=/opt/certmanager
 EnvironmentFile=/opt/certmanager/.env
-ExecStart=/opt/certmanager/.venv/bin/python -m uvicorn app.main:create_app --factory --host ${BIND_HOST} --port ${BIND_PORT}
+ExecStart=/opt/certmanager/.venv/bin/python scripts/serve.py
+# Was `python -m uvicorn app.main:create_app --factory --host ${BIND_HOST}
+# --port ${BIND_PORT}` — scripts/serve.py wraps the same call but also
+# picks up optional WEB_SSL_KEYFILE/WEB_SSL_CERTFILE from .env
+# (HANDOFF-NANO-DEPLOY.md §6), which a systemd ExecStart line can't
+# conditionally include. Unset, behavior is identical to before.
 Restart=on-failure
 RestartSec=5
 
