@@ -58,6 +58,7 @@ def _avatar_hue(name: str) -> int:
 class RouteDeps:
     require_admin: callable
     require_super_admin: callable
+    require_write: callable
     require_site: callable
     get_db_session: callable
     pki_path: Path
@@ -141,7 +142,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
     bootstrap_session.close()
 
-    require_admin, require_super_admin = auth.get_current_admin_factory(
+    require_admin, require_super_admin, require_write = auth.get_current_admin_factory(
         get_db_session=request_scoped_db,
         get_secret_key=lambda: settings.secret_key,
     )
@@ -288,6 +289,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     deps = RouteDeps(
         require_admin=require_admin,
         require_super_admin=require_super_admin,
+        require_write=require_write,
         require_site=require_site,
         get_db_session=request_scoped_db,
         pki_path=settings.pki_path,

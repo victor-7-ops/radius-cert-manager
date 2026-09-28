@@ -295,4 +295,13 @@ def get_current_admin_factory(get_db_session, get_secret_key):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Super admin required")
         return admin
 
-    return require_admin, require_super_admin
+    def require_write(admin: Admin = Depends(require_admin)) -> Admin:
+        # HANDOFF-COMPLIANCE.md §3: the read-only role can log in and view
+        # (require_admin already let it through) but never mutate — every
+        # issue/reissue/suspend/revoke/bulk-op/bundle-download/export route
+        # depends on this instead of require_admin.
+        if admin.role == AdminRole.viewer:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Read-only role cannot perform this action")
+        return admin
+
+    return require_admin, require_super_admin, require_write

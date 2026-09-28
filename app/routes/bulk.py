@@ -56,7 +56,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         request: Request,
         identifiers_text: str = Form(""),
         csv_file: UploadFile | None = None,
-        admin: db.Admin = Depends(deps.require_admin),
+        admin: db.Admin = Depends(deps.require_write),
     ):
         _require_unscoped(admin)
         session = deps.get_db_session()
@@ -108,7 +108,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         device_mac: str = Form(""),
         device_serial: str = Form(""),
         subsidiary: str = Form(""),
-        admin: db.Admin = Depends(deps.require_admin),
+        admin: db.Admin = Depends(deps.require_write),
     ):
         _require_unscoped(admin)
         input_rows = deps.peek_pending_preview(batch_token)
@@ -146,7 +146,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         request: Request,
         batch_token: str = Form(...),
         export_password: str = Form(...),
-        admin: db.Admin = Depends(deps.require_admin),
+        admin: db.Admin = Depends(deps.require_write),
     ):
         _require_unscoped(admin)
         all_rows = deps.take_pending_preview(batch_token)
@@ -216,7 +216,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         }
 
     @router.get("/api/batches/{batch_id}/bundle")
-    def batch_bundle(batch_id: str, admin: db.Admin = Depends(deps.require_admin)):
+    def batch_bundle(batch_id: str, admin: db.Admin = Depends(deps.require_write)):
         entry = deps.take_pending_batch(batch_id)
         if entry is None:
             raise HTTPException(status.HTTP_410_GONE, "batch bundle already consumed or not found")

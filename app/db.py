@@ -44,6 +44,12 @@ class CertStatus(str, enum.Enum):
 class AdminRole(str, enum.Enum):
     admin = "admin"
     super_admin = "super_admin"
+    viewer = "viewer"
+    # Read-only (HANDOFF-COMPLIANCE.md §3): can see the cert list, detail
+    # pages, activity log and dashboard, same as `admin` — but every
+    # mutating route, plus bundle download and export, rejects it with
+    # 403 (auth.require_write). subsidiary_scope applies to it exactly
+    # as it does to `admin`.
 
 
 def _now() -> datetime.datetime:

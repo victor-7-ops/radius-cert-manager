@@ -65,12 +65,17 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             # empty with no obvious reason why.
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid subsidiary")
 
+        try:
+            parsed_role = db.AdminRole(role)
+        except ValueError:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid role")
+
         session = deps.get_db_session()
         temp_password = secrets.token_urlsafe(12)
         new_admin = db.Admin(
             username=username,
             password_hash=auth.hash_password(temp_password),
-            role=db.AdminRole(role),
+            role=parsed_role,
             must_change_password=True,
             created_by=admin.username,
             subsidiary_scope=subsidiary_scope,

@@ -71,7 +71,7 @@ def get_router(deps) -> APIRouter:
         return _serialize(cert)
 
     @router.post("", status_code=status.HTTP_201_CREATED)
-    def issue(body: IssueRequest, admin: db.Admin = Depends(deps.require_admin)):
+    def issue(body: IssueRequest, admin: db.Admin = Depends(deps.require_write)):
         session = deps.get_db_session()
         try:
             result = cert_service.issue_certificate(
@@ -92,7 +92,7 @@ def get_router(deps) -> APIRouter:
         return _serialize(result.certificate)
 
     @router.get("/{serial}/bundle")
-    def get_bundle(serial: str, admin: db.Admin = Depends(deps.require_admin)):
+    def get_bundle(serial: str, admin: db.Admin = Depends(deps.require_write)):
         if admin.subsidiary_scope:
             session = deps.get_db_session()
             cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
@@ -107,7 +107,7 @@ def get_router(deps) -> APIRouter:
 
     @router.post("/{serial}/suspend")
     def suspend(
-        serial: str, body: StatusChangeRequest, admin: db.Admin = Depends(deps.require_admin)
+        serial: str, body: StatusChangeRequest, admin: db.Admin = Depends(deps.require_write)
     ):
         session = deps.get_db_session()
         _load_cert_or_404_in_scope(session, admin, serial)
