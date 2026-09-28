@@ -321,10 +321,12 @@ def issue_server_cert(
         return IssueResult(certificate=row, bundle=None)
 
 
-def renewal_due(cert: db.Certificate, now: datetime.datetime | None = None) -> bool:
+def renewal_due(cert: db.Certificate, now: datetime.datetime | None = None, offset_days: int = 0) -> bool:
     """True when less than one third of the cert's lifetime remains
     (HANDOFF-FLEET.md §3.3) — renewal is due early, not at the last
-    minute."""
+    minute. offset_days shifts the threshold later by a site's
+    renewal_offset() so a fleet onboarded on the same day doesn't all
+    become due on the same night."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
     issued_at = cert.issued_at
     expires_at = cert.expires_at
@@ -333,7 +335,7 @@ def renewal_due(cert: db.Certificate, now: datetime.datetime | None = None) -> b
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
     lifetime = expires_at - issued_at
-    renew_at = issued_at + (lifetime * 2 / 3)
+    renew_at = issued_at + (lifetime * 2 / 3) + datetime.timedelta(days=offset_days)
     return now >= renew_at
 
 

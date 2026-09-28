@@ -68,6 +68,7 @@ class RouteDeps:
     inter_key: object
     client_cert_days: int
     server_cert_days: int
+    site_renewal_stagger_window_days: int
     liveness_token: str | None
     store_pending_bundle: callable
     take_pending_bundle: callable
@@ -299,6 +300,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         inter_key=inter_key,
         client_cert_days=settings.client_cert_days,
         server_cert_days=settings.server_cert_days,
+        site_renewal_stagger_window_days=settings.site_renewal_stagger_window_days,
         liveness_token=settings.liveness_token,
         store_pending_bundle=store_pending_bundle,
         take_pending_bundle=take_pending_bundle,

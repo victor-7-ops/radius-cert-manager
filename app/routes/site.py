@@ -64,7 +64,8 @@ def get_router(deps) -> APIRouter:
                 select(db.Certificate).where(db.Certificate.serial == str(server_cert_serial))
             )
             if cert is not None:
-                renewal_due = cert_service.renewal_due(cert)
+                offset_days = cert_service.renewal_offset(site.id, deps.site_renewal_stagger_window_days)
+                renewal_due = cert_service.renewal_due(cert, offset_days=offset_days)
 
         db.audit(
             session, actor=f"site:{site.radius_cn}", action="checkin", target=site.radius_cn,

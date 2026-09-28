@@ -228,3 +228,38 @@ def test_create_site_rejects_duplicate_radius_cn(tmp_path, monkeypatch, throwawa
         "/api/admin/sites", json={"name": "Boracay 2", "radius_cn": "radius-boracay.internal"}
     )
     assert resp.status_code == 409
+
+
+def test_checkin_applies_per_site_renewal_stagger(tmp_path, monkeypatch, throwaway_pki):
+    """HANDOFF-FLEET.md §3.3: renewal_due at checkin must be shifted by
+    this site's renewal_offset(), not the raw two-thirds-elapsed check —
+    otherwise a fleet onboarded on the same day all renews the same night."""
+    app, client, app_settings = _make_app(tmp_path, monkeypatch, throwaway_pki)
+    body, session = _create_site_via_api(client, app_settings)
+    token = body["token"]
+    site = session.get(db.Site, body["id"])
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    issued_at = now - datetime.timedelta(days=60)
+    expires_at = issued_at + datetime.timedelta(days=90)  # exactly two-thirds elapsed: due with no offset
+    cert = db.Certificate(
+        cn=site.radius_cn, serial="424242", issued_at=issued_at, expires_at=expires_at,
+        issued_by="system", request_id=str(uuid.uuid4()), cert_type="server", site_id=site.id,
+    )
+    session.add(cert)
+    session.commit()
+
+    # Force a known non-zero offset so the assertion doesn't depend on
+    # this site's random UUID happening to hash to a 0 offset.
+    from app.routes import site as site_route
+
+    monkeypatch.setattr(site_route.cert_service, "renewal_offset", lambda site_id, window: 5)
+
+    resp = client.post(
+        "/api/site/checkin",
+        json={"agent_version": "1.0.0", "freeradius_ok": True, "server_cert_serial": "424242"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    # At the boundary, a 5-day offset pushes the threshold later — not due yet.
+    assert resp.json()["renewal_due"] is False
