@@ -21,6 +21,14 @@ sudo cp site-agent.env.example /opt/certmanager-agent/.env   # then edit it
 sudo chown -R certmgr-agent:certmgr-agent /opt/certmanager-agent /var/lib/certmanager-agent
 sudo chmod 600 /opt/certmanager-agent/.env
 
+# The hub's TLS cert is issued by the Arekushi intermediate, which isn't
+# in this box's system trust store — copy the hub's ca-chain.pem here and
+# point HUB_CA_BUNDLE at it in .env. The agent refuses to start without
+# it (fails closed: no fallback to system trust, no fallback to no
+# verification — see site_agent.py's _require_ca_bundle).
+sudo cp ca-chain.pem /opt/certmanager-agent/ca-chain.pem
+sudo chown certmgr-agent:certmgr-agent /opt/certmanager-agent/ca-chain.pem
+
 # certmgr-agent needs write access to the FreeRADIUS cert dir and
 # permission to run `freeradius -XC` / `systemctl reload freeradius` —
 # grant the minimum via sudoers or a group, don't run this as root.

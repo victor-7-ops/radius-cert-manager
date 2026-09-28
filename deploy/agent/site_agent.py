@@ -46,12 +46,29 @@ class Config:
         self.ca_chain_filename = os.environ.get("CA_CHAIN_FILENAME", "ca-chain.pem")
         self.freeradius_service = os.environ.get("FREERADIUS_SERVICE", "freeradius")
         self.request_timeout = float(os.environ.get("REQUEST_TIMEOUT_SECONDS", "30"))
+        self.hub_ca_bundle = _require_ca_bundle()
 
 
 def _require_env(name: str) -> str:
     value = os.environ.get(name)
     if not value:
         raise SystemExit(f"missing required environment variable: {name}")
+    return value
+
+
+def _require_ca_bundle() -> str:
+    """HANDOFF-COMPLIANCE.md §5 (security defect): the hub's TLS cert is
+    issued by the Arekushi intermediate, which isn't in the system trust
+    store, so a bare requests.Session() fails verification against a real
+    hub — and the obvious workaround under time pressure is verify=False,
+    which exposes the CRL feed and CSR exchange to anyone on the network
+    path. Fail closed: no bundle, no fallback to system trust, no
+    fallback to no verification — just refuse to start."""
+    value = os.environ.get("HUB_CA_BUNDLE")
+    if not value:
+        raise SystemExit("missing required environment variable: HUB_CA_BUNDLE")
+    if not Path(value).is_file():
+        raise SystemExit(f"HUB_CA_BUNDLE does not exist: {value}")
     return value
 
 
@@ -273,6 +290,7 @@ def renew_server_cert(cfg: Config, session: requests.Session) -> bool:
 def run_once(cfg: Config) -> int:
     cfg.state_dir.mkdir(parents=True, exist_ok=True)
     session = requests.Session()
+    session.verify = cfg.hub_ca_bundle
     headers = {"Authorization": f"Bearer {cfg.token}"}
 
     reported_crl_sha256 = _sha256_file(cfg.cert_dir / cfg.crl_filename)
