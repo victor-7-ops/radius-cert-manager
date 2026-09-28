@@ -209,6 +209,9 @@ def classify(session: Session, input_rows: list[BatchInputRow]) -> list[PreviewR
         if not CN_RE.match(r.identifier):
             rows.append(PreviewRow(r.identifier, "malformed", "invalid characters or length", **common))
             continue
+        if r.subsidiary is not None and r.subsidiary not in db.SUBSIDIARIES:
+            rows.append(PreviewRow(r.identifier, "malformed", "unknown subsidiary", **common))
+            continue
         if r.identifier in seen_in_batch:
             rows.append(PreviewRow(r.identifier, "duplicate", "duplicated within this batch", **common))
             continue

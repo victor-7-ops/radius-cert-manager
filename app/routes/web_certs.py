@@ -245,6 +245,12 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                     status_code=400,
                 )
 
+        stripped_subsidiary = subsidiary.strip() or None
+        if stripped_subsidiary is not None and stripped_subsidiary not in db.SUBSIDIARIES:
+            return templates.TemplateResponse(
+                request, "issue.html", {**form_context, "error": "Invalid subsidiary."}, status_code=400,
+            )
+
         stripped_serial = device_serial.strip()
         if (normalized_mac or stripped_serial) and not confirm_duplicate:
             # A reused MAC/serial usually means a typo or a device that
@@ -288,7 +294,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                     device_model=device_model.strip() or None,
                     device_mac=normalized_mac,
                     device_serial=device_serial.strip() or None,
-                    subsidiary=subsidiary.strip() or None,
+                    subsidiary=stripped_subsidiary,
                 ),
             )
         except cert_service.CNConflictError:
