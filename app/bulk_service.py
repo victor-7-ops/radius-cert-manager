@@ -30,7 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import cert_service, db
-from app.validation import CN_RE, normalize_mac
+from app.validation import CN_RE, normalize_employee_key, normalize_mac
 
 MAX_BATCH_SIZE = 100
 _CSV_HEADER_HINTS = {"cn", "identifier", "hostname"}
@@ -88,6 +88,10 @@ class PreviewRow:
     device_mac: str | None = None
     device_serial: str | None = None
     subsidiary: str | None = None
+    employee_spelling_matches: list[str] = field(default_factory=list)
+    # HANDOFF-LIFECYCLE.md §1.1: other spellings already on record under
+    # this row's normalized employee_key. Informational only — never
+    # changes classification, since this warns without blocking.
 
 
 def parse_identifiers(raw_text: str) -> list[BatchInputRow]:
@@ -226,7 +230,22 @@ def classify(session: Session, input_rows: list[BatchInputRow]) -> list[PreviewR
             rows.append(PreviewRow(r.identifier, "duplicate", "active certificate already exists", **common))
             continue
         seen_in_batch.add(r.identifier)
-        rows.append(PreviewRow(r.identifier, "valid", **common))
+
+        spelling_matches: list[str] = []
+        if r.employee_name:
+            entered_key = normalize_employee_key(r.employee_name)
+            spelling_matches = sorted(
+                {
+                    name
+                    for (name,) in session.execute(
+                        select(db.Certificate.employee_name).where(
+                            db.Certificate.employee_key == entered_key,
+                            db.Certificate.employee_name != r.employee_name,
+                        )
+                    ).all()
+                }
+            )
+        rows.append(PreviewRow(r.identifier, "valid", employee_spelling_matches=spelling_matches, **common))
     return rows
 
 

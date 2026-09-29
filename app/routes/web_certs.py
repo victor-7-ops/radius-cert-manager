@@ -22,7 +22,7 @@ from sqlalchemy import func, or_, select
 
 from app import auth, bulk_service, cert_service, crl_health, db, rate_limit
 from app.routes import web_helpers as h
-from app.validation import CN_RE, normalize_mac
+from app.validation import CN_RE, normalize_employee_key, normalize_mac
 
 
 def get_router(deps, templates: Jinja2Templates) -> APIRouter:
@@ -278,6 +278,33 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                     request,
                     "issue.html",
                     {**form_context, "duplicate_matches": duplicates},
+                )
+
+        stripped_employee_name = employee_name.strip()
+        if stripped_employee_name and not confirm_duplicate:
+            # HANDOFF-LIFECYCLE.md §1.1: warn, don't block, if this name
+            # normalizes to an employee_key that's already on record under
+            # a different exact spelling — "Juan Dela Cruz" typed against
+            # an existing "juan dela cruz" is very likely the same person,
+            # and a silent second spelling is exactly what later splits
+            # them into two people for offboarding purposes.
+            entered_key = normalize_employee_key(stripped_employee_name)
+            existing_spellings = sorted(
+                {
+                    name
+                    for (name,) in session.execute(
+                        select(db.Certificate.employee_name).where(
+                            db.Certificate.employee_key == entered_key,
+                            db.Certificate.employee_name != stripped_employee_name,
+                        )
+                    ).all()
+                }
+            )
+            if existing_spellings:
+                return templates.TemplateResponse(
+                    request,
+                    "issue.html",
+                    {**form_context, "employee_spelling_matches": existing_spellings},
                 )
 
         try:

@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import db, pki
+from app.validation import normalize_employee_key
 
 
 class CNConflictError(Exception):
@@ -133,6 +134,7 @@ def _issue_one_locked(
         note=note,
         batch_id=batch_id,
         employee_name=device.employee_name,
+        employee_key=normalize_employee_key(device.employee_name),
         device_type=device.device_type,
         device_model=device.device_model,
         device_mac=device.device_mac,

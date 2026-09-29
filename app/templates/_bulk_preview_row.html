@@ -20,6 +20,11 @@
   <td class="text-slate-500">
     {% if r.classification == "valid" %}
     {{ r.reason or "" }}
+    {% if r.employee_spelling_matches %}
+    <span class="text-amber-700 text-xs" title="Already on record as: {{ r.employee_spelling_matches | join(', ') }}">
+      other spelling on file: {{ r.employee_spelling_matches | join(', ') }}
+    </span>
+    {% endif %}
     {% else %}
     <form hx-post="/certs/bulk/{{ batch_token }}/fix-row" hx-target="#bulk-row-{{ index }}" hx-swap="outerHTML"
           class="flex flex-wrap items-center gap-1">
