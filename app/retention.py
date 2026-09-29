@@ -13,9 +13,14 @@ as a privacy improvement. Only the personal fields are cleared.
 
 Admin sessions are deleted outright — nothing downstream depends on them.
 
-Audit rows are anonymised (their `detail` cleared), never deleted, and on
-a *separate* retention period from certificates: audit and enrolment
-retention answer to different obligations.
+Audit rows have their `detail` field redacted, never deleted, and on a
+*separate* retention period from certificates: audit and enrolment
+retention answer to different obligations. This is called out as
+"detail redaction," not "anonymisation" — actor (an admin username),
+action, target, timestamp, subsidiary and site_id all survive, so
+calling it anonymised would overstate it to a DPO reading the dry-run
+output literally. Whether actor should also go is a DPO decision, not a
+code decision (HANDOFF-LIFECYCLE.md §0).
 """
 
 from __future__ import annotations
@@ -71,28 +76,35 @@ class RetentionReport:
 
 
 def _cert_cutoff_reached(cert: db.Certificate, retention_days: int, now: datetime.datetime) -> bool:
-    """A cert is only eligible once it is BOTH expired and revoked, and
-    retention_days have passed since the later of the two — an unexpired
-    revoked cert must keep its serial on the CRL (handoff §1.1), and an
-    expired-but-still-active cert is a live credential, not a retired one."""
-    if cert.status != db.CertStatus.revoked:
-        return False
+    """A cert is eligible once it is expired, and retention_days have
+    passed since the later of expires_at and status_changed_at. Keyed on
+    expiry, not on status == revoked (HANDOFF-LIFECYCLE.md §0 defect fix)
+    — CertStatus only has active/suspended/revoked, expiry is derived
+    from expires_at and never written as a status, so a certificate that
+    simply lapses (the common case — most certs expire, few are revoked)
+    stayed `active` forever and was never eligible under the old check.
+    The CRL only needs a REVOKED-but-unexpired serial kept; once a cert
+    is past expires_at it fails validity checking regardless of status or
+    the CRL, so its identifiers don't need keeping either way."""
     if not cert.is_expired(now):
         return False
-    reference = _aware(cert.status_changed_at or cert.expires_at)
-    expires_at = _aware(cert.expires_at)
-    anchor = max(reference, expires_at)
+    anchor = max(_aware(cert.expires_at), _aware(cert.status_changed_at or cert.expires_at))
     return now >= anchor + datetime.timedelta(days=retention_days)
 
 
 def find_eligible_certs(session: Session, retention_days: int, now: datetime.datetime | None = None) -> list[db.Certificate]:
     now = now or _now()
     candidates = session.scalars(
-        select(db.Certificate).where(
+        select(db.Certificate)
+        .where(
             db.Certificate.cert_type == "client",
             db.Certificate.minimised_at.is_(None),
-            db.Certificate.status == db.CertStatus.revoked,
-        ).limit(BATCH_SIZE * 4)  # generous prefilter; is_expired/cutoff check is in Python
+        )
+        # Without an order, an arbitrary slice comes back above
+        # BATCH_SIZE*4 unminimised rows and eligible records may never
+        # surface — progress stalls silently (HANDOFF-LIFECYCLE.md §0).
+        .order_by(db.Certificate.expires_at)
+        .limit(BATCH_SIZE * 4)  # generous prefilter; is_expired/cutoff check is in Python
     ).all()
     eligible = [c for c in candidates if _cert_cutoff_reached(c, retention_days, now)]
     return eligible[:BATCH_SIZE]
@@ -179,9 +191,9 @@ def run_retention(session: Session, settings: Settings, dry_run: bool = True, no
         db.audit(
             session,
             actor="system",
-            action="retention.audit_minimised",
+            action="retention.audit_detail_redacted",
             target="audit_log",
-            detail=f"{len(report.audit_rows_eligible)} audit row(s) minimised "
+            detail=f"{len(report.audit_rows_eligible)} audit row(s) had detail redacted "
             f"under audit_retention_days={settings.audit_retention_days}",
         )
         session.commit()

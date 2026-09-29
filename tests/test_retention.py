@@ -74,12 +74,32 @@ def test_unset_config_is_noop(session, tmp_path):
     assert cert.minimised_at is None
 
 
-def test_active_cert_never_minimised(session, tmp_path):
+def test_expired_never_revoked_cert_becomes_eligible(session, tmp_path):
+    """HANDOFF-LIFECYCLE.md §0 defect fix: most certs expire rather than
+    get revoked, and eligibility must key on expiry, not on status ==
+    revoked — an expired cert that was simply never revoked must not
+    keep its personal fields forever."""
     _make_cert(
         session,
         status=db.CertStatus.active,
         status_changed_at=None,
-        expires_at=_now() - datetime.timedelta(days=400),  # expired-but-active
+        expires_at=_now() - datetime.timedelta(days=40),
+    )
+    settings = _settings(tmp_path, cert_retention_days=30)
+    report = retention.run_retention(session, settings, dry_run=False)
+    assert report.cert_count == 1
+    cert = session.scalar(select(db.Certificate))
+    assert cert.employee_name is None
+    assert cert.minimised_at is not None
+    assert cert.status == db.CertStatus.active  # status itself is untouched
+
+
+def test_active_unexpired_cert_never_minimised(session, tmp_path):
+    _make_cert(
+        session,
+        status=db.CertStatus.active,
+        status_changed_at=None,
+        expires_at=_now() + datetime.timedelta(days=300),  # still valid
     )
     settings = _settings(tmp_path, cert_retention_days=1)
     report = retention.run_retention(session, settings, dry_run=False)
@@ -151,7 +171,10 @@ def test_rerun_is_idempotent(session, tmp_path):
     assert second.cert_count == 0
 
 
-def test_audit_retention_minimises_detail_only(session, tmp_path):
+def test_audit_retention_redacts_detail_only(session, tmp_path):
+    """HANDOFF-LIFECYCLE.md §0: this is 'detail redaction', not
+    'anonymisation' — actor, action, target, timestamp all survive, and
+    calling it anonymised would overstate it to a DPO."""
     old = _now() - datetime.timedelta(days=400)
     session.add(db.AuditLog(actor="admin", action="cert.issue", target="device-1", detail="Jane Doe's laptop", timestamp=old))
     session.commit()
@@ -164,6 +187,9 @@ def test_audit_retention_minimises_detail_only(session, tmp_path):
     assert row.actor == "admin"
     assert row.target == "device-1"
 
+    redaction_row = session.scalar(select(db.AuditLog).where(db.AuditLog.action == "retention.audit_detail_redacted"))
+    assert redaction_row is not None
+
 
 def test_session_retention_deletes_old_rows(session, tmp_path):
     old = _now() - datetime.timedelta(days=100)
@@ -173,6 +199,28 @@ def test_session_retention_deletes_old_rows(session, tmp_path):
     report = retention.run_retention(session, settings, dry_run=False)
     assert report.session_count == 1
     assert session.scalar(select(db.AdminSession)) is None
+
+
+def test_find_eligible_certs_orders_by_expires_at_so_large_tables_make_progress(session, tmp_path, monkeypatch):
+    """HANDOFF-LIFECYCLE.md §0: without an ORDER BY, an arbitrary slice of
+    a table above BATCH_SIZE*4 unminimised rows could come back and never
+    surface the actually-eligible ones — progress stalls silently. Shrink
+    BATCH_SIZE so a handful of rows exercises the same code path."""
+    monkeypatch.setattr(retention, "BATCH_SIZE", 2)
+    now = _now()
+    for i, days_expired in enumerate([10, 90, 50, 200, 30]):
+        _make_cert(
+            session,
+            serial_int=i + 1,
+            cn=f"device-{i}.example",
+            status=db.CertStatus.active,
+            status_changed_at=None,
+            expires_at=now - datetime.timedelta(days=days_expired),
+            request_id=f"req-order-{i}",
+        )
+
+    eligible = retention.find_eligible_certs(session, retention_days=1, now=now)
+    assert [c.cn for c in eligible] == ["device-3.example", "device-1.example"]  # 200d, 90d first
 
 
 def test_recent_session_kept(session, tmp_path):
