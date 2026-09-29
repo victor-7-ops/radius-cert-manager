@@ -250,6 +250,24 @@ sudo systemctl enable --now certmanager-crl.timer
 `CRL_REGEN_HOURS` in `.env` should stay comfortably shorter than
 `CRL_VALIDITY_DAYS` (defaults: daily regen, 7-day validity).
 
+## 8.1 Wire the retention and fleet-watch timers (HANDOFF-COMPLIANCE.md §1, HANDOFF-FLEET.md §5.1)
+
+Two more `deploy/*.service`+`.timer` pairs, same shape as §8's CRL timer — easy to miss since
+they're not part of the Phase A gate below, but both are load-bearing: fleet_watch.timer is what
+actually makes a SILENT site page anyone, and retention.timer is what actually enforces whatever
+`CERT_RETENTION_DAYS`/`AUDIT_RETENTION_DAYS`/`SESSION_RETENTION_DAYS` get set to (unset by default
+— a no-op until the DPO sets a period).
+
+```bash
+sudo cp /opt/certmanager/deploy/retention.service /opt/certmanager/deploy/retention.timer /etc/systemd/system/
+sudo cp /opt/certmanager/deploy/fleet_watch.service /opt/certmanager/deploy/fleet_watch.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now retention.timer fleet_watch.timer
+```
+
+Checkpoint: `systemctl list-timers | grep certmanager` shows both alongside `certmanager-crl.timer`,
+and `sudo -u certmgr /opt/certmanager/.venv/bin/python scripts/retention.py --dry-run` runs clean.
+
 ## 9. Final Phase A gate
 
 Both of these must hold before Phase B–I code (already built and
