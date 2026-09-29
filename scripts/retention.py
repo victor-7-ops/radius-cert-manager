@@ -23,7 +23,7 @@ def main() -> int:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="report what would be minimised/deleted; change nothing",
+        help="report what would be minimised/redacted/deleted; change nothing",
     )
     args = parser.parse_args()
 
@@ -33,10 +33,10 @@ def main() -> int:
 
     report = retention.run_retention(session, settings, dry_run=args.dry_run)
 
-    label = "would minimise/delete" if args.dry_run else "minimised/deleted"
-    print(f"certificates {label}: {report.cert_count}")
-    print(f"audit rows {label}: {report.audit_count}")
-    print(f"admin sessions {label}: {report.session_count}")
+    would = args.dry_run
+    print(f"certificates {'would be minimised' if would else 'minimised'}: {report.cert_count}")
+    print(f"audit rows {'would have detail redacted' if would else 'had detail redacted'}: {report.audit_count}")
+    print(f"admin sessions {'would be deleted' if would else 'deleted'}: {report.session_count}")
     return 0
 
 
