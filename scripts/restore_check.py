@@ -5,7 +5,12 @@ can run this unattended and page on failure — "an untested backup is a
 belief, not a backup."
 
 Usage:
-    python -m scripts.restore_check /var/backups/certmanager/certmanager-backup-*.cmbk
+    python -m scripts.restore_check /var/backups/certmanager/certmanager-backup-<ts>.cmbk
+    python -m scripts.restore_check --latest-in /var/backups/certmanager
+
+--latest-in picks the most recently modified *.cmbk in that directory —
+what a systemd timer uses, so it doesn't need to know today's backup's
+exact filename.
 
 Passphrase comes from $BACKUP_PASSPHRASE if set, otherwise prompted.
 """
@@ -94,20 +99,38 @@ def check_restore(archive_path: Path, passphrase: str, scratch_dir: Path) -> int
     return 0
 
 
+def find_latest_archive(directory: Path) -> Path | None:
+    candidates = sorted(directory.glob("*.cmbk"), key=lambda p: p.stat().st_mtime)
+    return candidates[-1] if candidates else None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("archive", type=Path)
+    parser.add_argument("archive", type=Path, nargs="?")
+    parser.add_argument(
+        "--latest-in", type=Path, metavar="DIR",
+        help="check the most recently modified *.cmbk in DIR, instead of naming one explicitly",
+    )
     args = parser.parse_args()
 
-    if not args.archive.exists():
-        return _fail(f"no such archive: {args.archive}")
+    if bool(args.archive) == bool(args.latest_in):
+        return _fail("pass exactly one of: an archive path, or --latest-in DIR")
+
+    if args.latest_in is not None:
+        archive_path = find_latest_archive(args.latest_in)
+        if archive_path is None:
+            return _fail(f"no *.cmbk archives found in {args.latest_in}")
+    else:
+        archive_path = args.archive
+        if not archive_path.exists():
+            return _fail(f"no such archive: {archive_path}")
 
     passphrase = os.environ.get("BACKUP_PASSPHRASE") or getpass.getpass(
         "Backup encryption passphrase: "
     )
 
     with tempfile.TemporaryDirectory(prefix="cm-restore-check-") as scratch:
-        return check_restore(args.archive, passphrase, Path(scratch))
+        return check_restore(archive_path, passphrase, Path(scratch))
 
 
 if __name__ == "__main__":

@@ -1,0 +1,25 @@
+[Unit]
+Description=Certmanager encrypted backup (HANDOFF-FLEET.md §8.4)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=certmgr
+Group=certmgr
+WorkingDirectory=/opt/certmanager
+EnvironmentFile=/opt/certmanager/.env
+EnvironmentFile=/opt/certmanager/.env.backup
+ExecStart=/opt/certmanager/.venv/bin/python scripts/backup.py --output-dir /var/backups/certmanager
+
+# BACKUP_PASSPHRASE lives in the separate .env.backup file, mode 600,
+# so it isn't sitting in the same file as every other app secret — a
+# leak of one shouldn't hand over both the app and every past backup.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/certmanager /var/backups/certmanager
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target
