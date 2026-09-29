@@ -88,6 +88,13 @@ class Certificate(Base):
     # person, not just an opaque CN — the CN is often a hostname, which
     # doesn't tell you who to call when a laptop goes missing.
     employee_name: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    employee_key: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # Normalized (casefold, collapsed whitespace) form of employee_name —
+    # app.validation.normalize_employee_key() — derived on every write,
+    # never entered directly (HANDOFF-LIFECYCLE.md §1.1). employee_name
+    # is free text and the display value; this is what offboarding's
+    # revoke-all groups on, so "Juan Dela Cruz" and "juan dela cruz"
+    # don't silently split into two different employees.
     device_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     device_model: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     device_mac: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
@@ -288,6 +295,7 @@ _CERTIFICATE_COLUMN_MIGRATIONS = [
     ("cert_type", "VARCHAR DEFAULT 'client'"),
     ("site_id", "VARCHAR"),
     ("minimised_at", "DATETIME"),
+    ("employee_key", "VARCHAR"),
 ]
 
 DEVICE_TYPES = ["Laptop", "Phone", "Tablet", "Desktop", "Other"]
@@ -360,6 +368,7 @@ def init_db(engine) -> None:
     _migrate_columns(engine, "sites", _SITE_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "audit_log", _AUDIT_LOG_COLUMN_MIGRATIONS)
     run_once(engine, "audit_log_subsidiary_backfill", lambda: backfill_audit_log_subsidiary(engine))
+    run_once(engine, "certificate_employee_key_backfill", lambda: backfill_employee_key(engine))
 
 
 def run_once(engine, name: str, fn) -> bool:
@@ -405,6 +414,32 @@ def backfill_audit_log_subsidiary(engine) -> int:
             subsidiary = cn_to_subsidiary.get(row.target)
             if subsidiary is not None:
                 row.subsidiary = subsidiary
+                updated += 1
+        if updated:
+            session.commit()
+        return updated
+
+
+def backfill_employee_key(engine) -> int:
+    """HANDOFF-LIFECYCLE.md §1.1: for rows written before employee_key
+    existed, derive it from employee_name. Idempotent (only touches
+    employee_key IS NULL rows). init_db() runs this exactly once (via
+    run_once/MigrationFlag); call it directly to deliberately re-run it
+    after a bulk correction to employee_name. Returns the number of rows
+    updated."""
+    from app.validation import normalize_employee_key
+
+    with Session(engine) as session:
+        rows = session.scalars(
+            select(Certificate).where(
+                Certificate.employee_key.is_(None), Certificate.employee_name.is_not(None)
+            )
+        ).all()
+        updated = 0
+        for row in rows:
+            key = normalize_employee_key(row.employee_name)
+            if key is not None:
+                row.employee_key = key
                 updated += 1
         if updated:
             session.commit()
