@@ -268,6 +268,32 @@ sudo systemctl enable --now retention.timer fleet_watch.timer
 Checkpoint: `systemctl list-timers | grep certmanager` shows both alongside `certmanager-crl.timer`,
 and `sudo -u certmgr /opt/certmanager/.venv/bin/python scripts/retention.py --dry-run` runs clean.
 
+## 8.2 Wire the backup and restore-drill timers (HANDOFF-FLEET.md §8.4)
+
+"An untested backup is a belief, not a backup." `scripts/backup.py` and `scripts/restore_check.py`
+exist and are tested, but nothing schedules them until this step.
+
+```bash
+sudo mkdir -p /var/backups/certmanager
+sudo chown certmgr:certmgr /var/backups/certmanager
+
+sudo cp /opt/certmanager/deploy/backup.env.example /opt/certmanager/.env.backup
+sudo chown certmgr:certmgr /opt/certmanager/.env.backup
+sudo chmod 600 /opt/certmanager/.env.backup
+sudo -u certmgr $EDITOR /opt/certmanager/.env.backup   # set BACKUP_PASSPHRASE for real
+
+sudo cp /opt/certmanager/deploy/backup.service /opt/certmanager/deploy/backup.timer /etc/systemd/system/
+sudo cp /opt/certmanager/deploy/backup-restore-check.service /opt/certmanager/deploy/backup-restore-check.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now backup.timer backup-restore-check.timer
+```
+
+Checkpoint: `sudo systemctl start backup.service` succeeds and drops a `.cmbk` file in
+`/var/backups/certmanager`; `sudo systemctl start backup-restore-check.service` then succeeds
+against that same archive (`journalctl -u backup-restore-check.service` shows `Restore check OK`).
+**Do this checkpoint for real, not just at code-review time** — the whole point of this pair of
+units is proving the backup is restorable on a schedule, unattended, not just believed to be.
+
 ## 9. Final Phase A gate
 
 Both of these must hold before Phase B–I code (already built and

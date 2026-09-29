@@ -173,3 +173,55 @@ def test_restore_check_fails_when_key_does_not_match_cert(tmp_path, throwaway_pk
 
     rc = restore_check.check_restore(archive_path, "p", tmp_path / "scratch4")
     assert rc != 0
+
+
+def test_find_latest_archive_picks_most_recently_modified(tmp_path):
+    import os
+    import time
+
+    (tmp_path / "certmanager-backup-old.cmbk").write_bytes(b"old")
+    time.sleep(0.01)
+    newest = tmp_path / "certmanager-backup-new.cmbk"
+    newest.write_bytes(b"new")
+    # Explicit mtime bump — some filesystems have coarse mtime
+    # resolution, and this test shouldn't be flaky because of that.
+    os.utime(newest, None)
+
+    assert restore_check.find_latest_archive(tmp_path) == newest
+
+
+def test_find_latest_archive_returns_none_when_empty(tmp_path):
+    assert restore_check.find_latest_archive(tmp_path) is None
+
+
+def test_main_rejects_both_archive_and_latest_in(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(sys, "argv", ["restore_check.py", str(tmp_path / "x.cmbk"), "--latest-in", str(tmp_path)])
+    rc = restore_check.main()
+    assert rc != 0
+    assert "exactly one" in capsys.readouterr().err
+
+
+def test_main_rejects_neither_archive_nor_latest_in(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["restore_check.py"])
+    rc = restore_check.main()
+    assert rc != 0
+    assert "exactly one" in capsys.readouterr().err
+
+
+def test_main_latest_in_finds_and_checks_archive(monkeypatch, tmp_path, throwaway_pki, capsys):
+    pki_dir = _seeded_pki_dir(tmp_path, throwaway_pki)
+    db_path = _seeded_db(tmp_path)
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    archive_path = backup_dir / "certmanager-backup-20260101T000000Z.cmbk"
+    archive_path.write_bytes(
+        backup_module.build_archive(
+            backup_module.BackupContents(db_path=db_path, pki_path=pki_dir), passphrase="p",
+        )
+    )
+
+    monkeypatch.setenv("BACKUP_PASSPHRASE", "p")
+    monkeypatch.setattr(sys, "argv", ["restore_check.py", "--latest-in", str(backup_dir)])
+    rc = restore_check.main()
+    assert rc == 0
+    assert "Restore check OK" in capsys.readouterr().out

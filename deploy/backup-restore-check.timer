@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the certmanager restore drill weekly
+
+[Timer]
+# Runs a couple hours after the daily backup.service window so a fresh
+# archive almost always exists by the time this checks it.
+OnCalendar=weekly
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

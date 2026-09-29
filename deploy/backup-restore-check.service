@@ -1,0 +1,25 @@
+[Unit]
+Description=Certmanager restore drill — prove the latest backup actually restores (HANDOFF-FLEET.md §8.4)
+After=network-online.target backup.service
+
+[Service]
+Type=oneshot
+User=certmgr
+Group=certmgr
+WorkingDirectory=/opt/certmanager
+EnvironmentFile=/opt/certmanager/.env.backup
+ExecStart=/opt/certmanager/.venv/bin/python scripts/restore_check.py --latest-in /var/backups/certmanager
+
+# "An untested backup is a belief, not a backup" (HANDOFF-FLEET.md §8.4)
+# — this exits non-zero on any failure (wrong passphrase, zero certs,
+# mismatched key/cert), which `systemctl --failed` / any unit-failure
+# monitoring on this host will surface.
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+ReadOnlyPaths=/var/backups/certmanager
+ReadWritePaths=/opt/certmanager
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target
