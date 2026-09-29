@@ -57,11 +57,17 @@ If using an SSD, mount it at `/opt/certmanager` **before** creating these direct
 
 ```bash
 cd /opt/certmanager
-sudo -u certmgr git clone https://github.com/victor-7-ops/radius-cert-manager.git app
-cd app
+sudo -u certmgr git clone https://github.com/victor-7-ops/radius-cert-manager.git .
 sudo -u certmgr python3 -m venv /opt/certmanager/.venv
 sudo -u certmgr /opt/certmanager/.venv/bin/pip install -r requirements.txt
 ```
+
+**Clone directly into `/opt/certmanager`, not into an `app` subdirectory.** Every systemd unit in
+`deploy/` (`certmanager.service`, `retention.service`, `fleet_watch.service`) sets
+`WorkingDirectory=/opt/certmanager` and runs a relative path like `scripts/serve.py` — that only
+resolves if the repo root (containing `app/`, `scripts/`, `deploy/`) sits directly at
+`/opt/certmanager`, not one level down. An `app`-subdirectory clone (as an earlier version of this
+doc had it) makes every unit fail to start.
 
 The repo is private — you will need a token or a deploy key. Alternatively `scp` a clone across from
 the Windows machine.
@@ -154,8 +160,8 @@ bad env surfaces immediately rather than at first use.
 ## 8. Service
 
 ```bash
-sudo cp /opt/certmanager/app/deploy/certmanager.service /etc/systemd/system/
-# add the two --ssl-* flags from §6 to ExecStart
+sudo cp /opt/certmanager/deploy/certmanager.service /etc/systemd/system/
+# set WEB_SSL_KEYFILE/WEB_SSL_CERTFILE in .env per §6, if needed — no ExecStart edit
 sudo systemctl daemon-reload && sudo systemctl enable --now certmanager
 systemd-analyze security certmanager.service
 ```
@@ -164,7 +170,7 @@ Bootstrap the first admin, then **create a second Super Admin immediately** — 
 Super-Admin-only, and one person unavailable must not mean nobody can kill a stolen device's access.
 
 ```bash
-sudo -u certmgr /opt/certmanager/.venv/bin/python /opt/certmanager/app/scripts/bootstrap_superadmin.py
+sudo -u certmgr /opt/certmanager/.venv/bin/python /opt/certmanager/scripts/bootstrap_superadmin.py
 ```
 
 **Gates:** the service runs as `certmgr`; `https://192.168.200.20:8443` loads from another machine on
