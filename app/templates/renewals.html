@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Renewal campaign — Certificate Manager{% endblock %}
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+  <div>
+    <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Renewal campaign</h1>
+    <p class="text-sm text-slate-500 mt-1">{{ outstanding_count }} outstanding, {{ done_count }} done, of {{ total_count }} due.</p>
+  </div>
+  <a href="/renewals/export.csv?window={{ window }}{% if subsidiary_filter %}&subsidiary={{ subsidiary_filter | urlencode }}{% endif %}" class="btn-secondary">
+    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 2a.75.75 0 0 1 .75.75v8.19l1.72-1.72a.75.75 0 1 1 1.06 1.06l-3 3a.75.75 0 0 1-1.06 0l-3-3a.75.75 0 1 1 1.06-1.06l1.72 1.72V2.75A.75.75 0 0 1 10 2ZM4 13a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-2a1 1 0 1 1 2 0v2a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-2a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
+    Export CSV
+  </a>
+</div>
+
+<div class="flex flex-wrap gap-2 mb-6">
+  {% for w, label in [("30", "30 days"), ("60", "60 days"), ("90", "90 days"), ("expired", "Already expired")] %}
+  <a href="/renewals?window={{ w }}" class="{{ 'btn-primary' if window == w else 'btn-secondary' }} text-sm">{{ label }}</a>
+  {% endfor %}
+</div>
+
+{% if by_subsidiary %}
+<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-6">
+  {% for name, b in by_subsidiary %}
+  <a href="/renewals?window={{ window }}&subsidiary={{ name | urlencode }}"
+     class="card p-3 {{ 'ring-2 ring-slate-900' if subsidiary_filter == name else '' }}">
+    <div class="text-sm font-medium text-slate-900">{{ name }}</div>
+    <div class="text-xs text-slate-500">{{ b.done }} / {{ b.total }} done</div>
+    <div class="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+      <div class="h-full bg-green-600" style="width: {{ (100 * b.done / b.total) | round(1) if b.total else 0 }}%;"></div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% if subsidiary_filter %}
+<a href="/renewals?window={{ window }}" class="text-sm text-slate-500 hover:underline mb-4 inline-block">Clear subsidiary filter</a>
+{% endif %}
+{% endif %}
+
+<div class="table-shell">
+  <table>
+    <thead>
+      <tr>
+        <th class="w-10"></th>
+        <th>CN</th>
+        <th>Employee</th>
+        <th>Device</th>
+        <th>Subsidiary</th>
+        <th>Expires</th>
+        <th>Days left</th>
+        <th>Progress</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      {% set c = r.certificate %}
+      <tr>
+        <td>
+          {% if r.progress.value != "done" %}
+          <input type="checkbox" class="renew-select rounded border-slate-300" value="{{ c.serial }}">
+          {% endif %}
+        </td>
+        <td class="text-slate-900 font-medium"><a href="/certs/{{ c.serial }}" class="hover:underline">{{ c.cn }}</a></td>
+        <td class="text-slate-600">{{ c.employee_name or "" }}</td>
+        <td class="text-slate-500">{{ c.device_type or "" }}{% if c.device_model %} · {{ c.device_model }}{% endif %}</td>
+        <td class="text-slate-500 text-sm">{{ c.subsidiary or "" }}</td>
+        <td class="text-slate-500 text-sm">{{ c.expires_at.date() }}</td>
+        <td class="text-slate-500 text-sm">{{ r.days_remaining | round }}</td>
+        <td>
+          {% if r.progress.value == "done" %}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-green-700"><span class="w-1.5 h-1.5 rounded-full bg-green-600"></span> Done — <a href="/certs/{{ r.successor.serial }}" class="hover:underline">renewed</a></span>
+          {% else %}
+          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Outstanding</span>
+          {% endif %}
+        </td>
+        <td class="text-right">
+          {% if r.progress.value != "done" %}
+          <button type="button" class="text-slate-500 hover:underline text-xs"
+                  onclick="var reason = window.prompt('Reason this device is not renewing?', ''); if (reason === null) return; if (!window.confirm('Mark {{ c.cn }} as not renewing?')) return; var f=document.getElementById('retire-form-{{ c.serial }}'); f.querySelector('[name=reason]').value = reason; f.submit();">
+            Not renewing
+          </button>
+          <form id="retire-form-{{ c.serial }}" method="post" action="/certs/{{ c.serial }}/retire" class="hidden">
+            <input type="hidden" name="reason">
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not rows %}
+      <tr><td colspan="9" class="text-center text-slate-400 py-6">Nothing in this window.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div id="renew-bar" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-20 card px-4 py-3 flex items-center gap-3 shadow-lg">
+  <span id="renew-count" class="text-sm font-medium text-slate-700"></span>
+  <button type="button" id="renew-selected-btn" class="btn-secondary">Renew selected</button>
+</div>
+<form id="renew-form" method="post" action="/certs/bulk-action" class="hidden"></form>
+
+<script>
+  (function () {
+    var bar = document.getElementById('renew-bar');
+    var count = document.getElementById('renew-count');
+
+    function selected() {
+      return Array.prototype.slice.call(document.querySelectorAll('.renew-select:checked'));
+    }
+    function sync() {
+      var n = selected().length;
+      bar.classList.toggle('hidden', n === 0);
+      count.textContent = n + (n === 1 ? ' selected' : ' selected');
+    }
+    document.addEventListener('change', function (e) {
+      if (e.target.classList.contains('renew-select')) sync();
+    });
+    document.getElementById('renew-selected-btn').addEventListener('click', function () {
+      var rows = selected();
+      if (!rows.length) return;
+      var n = rows.length;
+      var password = window.prompt(
+        'Export password for ' + n + ' renewed certificate' + (n === 1 ? '' : 's') +
+        ' (one shared password, at least 12 characters):', ''
+      );
+      if (password === null) return;
+      if (password.length < 12) { window.alert('Export password must be at least 12 characters.'); return; }
+      // Reuses the existing /certs/bulk-action renew path (HANDOFF-LIFECYCLE.md
+      // §2.3) rather than reimplementing issuing here.
+      var form = document.getElementById('renew-form');
+      form.innerHTML = '';
+      var actionInput = document.createElement('input');
+      actionInput.type = 'hidden'; actionInput.name = 'action'; actionInput.value = 'renew';
+      form.appendChild(actionInput);
+      var pwInput = document.createElement('input');
+      pwInput.type = 'hidden'; pwInput.name = 'export_password'; pwInput.value = password;
+      form.appendChild(pwInput);
+      rows.forEach(function (cb) {
+        var input = document.createElement('input');
+        input.type = 'hidden'; input.name = 'serials'; input.value = cb.value;
+        form.appendChild(input);
+      });
+      form.submit();
+    });
+  })();
+</script>
+{% endblock %}

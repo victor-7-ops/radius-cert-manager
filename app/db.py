@@ -120,6 +120,15 @@ class Certificate(Base):
     # migrations don't enforce them elsewhere either); site.py validates
     # the relationship at the application layer instead.
 
+    retired_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    # Set via POST /certs/{serial}/retire (HANDOFF-LIFECYCLE.md §2.2) —
+    # "not renewing, device retired": leaves the renewal cohort without
+    # pretending the device was re-enrolled. The reason is written to the
+    # audit trail (db.audit), not stored here — it belongs there, not as
+    # a second free-text field to keep in sync.
+
     minimised_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
@@ -296,6 +305,7 @@ _CERTIFICATE_COLUMN_MIGRATIONS = [
     ("site_id", "VARCHAR"),
     ("minimised_at", "DATETIME"),
     ("employee_key", "VARCHAR"),
+    ("retired_at", "DATETIME"),
 ]
 
 DEVICE_TYPES = ["Laptop", "Phone", "Tablet", "Desktop", "Other"]
