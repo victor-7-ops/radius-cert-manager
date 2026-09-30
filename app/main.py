@@ -40,6 +40,7 @@ from app.routes.site import get_router as get_site_router
 from app.routes.sites_admin import get_router as get_sites_admin_router
 from app.routes.web_sites import get_router as get_web_sites_router
 from app.routes.web_employees import get_router as get_web_employees_router
+from app.routes.web_renewals import get_router as get_web_renewals_router
 from app.routes.liveness import get_router as get_liveness_router
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -379,6 +380,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(get_sites_admin_router(deps))
     app.include_router(get_web_sites_router(deps, templates))
     app.include_router(get_web_employees_router(deps, templates))
+    app.include_router(get_web_renewals_router(deps, templates))
     app.include_router(get_liveness_router(deps))
     app.include_router(get_web_certs_router(deps, templates))
     app.include_router(get_web_account_router(deps, templates))
