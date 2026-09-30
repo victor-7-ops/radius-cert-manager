@@ -41,6 +41,7 @@ _PAYLOADS = {
     ("POST", "/certs/bulk/confirm"): {"data": {"batch_token": "nonexistent", "export_password": "x" * 12}},
     ("POST", "/api/admin/sites"): {"json": {"name": "x", "radius_cn": "x"}},
     ("POST", "/admins"): {"data": {"username": "x", "role": "admin"}},
+    ("POST", "/employees/{employee_key}/offboard"): {"data": {"confirm_name": "x"}},
 }
 
 
@@ -114,7 +115,7 @@ def test_every_mutating_route_rejects_viewer(viewer_client):
         url = path.format(
             serial="nonexistent", batch_token="nonexistent", batch_id="nonexistent",
             site_id="nonexistent", admin_id="nonexistent", session_id="nonexistent",
-            token="nonexistent",
+            token="nonexistent", employee_key="nonexistent",
         )
         kwargs = _PAYLOADS.get((method, path), {})
         resp = client.request(method, url, **kwargs)
