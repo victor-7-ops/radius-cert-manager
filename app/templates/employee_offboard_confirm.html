@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Offboard {{ employee_name }} — Certificate Manager{% endblock %}
+{% block content %}
+<a href="/employees/{{ employee_key | urlencode }}" class="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-4">
+  <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd"/></svg>
+  Back to {{ employee_name }}
+</a>
+<h1 class="text-2xl font-semibold text-slate-900 tracking-tight mb-2">Offboard {{ employee_name }}</h1>
+<p class="text-sm text-slate-500 mb-6">This revokes every active and suspended certificate below in one batch, then regenerates the CRL once. This cannot be undone from this screen.</p>
+
+<div class="max-w-lg card p-6">
+  {% if error %}
+  <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  <div class="mb-4">
+    <div class="text-sm font-medium text-slate-900 mb-2">Certificates that will be revoked ({{ revocable | length }}):</div>
+    <ul class="text-sm text-slate-700 space-y-1 list-disc list-inside">
+      {% for c in revocable %}
+      <li>{{ c.cn }} — {{ c.device_type or "device type not set" }}{% if c.device_model %} ({{ c.device_model }}){% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <form method="post" action="/employees/{{ employee_key | urlencode }}/offboard" class="space-y-4"
+        onsubmit="const b=this.querySelector('button[type=submit]'); b.disabled=true; b.innerText='Revoking…';">
+    <div>
+      <label for="reason" class="field-label">Reason</label>
+      <input id="reason" name="reason" type="text" value="{{ default_reason }}" class="field-input">
+    </div>
+    <div>
+      <label for="confirm_name" class="field-label">Type <strong>{{ employee_name }}</strong> to confirm</label>
+      <input id="confirm_name" name="confirm_name" type="text" required autocomplete="off" class="field-input">
+    </div>
+    <button type="submit" class="btn-danger w-full">
+      Revoke {{ revocable | length }} certificate{{ "s" if revocable | length != 1 else "" }}
+    </button>
+  </form>
+</div>
+{% endblock %}

@@ -60,7 +60,7 @@
       <div class="flex items-center justify-between flex-wrap gap-2">
         <div>
           {% if cert.employee_name %}
-          <a href="/certs?employee={{ cert.employee_name | urlencode }}" class="text-base font-semibold text-slate-900 hover:underline">
+          <a href="{{ ('/employees/' ~ (cert.employee_key | urlencode)) if cert.employee_key else ('/certs?employee=' ~ (cert.employee_name | urlencode)) }}" class="text-base font-semibold text-slate-900 hover:underline">
             {{ cert.employee_name }}
           </a>
           {% else %}

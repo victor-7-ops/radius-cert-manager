@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "_status_badge.html" as badge %}
+{% block title %}{{ employee_name }} — Certificate Manager{% endblock %}
+{% block content %}
+<a href="/certs" class="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-4">
+  <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd"/></svg>
+  Certificates
+</a>
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+  <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">{{ employee_name }}</h1>
+  {% if admin.role.value == "super_admin" and revocable_count %}
+  <a href="/employees/{{ employee_key | urlencode }}/offboard" class="btn-danger">
+    <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 0 0-.894.553L7.382 4H4a1 1 0 0 0 0 2v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6a1 1 0 1 0 0-2h-3.382l-.724-1.447A1 1 0 0 0 11 2H9ZM7 8a1 1 0 1 1 2 0v6a1 1 0 1 1-2 0V8Zm4-1a1 1 0 0 0-1 1v6a1 1 0 1 0 2 0V8a1 1 0 0 0-1-1Z" clip-rule="evenodd"/></svg>
+    Offboard — revoke all
+  </a>
+  {% endif %}
+</div>
+
+<div class="table-shell">
+  <table>
+    <thead>
+      <tr>
+        <th>CN</th>
+        <th>Device</th>
+        <th>Subsidiary</th>
+        <th>Status</th>
+        <th>Expires</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in certs %}
+      <tr>
+        <td class="text-slate-900 font-medium"><a href="/certs/{{ c.serial }}" class="hover:underline">{{ c.cn }}</a></td>
+        <td class="text-slate-600">{{ c.device_type or "" }}{% if c.device_model %} · {{ c.device_model }}{% endif %}</td>
+        <td class="text-slate-500 text-sm">{{ c.subsidiary or "" }}</td>
+        <td>{{ badge.status_badge(c.status.value) }}</td>
+        <td class="text-slate-500 text-sm">{{ c.expires_at.date() }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
