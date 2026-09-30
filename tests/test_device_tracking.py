@@ -154,6 +154,13 @@ def test_issue_form_and_employee_drilldown_e2e(app_settings, throwaway_pki, monk
     assert "jordan-laptop" in filtered_resp.text
     assert "jordan-phone" in filtered_resp.text
 
+    # HANDOFF-LIFECYCLE.md §1.1: the drill-down matches on employee_key,
+    # not the exact string, so a differently-cased/spaced query still
+    # finds the same roster.
+    variant_resp = client.get("/certs", params={"employee": "jordan  ellis"})
+    assert "jordan-laptop" in variant_resp.text
+    assert "jordan-phone" in variant_resp.text
+
 
 def test_issue_rejects_invalid_mac(app_settings, throwaway_pki, monkeypatch):
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))

@@ -60,7 +60,10 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             # Drill-down from an employee name elsewhere in the UI — all
             # of that person's devices, any status, so it reads as their
             # full device roster rather than just what's currently active.
-            stmt = stmt.where(db.Certificate.employee_name == employee)
+            # Matched on employee_key (HANDOFF-LIFECYCLE.md §1.1), not the
+            # exact employee_name string, so "Juan Dela Cruz" and "juan
+            # dela cruz" don't silently split into two different rosters.
+            stmt = stmt.where(db.Certificate.employee_key == normalize_employee_key(employee))
         if subsidiary:
             stmt = stmt.where(db.Certificate.subsidiary == subsidiary)
         if status == "expired":
@@ -429,10 +432,10 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         )
 
         other_device_count = 0
-        if cert.employee_name:
+        if cert.employee_key:
             other_device_count = session.scalar(
                 select(func.count()).select_from(db.Certificate).where(
-                    db.Certificate.employee_name == cert.employee_name,
+                    db.Certificate.employee_key == cert.employee_key,
                     db.Certificate.id != cert.id,
                 )
             )
