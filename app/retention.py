@@ -168,6 +168,8 @@ def run_retention(session: Session, settings: Settings, dry_run: bool = True, no
     if report.certs_eligible:
         for cert in report.certs_eligible:
             cert.employee_name = None
+            cert.employee_key = None
+            cert.note = None
             cert.device_mac = None
             cert.device_serial = None
             cert.device_model = None

@@ -137,21 +137,19 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         orphans = reconcile.reconcile_issued_dir(session, deps.pki_path / "issued") if not admin.subsidiary_scope else []
 
         if admin.subsidiary_scope:
-            # AuditLog has no subsidiary column, so filter by matching
-            # target against this admin's own certs — that also drops
-            # admin-management entries (their target is a username, which
-            # won't match any cn), which a scoped admin shouldn't see anyway.
-            own_cns = {c.cn for c in rows}
-            recent = [
-                a for a in session.scalars(
-                    select(db.AuditLog).order_by(db.AuditLog.timestamp.desc()).limit(200)
-                ).all()
-                if a.target in own_cns
-            ][:10]
+            recent_stmt = (
+                select(db.AuditLog)
+                .where(db.AuditLog.subsidiary == admin.subsidiary_scope)
+                .order_by(db.AuditLog.timestamp.desc())
+                .limit(10)
+            )
         else:
-            recent = session.scalars(
-                select(db.AuditLog).order_by(db.AuditLog.timestamp.desc()).limit(10)
-            ).all()
+            recent_stmt = (
+                select(db.AuditLog)
+                .order_by(db.AuditLog.timestamp.desc())
+                .limit(10)
+            )
+        recent = session.scalars(recent_stmt).all()
 
         health = crl_health.get_health(session)
         ca_warnings = h.ca_expiry_warnings(deps, now)
@@ -267,13 +265,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         date_to: str | None = None,
         admin: db.Admin = Depends(deps.require_admin),
     ):
-        # AuditLog has no subsidiary column, so there's no clean way to
-        # scope this view — keep it unscoped-admin only rather than
-        # showing a scoped admin other subsidiaries' activity.
-        h.require_unscoped(admin, "activity log isn't available to a subsidiary-scoped admin")
         session = deps.get_db_session()
         LIMIT = 200
         stmt = select(db.AuditLog).order_by(db.AuditLog.timestamp.desc())
+        if admin.subsidiary_scope:
+            stmt = stmt.where(db.AuditLog.subsidiary == admin.subsidiary_scope)
         if actor:
             stmt = stmt.where(db.AuditLog.actor.contains(actor))
         if action:
@@ -293,7 +289,10 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         rows = session.scalars(stmt.limit(LIMIT + 1)).all()
         truncated = len(rows) > LIMIT
         rows = rows[:LIMIT]
-        known_actions = sorted(a for (a,) in session.execute(select(db.AuditLog.action).distinct()))
+        known_actions_stmt = select(db.AuditLog.action).distinct()
+        if admin.subsidiary_scope:
+            known_actions_stmt = known_actions_stmt.where(db.AuditLog.subsidiary == admin.subsidiary_scope)
+        known_actions = sorted(a for (a,) in session.execute(known_actions_stmt))
         return templates.TemplateResponse(
             request,
             "activity_log.html",

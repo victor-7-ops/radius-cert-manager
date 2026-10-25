@@ -1,6 +1,6 @@
 # Handoff: Fleet Phase — server-cert lifecycle, site check-in, fleet view
 
-**Audience:** an AI coding agent (Claude Code) working in this repo with no other context.
+**Audience:** Engineering and operations teams working in this repo.
 **Supersedes nothing.** This is additive to what exists. Read `SESSION-SUMMARY.md` for what the
 app already does; read this before writing any code for the three features below.
 

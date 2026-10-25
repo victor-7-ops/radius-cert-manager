@@ -83,4 +83,13 @@ def get_router(deps) -> APIRouter:
         site_service.deactivate(session, site, actor=admin.username)
         return {"id": site.id, "is_active": site.is_active}
 
+    @router.post("/{site_id}/reactivate")
+    def reactivate_site(site_id: str, admin: db.Admin = Depends(deps.require_super_admin)):
+        session = deps.get_db_session()
+        site = session.get(db.Site, site_id)
+        if site is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Site not found")
+        site_service.reactivate(session, site, actor=admin.username)
+        return {"id": site.id, "is_active": site.is_active}
+
     return router

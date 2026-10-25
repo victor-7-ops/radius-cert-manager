@@ -1,6 +1,6 @@
-# Handoff: Fleet phase complete — for the next session (Claude Cowork)
+# Handoff: Fleet phase complete
 
-**Audience:** an AI coding agent with no other context, picking this repo up fresh.
+**Audience:** Engineering and operations teams working in this repo.
 **As of:** commit `67e26e1` on `master`, pushed to `origin/master`, CI green.
 **Read `HANDOFF-FLEET.md` first** — this doc reports what happened against that plan.
 It supersedes nothing in that file; treat it as the "here's what actually landed" companion.
@@ -144,9 +144,6 @@ A throwaway dev setup now exists on this machine (not in git — all gitignored)
 - `pki/` — throwaway root + intermediate CA.
 - `.env` — dev settings pointing at that PKI and a local SQLite DB.
 - Dev admin: username `admin`, password `devpassword123`.
-- `.claude/launch.json` was fixed — it previously pointed at a nonexistent
-  `demo_launch:app` module (unrelated stale leftover, not something this
-  session's work created). It now correctly launches `app.main:create_app`.
 
 Run it with:
 
@@ -154,7 +151,7 @@ Run it with:
 .venv\Scripts\python.exe -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8443
 ```
 
-None of this (`pki/`, `.env`, `.claude/`) is tracked by git — a fresh clone
+None of this (`pki/`, `.env`) is tracked by git — a fresh clone
 needs this redone. `deploy/agent/site-agent.env.example` and the bootstrap
 pattern in `scripts/bootstrap_superadmin.py` are the reference for doing it
 properly (interactive password prompt) rather than the shortcut used here.

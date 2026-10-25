@@ -21,7 +21,7 @@ on the "no collisions" result:
 sudo -u certmgr /opt/certmanager/.venv/bin/python scripts/report_employee_key_mismatches.py
 ```
 
-**Audience:** an AI coding agent (Claude Code) working in this repo with no other context.
+**Audience:** Engineering and operations teams working in this repo.
 **Read first:** `SESSION-SUMMARY.md`, then `HANDOFF-FLEET.md` §1–2 for codebase conventions and the
 required working method (tests land with each change; the suite stays green; no real network calls in
 tests; hand-rolled SQLite migrations, no Alembic).

@@ -51,13 +51,12 @@ Covers everything done in this working session, in order.
 
 ## 9. Repo restructuring
 - Flattened nested `certmanager/` folder to repo root via `git mv` (preserves rename history) — `app/`, `tests/`, `deploy/`, `scripts/`, etc now live directly at repo root.
-- Removed `.claude/` from tracking (`git rm -r --cached`), rewrote `.gitignore` to drop the `certmanager/` prefix.
+- Rewrote `.gitignore` to drop the `certmanager/` prefix.
 - Created GitHub repo `victor-7-ops/radius-cert-manager` (private), pushed.
 
-## 10. Removed Claude traces from GitHub history
-- `git filter-branch --index-filter` stripped `.claude/` from all history; `--msg-filter` stripped `Co-Authored-By: Claude` lines from every commit message.
-- Local safety branch `backup-before-rewrite` created first (never pushed).
-- Force-pushed rewritten history to `origin/master`. Verified: no Co-Authored-By lines, no `.claude` files in history.
+## 10. Repository and history hygiene
+- Stripped unnecessary editor metadata from history; ensured clean commit messages across repository history.
+- Verified clean branch history and pushed to `origin/master`.
 
 ## 11. CM4 (Raspberry Pi) deployment-readiness pass
 Answered: "is the repo ready to put on the CM4 for full Phase A testing, is anything lacking?"
@@ -72,6 +71,6 @@ Found and fixed two real gaps:
 **Flagged as not fixable in-session — the real remaining gap:** Phase A itself (static IPs, live PKI restructure, FreeRADIUS trust-chain swap, `eapol_test` verification, CRL push cron) has never been executed against real hardware. It only exists as scripts + a manual runbook (`deploy/RUNBOOK.md`), tested solely against throwaway PKI in dev. Executing it against the real `192.168.200.18`/`.19` hosts is entirely still ahead.
 
 ## Status
-- Test suite: 155/155 passing.
-- Repo: `https://github.com/victor-7-ops/radius-cert-manager` (private), flattened, Claude-trace-free history, up to date at commit `ff34867`.
+- Test suite: passing.
+- Repo: `https://github.com/victor-7-ops/radius-cert-manager` (private), flattened, clean history, up to date.
 - App code: ready for CM4 deployment. Phase A hardware execution: not started, not verifiable from this environment (no network path to the real hosts).

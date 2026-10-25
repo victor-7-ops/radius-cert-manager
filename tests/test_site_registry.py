@@ -221,6 +221,31 @@ def test_rotate_token_invalidates_old_token(tmp_path, monkeypatch, throwaway_pki
     assert new_resp.status_code == 200
 
 
+def test_deactivate_and_reactivate_site_via_api(tmp_path, monkeypatch, throwaway_pki):
+    app, client, app_settings = _make_app(tmp_path, monkeypatch, throwaway_pki)
+    body, session = _create_site_via_api(client, app_settings)
+    site_id = body["id"]
+    token = body["token"]
+
+    # Deactivate site via API
+    deact_resp = client.post(f"/api/admin/sites/{site_id}/deactivate")
+    assert deact_resp.status_code == 200
+    assert deact_resp.json()["is_active"] is False
+
+    # Checkin is rejected with 401 when site is deactivated
+    resp = client.post("/api/site/checkin", json={}, headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 401
+
+    # Reactivate site via API
+    react_resp = client.post(f"/api/admin/sites/{site_id}/reactivate")
+    assert react_resp.status_code == 200
+    assert react_resp.json()["is_active"] is True
+
+    # Checkin succeeds again
+    resp2 = client.post("/api/site/checkin", json={}, headers={"Authorization": f"Bearer {token}"})
+    assert resp2.status_code == 200
+
+
 def test_create_site_rejects_duplicate_radius_cn(tmp_path, monkeypatch, throwaway_pki):
     app, client, app_settings = _make_app(tmp_path, monkeypatch, throwaway_pki)
     _create_site_via_api(client, app_settings)

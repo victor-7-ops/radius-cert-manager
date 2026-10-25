@@ -131,6 +131,10 @@ def test_bundle_and_export_routes_reject_viewer(viewer_client):
         ("GET", "/api/certs/nonexistent/bundle"),
         ("GET", "/certs/nonexistent/bundle"),
         ("GET", "/certs/nonexistent/delivery"),
+        ("GET", "/certs/nonexistent/mobileconfig"),
+        ("GET", "/certs/nonexistent/windows-profile"),
+        ("GET", "/api/certs/nonexistent/mobileconfig"),
+        ("GET", "/api/certs/nonexistent/windows-profile"),
         ("GET", "/certs/export.csv"),
         ("GET", "/api/batches/nonexistent/bundle"),
     ]:

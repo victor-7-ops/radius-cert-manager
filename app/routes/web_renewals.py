@@ -33,13 +33,19 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             stmt = stmt.where(db.Certificate.subsidiary == admin.subsidiary_scope)
         candidates = session.scalars(stmt).all()
 
+        cohort_certs = [cert for cert in candidates if renewal.in_cohort(cert, window_days, now)]
+        if not cohort_certs:
+            return []
+
+        cert_ids = [c.id for c in cohort_certs]
+        successors = session.scalars(
+            select(db.Certificate).where(db.Certificate.supersedes_id.in_(cert_ids))
+        ).all()
+        successors_by_supersedes_id = {s.supersedes_id: s for s in successors}
+
         rows = []
-        for cert in candidates:
-            if not renewal.in_cohort(cert, window_days, now):
-                continue
-            successor = session.scalar(
-                select(db.Certificate).where(db.Certificate.supersedes_id == cert.id)
-            )
+        for cert in cohort_certs:
+            successor = successors_by_supersedes_id.get(cert.id)
             progress = renewal.progress_for(cert, successor, window_days, now)
             days_remaining = (renewal.aware(cert.expires_at) - now).total_seconds() / 86400
             rows.append(renewal.CohortRow(certificate=cert, successor=successor, progress=progress, days_remaining=days_remaining))

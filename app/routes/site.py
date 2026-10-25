@@ -133,6 +133,8 @@ def get_router(deps) -> APIRouter:
             # the "one site tried to get another site's identity" case,
             # and the error shouldn't help an attacker calibrate a retry.
             raise HTTPException(status.HTTP_403_FORBIDDEN, "CSR rejected")
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
 
         site.server_cert_id = result.certificate.id
         session.commit()

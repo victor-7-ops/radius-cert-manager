@@ -50,6 +50,8 @@ def _make_cert(session, **overrides):
         issued_by="admin",
         request_id=f"req-{overrides.get('cn', 'device-1.example')}-{now.timestamp()}",
         employee_name="Jane Doe",
+        employee_key="jane doe",
+        note="Sensitive note",
         device_mac="AA:BB:CC:DD:EE:FF",
         device_serial="SN123",
         device_model="ThinkPad",
@@ -131,6 +133,8 @@ def test_revoked_and_expired_past_retention_is_minimised(session, tmp_path):
     assert report.cert_count == 1
     cert = session.scalar(select(db.Certificate))
     assert cert.employee_name is None
+    assert cert.employee_key is None
+    assert cert.note is None
     assert cert.device_mac is None
     assert cert.device_serial is None
     assert cert.device_model is None

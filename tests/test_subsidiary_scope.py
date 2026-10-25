@@ -139,7 +139,7 @@ def test_scoped_admin_bulk_action_skips_out_of_scope_serial(app_settings, throwa
     assert session.query(db.Certificate).filter_by(cn="cebu-bulk-target").one().status == db.CertStatus.active
 
 
-def test_scoped_admin_blocked_from_bulk_issue_and_activity_log(app_settings, throwaway_pki, monkeypatch):
+def test_scoped_admin_blocked_from_bulk_issue(app_settings, throwaway_pki, monkeypatch):
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
     _write_throwaway_pki(app_settings, throwaway_pki)
     scoped = _seed_admin(app_settings, "boracay-restricted", db.AdminRole.super_admin, subsidiary_scope="Lezzgo Boracay")
@@ -150,7 +150,27 @@ def test_scoped_admin_blocked_from_bulk_issue_and_activity_log(app_settings, thr
 
     assert client.get("/certs/bulk").status_code == 403
     assert client.post("/certs/bulk/preview", data={"identifiers_text": "a\nb"}).status_code == 403
-    assert client.get("/activity").status_code == 403
+
+
+def test_scoped_admin_sees_only_own_subsidiary_activity(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    scoped = _seed_admin(app_settings, "boracay-scoped-activity", db.AdminRole.admin, subsidiary_scope="Lezzgo Boracay")
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    db.audit(session, actor="alice", action="issue", target="boracay-device", subsidiary="Lezzgo Boracay")
+    db.audit(session, actor="bob", action="issue", target="cebu-device", subsidiary="Lezzgo Cebu")
+    session.commit()
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, scoped)
+
+    resp = client.get("/activity")
+    assert resp.status_code == 200
+    assert "boracay-device" in resp.text
+    assert "cebu-device" not in resp.text
 
 
 def test_json_api_enforces_subsidiary_scope(app_settings, throwaway_pki, monkeypatch):
