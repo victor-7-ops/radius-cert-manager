@@ -50,6 +50,34 @@ def test_issue_server_cert_signs_when_csr_cn_matches_site(tmp_path, throwaway_pk
     assert result.certificate.cn == "radius-boracay.internal"
     assert result.certificate.status == db.CertStatus.active
 
+    # Verify Subject Alternative Name (SAN) is present for modern TLS compliance
+    cert_path = tmp_path / "issued" / f"{result.certificate.cn}.{result.certificate.serial}.crt"
+    cert = pki.load_cert_pem(cert_path)
+    san_ext = cert.extensions.get_extension_for_oid(x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+    assert x509.DNSName("radius-boracay.internal") in san_ext.value
+
+
+def test_issue_server_cert_includes_ip_san_when_cn_is_ip(tmp_path, throwaway_pki):
+    import ipaddress
+    session = _session(tmp_path)
+    csr_pem = _csr_pem("192.168.1.100")
+
+    result = cert_service.issue_server_cert(
+        session, tmp_path,
+        throwaway_pki["inter_cert"], throwaway_pki["inter_key"],
+        csr_pem=csr_pem,
+        site_id="site-ip",
+        site_cn="192.168.1.100",
+        request_id=str(uuid.uuid4()),
+        days=365,
+        issued_by="alice",
+    )
+
+    cert_path = tmp_path / "issued" / f"{result.certificate.cn}.{result.certificate.serial}.crt"
+    cert = pki.load_cert_pem(cert_path)
+    san_ext = cert.extensions.get_extension_for_oid(x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+    assert x509.IPAddress(ipaddress.ip_address("192.168.1.100")) in san_ext.value
+
 
 def test_issue_server_cert_rejects_cn_mismatch(tmp_path, throwaway_pki):
     session = _session(tmp_path)

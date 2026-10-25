@@ -13,7 +13,10 @@ from __future__ import annotations
 import base64
 import io
 import os
+import shutil
+import sqlite3
 import tarfile
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,22 +47,47 @@ def _add_file(tar: tarfile.TarFile, path: Path, arcname: str) -> None:
         tar.add(path, arcname=arcname)
 
 
+def _snapshot_db(db_path: Path) -> tuple[Path, Path | None]:
+    """Takes a consistent point-in-time SQLite snapshot using the online backup
+    API so active WAL transactions and dirty pages are cleanly consolidated."""
+    if not db_path.exists():
+        return db_path, None
+    temp_dir = Path(tempfile.mkdtemp(prefix="cm_bk_snap_"))
+    temp_file = temp_dir / "certmanager.db"
+    try:
+        src = sqlite3.connect(str(db_path))
+        dest = sqlite3.connect(str(temp_file))
+        with dest:
+            src.backup(dest)
+        dest.close()
+        src.close()
+        return temp_file, temp_dir
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return db_path, None
+
+
 def build_archive(contents: BackupContents, passphrase: str) -> bytes:
     """Returns the encrypted archive bytes — nothing plaintext ever
     touches the caller's disk unless the caller chooses to write this
     return value there directly."""
     tar_buffer = io.BytesIO()
-    with tarfile.open(fileobj=tar_buffer, mode="w:gz") as tar:
-        _add_file(tar, contents.db_path, "certmanager.db")
-        _add_file(tar, contents.pki_path / "intermediate.crt", "pki/intermediate.crt")
-        _add_file(tar, contents.pki_path / "ca-chain.pem", "pki/ca-chain.pem")
-        _add_file(
-            tar, contents.pki_path / "private" / "intermediate.key",
-            "pki/private/intermediate.key",
-        )
-        issued_dir = contents.pki_path / "issued"
-        if issued_dir.exists():
-            tar.add(issued_dir, arcname="pki/issued")
+    db_to_add, cleanup_dir = _snapshot_db(contents.db_path)
+    try:
+        with tarfile.open(fileobj=tar_buffer, mode="w:gz") as tar:
+            _add_file(tar, db_to_add, "certmanager.db")
+            _add_file(tar, contents.pki_path / "intermediate.crt", "pki/intermediate.crt")
+            _add_file(tar, contents.pki_path / "ca-chain.pem", "pki/ca-chain.pem")
+            _add_file(
+                tar, contents.pki_path / "private" / "intermediate.key",
+                "pki/private/intermediate.key",
+            )
+            issued_dir = contents.pki_path / "issued"
+            if issued_dir.exists():
+                tar.add(issued_dir, arcname="pki/issued")
+    finally:
+        if cleanup_dir and cleanup_dir.exists():
+            shutil.rmtree(cleanup_dir, ignore_errors=True)
 
     salt = os.urandom(SALT_LEN)
     key = _derive_key(passphrase, salt)

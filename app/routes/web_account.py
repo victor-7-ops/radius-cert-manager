@@ -69,9 +69,18 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
 
         admin.password_hash = auth.hash_password(new_password)
         admin.must_change_password = False
+        auth.bump_token_version(session, admin)
+        new_session_record = auth.create_admin_session(
+            session,
+            admin,
+            user_agent=request.headers.get("user-agent"),
+            ip_address=request.client.host if request.client else None,
+        )
         db.audit(session, actor=admin.username, action="change_password", target=admin.username)
         session.commit()
-        return RedirectResponse(h.flash("/dashboard", "Password changed.", "success"), status_code=303)
+        response = RedirectResponse(h.flash("/dashboard", "Password changed.", "success"), status_code=303)
+        auth.issue_session_cookie(response, deps.secret_key, admin, session_id=new_session_record.id)
+        return response
 
     # --- Your sessions (any admin, own sessions only) ---
 

@@ -44,10 +44,18 @@ def import_existing_certs(session: Session, issued_dir: Path) -> list[str]:
 def reconcile_issued_dir(session: Session, issued_dir: Path) -> list[str]:
     """Flag any .crt in issued/ that has no matching DB row. Run after import."""
     orphans: list[str] = []
+    if not issued_dir.exists():
+        return orphans
+    db_serials = set(session.scalars(select(db.Certificate.serial)).all())
     for cert_path in sorted(issued_dir.glob("*.crt")):
-        cert = pki.load_cert_pem(cert_path)
-        serial = str(cert.serial_number)
-        existing = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
-        if existing is None:
+        parts = cert_path.stem.split(".")
+        if len(parts) > 1 and parts[-1].isdigit() and parts[-1] in db_serials:
+            continue
+        try:
+            cert = pki.load_cert_pem(cert_path)
+            serial = str(cert.serial_number)
+            if serial not in db_serials:
+                orphans.append(cert_path.name)
+        except Exception:
             orphans.append(cert_path.name)
     return orphans

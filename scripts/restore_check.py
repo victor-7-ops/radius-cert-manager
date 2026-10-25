@@ -66,34 +66,55 @@ def check_restore(archive_path: Path, passphrase: str, scratch_dir: Path) -> int
     if not intermediate_crt.exists():
         return _fail("archive did not contain pki/intermediate.crt")
 
+    key_path = scratch_dir / "pki" / "private" / "intermediate.key"
+    if key_path.exists():
+        try:
+            from cryptography.hazmat.primitives import serialization
+            from app import pki
+
+            cert = pki.load_cert_pem(intermediate_crt)
+            key = pki.load_key_pem(key_path)
+            pub_cert = cert.public_key().public_bytes(
+                serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            pub_key = key.public_key().public_bytes(
+                serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            if pub_cert != pub_key:
+                return _fail("restored intermediate key does not match restored intermediate cert")
+        except Exception as e:
+            return _fail(f"could not read restored cert/key: {e}")
+
     ca_chain = scratch_dir / "pki" / "ca-chain.pem"
     if ca_chain.exists():
-        result = subprocess.run(
-            ["openssl", "verify", "-CAfile", str(ca_chain), str(intermediate_crt)],
-            capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            return _fail(f"openssl verify failed against restored chain: {result.stderr.strip()}")
-    else:
-        # No chain in this archive (e.g. root-CA-signing step wasn't part
-        # of this backup) — fall back to proving the restored key
-        # actually matches the restored cert, which is the failure mode
-        # that matters most for "the backup is silently useless".
-        key_path = scratch_dir / "pki" / "private" / "intermediate.key"
-        if not key_path.exists():
-            return _fail("no ca-chain.pem and no intermediate.key to verify against")
-        cert_modulus = subprocess.run(
-            ["openssl", "x509", "-in", str(intermediate_crt), "-noout", "-pubkey"],
-            capture_output=True, text=True,
-        )
-        key_modulus = subprocess.run(
-            ["openssl", "pkey", "-in", str(key_path), "-pubout"],
-            capture_output=True, text=True,
-        )
-        if cert_modulus.returncode != 0 or key_modulus.returncode != 0:
-            return _fail("openssl could not read restored cert/key")
-        if cert_modulus.stdout != key_modulus.stdout:
-            return _fail("restored intermediate key does not match restored intermediate cert")
+        try:
+            from cryptography import x509
+            from cryptography.hazmat.primitives.asymmetric import ec
+            from app import pki
+
+            inter_cert = pki.load_cert_pem(intermediate_crt)
+            chain_certs = x509.load_pem_x509_certificates(ca_chain.read_bytes())
+            issuer_cert = next((c for c in chain_certs if c.subject == inter_cert.issuer), None)
+            if issuer_cert is None:
+                return _fail("no certificate in ca-chain.pem matches intermediate.crt issuer")
+            if isinstance(issuer_cert.public_key(), ec.EllipticCurvePublicKey):
+                issuer_cert.public_key().verify(
+                    inter_cert.signature,
+                    inter_cert.tbs_certificate_bytes,
+                    ec.ECDSA(inter_cert.signature_hash_algorithm),
+                )
+            else:
+                from cryptography.hazmat.primitives.asymmetric import padding
+                issuer_cert.public_key().verify(
+                    inter_cert.signature,
+                    inter_cert.tbs_certificate_bytes,
+                    padding.PKCS1v15(),
+                    inter_cert.signature_hash_algorithm,
+                )
+        except Exception as e:
+            return _fail(f"verify failed against restored chain: {e}")
+    elif not key_path.exists():
+        return _fail("no ca-chain.pem and no intermediate.key to verify against")
 
     print(f"Restore check OK: {cert_count} certificates, chain/key verified.")
     return 0

@@ -367,10 +367,18 @@ def regenerate_crl(
                 db.Certificate.status.in_([db.CertStatus.revoked, db.CertStatus.suspended])
             )
         ).all()
-        revoked_serials = [
-            (int(r.serial), r.status_changed_at or datetime.datetime.now(datetime.timezone.utc))
-            for r in rows
-        ]
+        revoked_serials = []
+        for r in rows:
+            rev_date = r.status_changed_at or datetime.datetime.now(datetime.timezone.utc)
+            if r.status == db.CertStatus.suspended:
+                reason = x509.ReasonFlags.certificate_hold
+            else:
+                reason = (
+                    x509.ReasonFlags.key_compromise
+                    if r.reason and "compromise" in r.reason.lower()
+                    else x509.ReasonFlags.unspecified
+                )
+            revoked_serials.append((int(r.serial), rev_date, reason))
         crl = pki.build_crl(inter_cert, inter_key, revoked_serials, validity_days)
         pem = pki.crl_to_pem(crl)
         (pki_path / "crl.pem").write_bytes(pem)

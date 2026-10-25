@@ -206,3 +206,36 @@ def test_admin_created_via_admin_form_is_forced_to_change_password(app_settings,
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     new_admin = session.query(db.Admin).filter_by(username="brand-new-admin").one()
     assert new_admin.must_change_password is True
+
+
+def test_change_password_invalidates_concurrent_sessions(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "concurrent-admin", db.AdminRole.admin, password="old-password-123")
+
+    app = create_app(app_settings)
+    client_a = TestClient(app)
+    login_as(client_a, app_settings, admin)
+
+    client_b = TestClient(app)
+    login_as(client_b, app_settings, admin)
+
+    # Both clients can access dashboard initially
+    assert client_a.get("/dashboard").status_code == 200
+    assert client_b.get("/dashboard").status_code == 200
+
+    # Client A changes password
+    resp = client_a.post("/account/change-password", data={
+        "current_password": "old-password-123",
+        "new_password": "new-password-456",
+        "confirm_password": "new-password-456",
+    }, follow_redirects=False)
+    assert resp.status_code == 303
+
+    # Client A can still access dashboard (session refreshed)
+    assert client_a.get("/dashboard").status_code == 200
+
+    # Client B's old session is now rejected and redirected to login
+    resp_b = client_b.get("/dashboard", follow_redirects=False)
+    assert resp_b.status_code == 303
+    assert resp_b.headers["location"].startswith("/login")

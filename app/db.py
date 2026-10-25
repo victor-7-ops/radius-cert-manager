@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     String,
     create_engine,
+    event,
     select,
     text,
 )
@@ -282,7 +283,17 @@ class MigrationFlag(Base):
 
 
 def make_engine(db_path: str):
-    return create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+
+    return engine
 
 
 def make_session_factory(engine) -> sessionmaker:

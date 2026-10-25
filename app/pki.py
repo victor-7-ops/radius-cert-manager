@@ -8,6 +8,7 @@ in the field (handoff §11).
 from __future__ import annotations
 
 import datetime
+import ipaddress
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,14 +81,25 @@ def _cert_builder(
     days: int,
 ) -> x509.CertificateBuilder:
     now = datetime.datetime.now(datetime.timezone.utc)
+    not_before = now - datetime.timedelta(minutes=5)
+    not_after = now + datetime.timedelta(days=days)
+
+    # RFC 5280 §4.1.2.5: The certificate's validity period MUST NOT exceed
+    # the validity period of the issuing CA certificate.
+    ca_not_after = issuer_cert.not_valid_after_utc
+    if ca_not_after <= not_before:
+        raise ValueError("Issuing CA certificate has already expired")
+    if not_after > ca_not_after:
+        not_after = ca_not_after
+
     return (
         x509.CertificateBuilder()
         .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, subject_cn)]))
         .issuer_name(issuer_cert.subject)
         .public_key(public_key)
         .serial_number(serial)
-        .not_valid_before(now - datetime.timedelta(minutes=5))
-        .not_valid_after(now + datetime.timedelta(days=days))
+        .not_valid_before(not_before)
+        .not_valid_after(not_after)
     )
 
 
@@ -97,6 +109,7 @@ def sign_client_cert(
     issuer_key: CertificateIssuerPrivateKeyTypes,
     serial: int,
     days: int,
+    crl_dp_url: str | None = None,
 ) -> x509.Certificate:
     builder = _cert_builder(
         csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value,
@@ -133,6 +146,18 @@ def sign_client_cert(
             critical=False,
         )
     )
+    if crl_dp_url:
+        builder = builder.add_extension(
+            x509.CRLDistributionPoints([
+                x509.DistributionPoint(
+                    full_name=[x509.UniformResourceIdentifier(crl_dp_url)],
+                    relative_name=None,
+                    crl_issuer=None,
+                    reasons=None,
+                )
+            ]),
+            critical=False,
+        )
     return builder.sign(issuer_key, hashes.SHA256())
 
 
@@ -182,7 +207,7 @@ def load_pkcs12(data: bytes, password: str):
 def build_crl(
     issuer_cert: x509.Certificate,
     issuer_key: CertificateIssuerPrivateKeyTypes,
-    revoked_serials: list[tuple[int, datetime.datetime]],
+    revoked_serials: list[tuple[int, datetime.datetime] | tuple[int, datetime.datetime, x509.ReasonFlags | None]],
     validity_days: int,
 ) -> x509.CertificateRevocationList:
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -192,14 +217,22 @@ def build_crl(
         .last_update(now)
         .next_update(now + datetime.timedelta(days=validity_days))
     )
-    for serial, revoked_at in revoked_serials:
-        revoked = (
+    for entry in revoked_serials:
+        serial = entry[0]
+        revoked_at = entry[1]
+        reason = entry[2] if len(entry) > 2 else None
+
+        revoked_builder = (
             x509.RevokedCertificateBuilder()
             .serial_number(serial)
             .revocation_date(revoked_at)
-            .build()
         )
-        builder = builder.add_revoked_certificate(revoked)
+        if reason is not None:
+            revoked_builder = revoked_builder.add_extension(
+                x509.CRLReason(reason),
+                critical=False,
+            )
+        builder = builder.add_revoked_certificate(revoked_builder.build())
     return builder.sign(private_key=issuer_key, algorithm=hashes.SHA256())
 
 
@@ -210,16 +243,44 @@ def sign_server_cert(
     serial: int,
     days: int,
 ) -> x509.Certificate:
-    """Same shape as sign_client_cert but with serverAuth EKU — used only
-    for the RADIUS server's own cert (handoff §3 step 3), never for
+    """Same shape as sign_client_cert but with serverAuth EKU and SubjectAlternativeName —
+    used only for the RADIUS server's own cert (handoff §3 step 3), never for
     client certs issued through the app."""
+    cn_value = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
     builder = _cert_builder(
-        csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value,
+        cn_value,
         issuer_cert,
         csr.public_key(),
         serial,
         days,
     )
+
+    # Subject Alternative Name (SAN) is required by modern TLS/EAP-TLS
+    # supplicants (RFC 5280, Apple iOS 13+, macOS 10.15+, Android 10+).
+    san_names: list[x509.GeneralName] = []
+    try:
+        csr_san = csr.extensions.get_extension_for_oid(x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+        san_names.extend(csr_san.value)
+    except x509.ExtensionNotFound:
+        pass
+
+    def _is_matching_san(gn: x509.GeneralName, val: str) -> bool:
+        if isinstance(gn, x509.DNSName) and gn.value.lower() == val.lower():
+            return True
+        if isinstance(gn, x509.IPAddress):
+            try:
+                return gn.value == ipaddress.ip_address(val)
+            except ValueError:
+                return False
+        return False
+
+    if not any(_is_matching_san(gn, cn_value) for gn in san_names):
+        try:
+            ip_obj = ipaddress.ip_address(cn_value)
+            san_names.append(x509.IPAddress(ip_obj))
+        except ValueError:
+            san_names.append(x509.DNSName(cn_value))
+
     builder = (
         builder.add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         .add_extension(
@@ -238,6 +299,10 @@ def sign_server_cert(
         )
         .add_extension(
             x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]),
+            critical=False,
+        )
+        .add_extension(
+            x509.SubjectAlternativeName(san_names),
             critical=False,
         )
         .add_extension(
