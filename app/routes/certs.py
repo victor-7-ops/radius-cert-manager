@@ -88,6 +88,8 @@ def get_router(deps) -> APIRouter:
             )
         except cert_service.CNConflictError as e:
             raise HTTPException(status.HTTP_409_CONFLICT, str(e))
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
         deps.store_pending_bundle(result.certificate.serial, result.bundle)
         return _serialize(result.certificate)
 
@@ -104,6 +106,58 @@ def get_router(deps) -> APIRouter:
         from fastapi import Response
 
         return Response(content=bundle.data, media_type="application/x-pkcs12")
+
+    @router.get("/{serial}/mobileconfig")
+    def get_mobileconfig(serial: str, admin: db.Admin = Depends(deps.require_write)):
+        session = deps.get_db_session()
+        cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+        if cert is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        if admin.subsidiary_scope:
+            require_cert_scope(admin, cert)
+        bundle = deps.take_pending_bundle(serial)
+        if bundle is None:
+            raise HTTPException(status.HTTP_410_GONE, "bundle already consumed or not found")
+        from app import mobileconfig
+        from fastapi import Response
+
+        wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
+        cfg_bytes = mobileconfig.generate_mobileconfig(
+            cn=cert.cn,
+            serial=serial,
+            pkcs12_data=bundle.data,
+            ca_cert=deps.inter_cert,
+            wifi_ssid=wifi_ssid,
+            export_password=bundle.password,
+            organization=cert.subsidiary,
+        )
+        return Response(
+            content=cfg_bytes,
+            media_type="application/x-apple-as-config",
+            headers={"Content-Disposition": f'attachment; filename="{cert.cn}.mobileconfig"'},
+        )
+
+    @router.get("/{serial}/windows-profile")
+    def get_windows_profile(serial: str, admin: db.Admin = Depends(deps.require_write)):
+        session = deps.get_db_session()
+        cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+        if cert is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        if admin.subsidiary_scope:
+            require_cert_scope(admin, cert)
+        from app import windows_profile
+        from fastapi import Response
+
+        wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
+        xml_content = windows_profile.generate_windows_wifi_xml(
+            ssid=wifi_ssid,
+            ca_cert=deps.inter_cert,
+        )
+        return Response(
+            content=xml_content,
+            media_type="application/x-wifi-config",
+            headers={"Content-Disposition": f'attachment; filename="{wifi_ssid}-Profile.xml"'},
+        )
 
     @router.post("/{serial}/suspend")
     def suspend(

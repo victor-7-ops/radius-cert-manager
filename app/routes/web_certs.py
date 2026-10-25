@@ -338,6 +338,13 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 {**form_context, "error": f'An active certificate for "{cn}" already exists.'},
                 status_code=409,
             )
+        except ValueError as e:
+            return templates.TemplateResponse(
+                request,
+                "issue.html",
+                {**form_context, "error": str(e)},
+                status_code=400,
+            )
         if result.bundle is None:
             return RedirectResponse(f"/certs/{result.certificate.serial}", status_code=303)
         deps.store_pending_bundle(result.certificate.serial, result.bundle)
@@ -360,7 +367,9 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         # the admin session cookie. The bundle itself stays single-use —
         # whichever of "Download .p12" or the QR scan happens first wins.
         qr_token = auth.make_bundle_qr_token(deps.secret_key, serial)
-        qr_url = str(request.base_url).rstrip("/") + f"/certs/{serial}/bundle/qr?token={qr_token}"
+        base = str(request.base_url).rstrip("/")
+        qr_url = f"{base}/certs/{serial}/bundle/qr?token={qr_token}"
+        qr_mc_url = f"{base}/certs/{serial}/mobileconfig/qr?token={qr_token}"
 
         return templates.TemplateResponse(
             request,
@@ -371,6 +380,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "serial": serial,
                 "export_password": password,
                 "qr_svg": h.qr_svg(qr_url),
+                "qr_mobileconfig_svg": h.qr_svg(qr_mc_url),
                 "qr_expires_minutes": auth.BUNDLE_QR_TOKEN_MAX_AGE_SECONDS // 60,
                 **_crl_banner_context(session),
             },
@@ -394,6 +404,38 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             headers={"Content-Disposition": f'attachment; filename="{serial}.p12"'},
         )
 
+    @router.get("/certs/{serial}/mobileconfig/qr")
+    def download_mobileconfig_via_qr(request: Request, serial: str, token: str = ""):
+        ip = request.client.host if request.client else "unknown"
+        if rate_limit.is_rate_limited(f"bundle-qr:{ip}", max_requests=20, window_seconds=60):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts — wait a minute and try again.")
+        if auth.verify_bundle_qr_token(deps.secret_key, token) != serial:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "invalid or expired QR link")
+        session = deps.get_db_session()
+        cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+        if cert is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        bundle = deps.take_pending_bundle(serial)
+        if bundle is None:
+            raise HTTPException(status.HTTP_410_GONE, "bundle already consumed or not found")
+        from app import mobileconfig
+
+        wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
+        cfg_bytes = mobileconfig.generate_mobileconfig(
+            cn=cert.cn,
+            serial=serial,
+            pkcs12_data=bundle.data,
+            ca_cert=deps.inter_cert,
+            wifi_ssid=wifi_ssid,
+            export_password=bundle.password,
+            organization=cert.subsidiary,
+        )
+        return Response(
+            content=cfg_bytes,
+            media_type="application/x-apple-as-config",
+            headers={"Content-Disposition": f'attachment; filename="{cert.cn}.mobileconfig"'},
+        )
+
     @router.get("/certs/{serial}/bundle")
     def download_bundle(serial: str, admin: db.Admin = Depends(deps.require_write)):
         if rate_limit.is_rate_limited(f"bundle:{admin.id}", max_requests=30, window_seconds=60):
@@ -410,6 +452,60 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             content=bundle.data,
             media_type="application/x-pkcs12",
             headers={"Content-Disposition": f'attachment; filename="{serial}.p12"'},
+        )
+
+    @router.get("/certs/{serial}/mobileconfig")
+    def download_mobileconfig(serial: str, admin: db.Admin = Depends(deps.require_write)):
+        if rate_limit.is_rate_limited(f"bundle:{admin.id}", max_requests=30, window_seconds=60):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts — wait a minute and try again.")
+        session = deps.get_db_session()
+        cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+        if cert is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        if admin.subsidiary_scope:
+            h.require_cert_scope(admin, cert)
+        bundle = deps.take_pending_bundle(serial)
+        if bundle is None:
+            raise HTTPException(status.HTTP_410_GONE, "bundle already consumed or not found")
+        from app import mobileconfig
+
+        wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
+        cfg_bytes = mobileconfig.generate_mobileconfig(
+            cn=cert.cn,
+            serial=serial,
+            pkcs12_data=bundle.data,
+            ca_cert=deps.inter_cert,
+            wifi_ssid=wifi_ssid,
+            export_password=bundle.password,
+            organization=cert.subsidiary,
+        )
+        return Response(
+            content=cfg_bytes,
+            media_type="application/x-apple-as-config",
+            headers={"Content-Disposition": f'attachment; filename="{cert.cn}.mobileconfig"'},
+        )
+
+    @router.get("/certs/{serial}/windows-profile")
+    def download_windows_profile(serial: str, admin: db.Admin = Depends(deps.require_write)):
+        if rate_limit.is_rate_limited(f"bundle:{admin.id}", max_requests=30, window_seconds=60):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts — wait a minute and try again.")
+        session = deps.get_db_session()
+        cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+        if cert is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        if admin.subsidiary_scope:
+            h.require_cert_scope(admin, cert)
+        from app import windows_profile
+
+        wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
+        xml_content = windows_profile.generate_windows_wifi_xml(
+            ssid=wifi_ssid,
+            ca_cert=deps.inter_cert,
+        )
+        return Response(
+            content=xml_content,
+            media_type="application/x-wifi-config",
+            headers={"Content-Disposition": f'attachment; filename="{wifi_ssid}-Profile.xml"'},
         )
 
     @router.get("/certs/{serial}")
@@ -502,6 +598,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             )
         except cert_service.ReissueTargetError as e:
             raise HTTPException(status.HTTP_409_CONFLICT, str(e))
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
         deps.store_pending_bundle(result.certificate.serial, result.bundle)
         deps.store_pending_password(result.certificate.serial, result.bundle.password)
         return RedirectResponse(f"/certs/{result.certificate.serial}/delivery", status_code=303)
