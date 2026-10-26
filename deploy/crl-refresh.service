@@ -1,0 +1,21 @@
+[Unit]
+Description=Certmanager CRL regeneration and distribution (HANDOFF-FLEET.md §8.3)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=certmgr
+Group=certmgr
+WorkingDirectory=/opt/certmanager
+EnvironmentFile=/opt/certmanager/.env
+ExecStart=/opt/certmanager/.venv/bin/python scripts/regenerate_crl_cron.py
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/certmanager
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

@@ -34,10 +34,12 @@ class Settings(BaseSettings):
     radius_host: str
     radius_ssh_key: Path
     radius_ssh_user: str = "crlpush"
+    wifi_ssid: str = "Corporate-WiFi"
 
     alert_webhook_url: str | None = None
     expiry_alert_days: int = 7
     initial_superadmin_user: str | None = None
+    log_format: str = "text"
 
     # Hub self-monitoring (HANDOFF-FLEET.md §8.2) — when the hub itself is
     # down, the fleet view is down with it, so it needs a signal that
@@ -67,6 +69,14 @@ class Settings(BaseSettings):
     def secret_key_min_length(cls, v: str) -> str:
         if len(v) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters")
+        return v
+
+    @field_validator("log_format")
+    @classmethod
+    def validate_log_format(cls, v: str) -> str:
+        v = v.lower()
+        if v not in ("text", "json"):
+            raise ValueError("log_format must be 'text' or 'json'")
         return v
 
     @field_validator("pki_path", "radius_ssh_key")

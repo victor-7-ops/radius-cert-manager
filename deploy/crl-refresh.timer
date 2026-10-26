@@ -1,0 +1,10 @@
+[Unit]
+Description=Run certmanager CRL regeneration every 24 hours (or per CRL_REGEN_HOURS)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

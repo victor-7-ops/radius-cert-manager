@@ -36,6 +36,7 @@ AGENT_VERSION = "1.0.0"
 class Config:
     def __init__(self):
         self.hub_url = _require_env("HUB_URL").rstrip("/")
+        self.hub_url_secondary = os.environ.get("HUB_URL_SECONDARY", "").rstrip("/")
         self.token = _require_env("SITE_TOKEN")
         self.site_cn = _require_env("SITE_CN")
         self.cert_dir = Path(os.environ.get("CERT_DIR", "/etc/freeradius/3.0/certs"))
@@ -185,6 +186,46 @@ def _crl_next_update_epoch(crl_bytes: Path) -> int:
         return 0
 
 
+def _hub_request(
+    cfg: Config, session: requests.Session, method: str, path: str, **kwargs
+) -> requests.Response:
+    secondary = getattr(cfg, "hub_url_secondary", "")
+    urls = [cfg.hub_url]
+    if secondary and secondary != cfg.hub_url:
+        urls.append(secondary)
+
+    timeout = kwargs.pop("timeout", cfg.request_timeout)
+    last_exc = None
+    resp = None
+    for i, url in enumerate(urls):
+        full_url = f"{url}{path}"
+        try:
+            if method.upper() == "GET":
+                resp = session.get(full_url, timeout=timeout, **kwargs)
+            elif method.upper() == "POST":
+                resp = session.post(full_url, timeout=timeout, **kwargs)
+            else:
+                resp = session.request(method, full_url, timeout=timeout, **kwargs)
+
+            status_code = getattr(resp, "status_code", None)
+            if isinstance(status_code, int) and status_code >= 500 and i < len(urls) - 1:
+                logger.warning(
+                    "hub %s returned %s, failing over to secondary hub", url, status_code
+                )
+                continue
+            return resp
+        except requests.RequestException as exc:
+            last_exc = exc
+            if i < len(urls) - 1:
+                logger.warning(
+                    "hub %s unreachable (%s), failing over to secondary hub", url, exc
+                )
+                continue
+    if last_exc:
+        raise last_exc
+    return resp
+
+
 def fetch_and_install_crl(cfg: Config, session: requests.Session, reported_etag: str | None) -> str | None:
     """Returns the new sha256 hex if a newer CRL was pulled and installed,
     None if unchanged or the pull/install failed (logged, not raised —
@@ -193,7 +234,7 @@ def fetch_and_install_crl(cfg: Config, session: requests.Session, reported_etag:
     if reported_etag:
         headers["If-None-Match"] = reported_etag
     try:
-        resp = session.get(f"{cfg.hub_url}/api/site/crl", headers=headers, timeout=cfg.request_timeout)
+        resp = _hub_request(cfg, session, "GET", "/api/site/crl", headers=headers, timeout=cfg.request_timeout)
     except requests.RequestException:
         logger.exception("CRL fetch failed")
         return None
@@ -239,10 +280,26 @@ def _generate_key_and_csr(cn: str, work_dir: Path) -> tuple[Path, Path]:
         raise RuntimeError(f"key generation failed: {keygen.stderr}")
     key_path.chmod(0o600)
 
+    def _is_ip(val: str) -> bool:
+        import ipaddress
+        try:
+            ipaddress.ip_address(val)
+            return True
+        except ValueError:
+            return False
+
+    san_val = f"IP:{cn}" if _is_ip(cn) else f"DNS:{cn}"
     csr = _run([
         "openssl", "req", "-new", "-key", str(key_path), "-out", str(csr_path),
         "-subj", f"/CN={cn}",
+        "-addext", f"subjectAltName = {san_val}",
     ])
+    if csr.returncode != 0:
+        # Fallback for OpenSSL versions that do not support -addext
+        csr = _run([
+            "openssl", "req", "-new", "-key", str(key_path), "-out", str(csr_path),
+            "-subj", f"/CN={cn}",
+        ])
     if csr.returncode != 0:
         raise RuntimeError(f"CSR generation failed: {csr.stderr}")
 
@@ -260,8 +317,8 @@ def renew_server_cert(cfg: Config, session: requests.Session) -> bool:
     headers = {"Authorization": f"Bearer {cfg.token}"}
     payload = {"csr_pem": csr_path.read_text(), "request_id": str(uuid.uuid4())}
     try:
-        resp = session.post(
-            f"{cfg.hub_url}/api/site/server-cert/renew", json=payload, headers=headers,
+        resp = _hub_request(
+            cfg, session, "POST", "/api/site/server-cert/renew", json=payload, headers=headers,
             timeout=cfg.request_timeout,
         )
     except requests.RequestException:
@@ -299,8 +356,11 @@ def run_once(cfg: Config) -> int:
     freeradius_ok = _freeradius_is_active(cfg.freeradius_service)
 
     try:
-        resp = session.post(
-            f"{cfg.hub_url}/api/site/checkin",
+        resp = _hub_request(
+            cfg,
+            session,
+            "POST",
+            "/api/site/checkin",
             json={
                 "agent_version": AGENT_VERSION,
                 "freeradius_ok": freeradius_ok,

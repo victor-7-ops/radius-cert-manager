@@ -281,3 +281,53 @@ def test_run_once_verifies_against_hub_ca_bundle(tmp_path, monkeypatch):
     site_agent.run_once(cfg)
 
     assert seen_sessions[0].verify == cfg.hub_ca_bundle
+
+
+def test_dual_hub_failover_on_connection_error(tmp_path):
+    cfg = _make_cfg(tmp_path)
+    cfg.hub_url = "https://primary-hub.internal"
+    cfg.hub_url_secondary = "https://secondary-hub.internal"
+
+    calls = []
+
+    class _FailoverSession:
+        def get(self, url, **kwargs):
+            calls.append(url)
+            if "primary-hub" in url:
+                raise site_agent.requests.ConnectionError("Connection refused")
+            return MagicMock(status_code=200, content=b"SECONDARY CRL BYTES")
+
+    session = _FailoverSession()
+    resp = site_agent._hub_request(cfg, session, "GET", "/api/site/crl")
+
+    assert resp.status_code == 200
+    assert resp.content == b"SECONDARY CRL BYTES"
+    assert calls == [
+        "https://primary-hub.internal/api/site/crl",
+        "https://secondary-hub.internal/api/site/crl",
+    ]
+
+
+def test_dual_hub_failover_on_502_bad_gateway(tmp_path):
+    cfg = _make_cfg(tmp_path)
+    cfg.hub_url = "https://primary-hub.internal"
+    cfg.hub_url_secondary = "https://secondary-hub.internal"
+
+    calls = []
+
+    class _BadGatewaySession:
+        def post(self, url, **kwargs):
+            calls.append(url)
+            if "primary-hub" in url:
+                return MagicMock(status_code=502, text="Bad Gateway")
+            return MagicMock(status_code=200, json=lambda: {"ok": True})
+
+    session = _BadGatewaySession()
+    resp = site_agent._hub_request(cfg, session, "POST", "/api/site/checkin", json={})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert calls == [
+        "https://primary-hub.internal/api/site/checkin",
+        "https://secondary-hub.internal/api/site/checkin",
+    ]

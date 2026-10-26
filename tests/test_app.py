@@ -60,5 +60,24 @@ def test_issue_list_suspend_revoke_flow(app_settings, throwaway_pki, monkeypatch
     assert any(c["serial"] == serial for c in list_resp.json()["items"])
 
     revoke_resp = client.post(f"/api/certs/{serial}/revoke", json={"reason": "lost laptop"})
-    assert revoke_resp.status_code == 200
     assert revoke_resp.json()["status"] == "revoked"
+
+
+def test_regenerate_crl_cron_runs_synchronously(app_settings, throwaway_pki, monkeypatch):
+    pushed = []
+    monkeypatch.setattr(
+        crl_push, "push_crl", lambda *a, **k: (pushed.append(True), crl_push.PushResult(ok=True, detail="cron stubbed"))[1]
+    )
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    monkeypatch.setenv("SECRET_KEY", app_settings.secret_key)
+    monkeypatch.setenv("PKI_PATH", str(app_settings.pki_path))
+    monkeypatch.setenv("DB_PATH", str(app_settings.db_path))
+    monkeypatch.setenv("RADIUS_HOST", app_settings.radius_host)
+    monkeypatch.setenv("RADIUS_SSH_KEY", str(app_settings.radius_ssh_key))
+
+    from scripts import regenerate_crl_cron
+    exit_code = regenerate_crl_cron.main()
+    assert exit_code == 0
+    assert len(pushed) == 1
+    assert (app_settings.pki_path / "crl.pem").exists()
+

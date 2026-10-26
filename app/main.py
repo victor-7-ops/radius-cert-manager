@@ -42,6 +42,7 @@ from app.routes.web_sites import get_router as get_web_sites_router
 from app.routes.web_employees import get_router as get_web_employees_router
 from app.routes.web_renewals import get_router as get_web_renewals_router
 from app.routes.liveness import get_router as get_liveness_router
+from app.routes.metrics import get_router as get_metrics_router
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -93,6 +94,9 @@ class RouteDeps:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
+
+    from app.logging_conf import setup_logging
+    setup_logging(log_format=getattr(settings, "log_format", "text"))
 
     engine = make_engine(str(settings.db_path))
     session_factory = make_session_factory(engine)
@@ -270,7 +274,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception:
             logger.exception("failed to send heartbeat")
 
-    def regenerate_and_push_crl() -> None:
+    def regenerate_and_push_crl(background: bool = True) -> None:
         session = request_scoped_db()
         pem = cert_service.regenerate_crl(
             session, settings.pki_path, inter_cert, inter_key, settings.crl_validity_days
@@ -280,15 +284,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         crl_health.record_generation(session, next_update)
 
-        def _push():
-            return crl_push.push_crl(
-                settings.pki_path / "crl.pem",
-                settings.radius_host,
-                settings.radius_ssh_user,
-                settings.radius_ssh_key,
-            )
+        def _do_push():
+            with session_factory() as push_session:
+                def _push():
+                    return crl_push.push_crl(
+                        settings.pki_path / "crl.pem",
+                        settings.radius_host,
+                        settings.radius_ssh_user,
+                        settings.radius_ssh_key,
+                    )
 
-        crl_health.push_with_retry(session, _push, alert_fn=_alert)
+                crl_health.push_with_retry(push_session, _push, alert_fn=_alert)
+
+        if background:
+            import threading
+            t = threading.Thread(target=_do_push, daemon=True, name="crl-push-bg")
+            t.start()
+        else:
+            _do_push()
 
     deps = RouteDeps(
         require_admin=require_admin,
@@ -382,6 +395,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(get_web_employees_router(deps, templates))
     app.include_router(get_web_renewals_router(deps, templates))
     app.include_router(get_liveness_router(deps))
+    app.include_router(get_metrics_router(deps))
     app.include_router(get_web_certs_router(deps, templates))
     app.include_router(get_web_account_router(deps, templates))
     app.include_router(get_web_admins_router(deps, templates))

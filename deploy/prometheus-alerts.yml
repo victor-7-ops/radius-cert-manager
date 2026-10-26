@@ -1,0 +1,68 @@
+# Prometheus Alert Rules for RADIUS Certificate Manager
+# Deploy to /etc/prometheus/rules/radius-alerts.yml or include in Prometheus rule_files
+
+groups:
+  - name: radius_pki_alerts
+    rules:
+      - alert: RadiusManagerDown
+        expr: radius_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RADIUS Certificate Manager is unreachable"
+          description: "The RADIUS Certificate Manager service at {{ $labels.instance }} has been down or its database unreachable for more than 2 minutes."
+
+      - alert: RadiusCRLStale
+        expr: radius_crl_is_stale == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RADIUS CRL has expired"
+          description: "The active Certificate Revocation List (CRL) is expired. FreeRADIUS will reject client authentications or fail to revoke compromised certificates."
+
+      - alert: RadiusCRLCritical
+        expr: radius_crl_is_critical == 1 or radius_crl_hours_remaining < 48
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RADIUS CRL expiration imminent"
+          description: "The CRL on {{ $labels.instance }} has less than 48 hours remaining (current: {{ $value | printf \"%.1f\" }}h). Verify the cron job / opt/certmanager/.venv/bin/python scripts/regenerate_crl_cron.py."
+
+      - alert: RadiusCRLPushFailed
+        expr: radius_crl_last_push_ok == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RADIUS CRL SSH push failed"
+          description: "The last attempt to push the updated CRL to the primary RADIUS server failed. Check SSH keys and network path."
+
+      - alert: RadiusSiteSilent
+        expr: radius_sites_count{status="SILENT"} > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Remote RADIUS site is SILENT"
+          description: "One or more remote RADIUS sites have stopped checking in and have missed multiple check-in intervals. The site agent may be offline or network path down."
+
+      - alert: RadiusSiteCritical
+        expr: radius_sites_count{status="CRITICAL"} > 0
+        for: 10m
+        labels:
+          severity: high
+        annotations:
+          summary: "Remote RADIUS site reported CRITICAL health"
+          description: "A remote RADIUS site checked in reporting FreeRADIUS service down or an invalid CRL."
+
+      - alert: RadiusCertsExpiringSoon
+        expr: radius_certificates_expiring_soon{window="7d"} > 0
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "Client certificates expiring within 7 days"
+          description: "{{ $value }} active client certificate(s) will expire within 7 days. Check the renewals dashboard at /renewals."

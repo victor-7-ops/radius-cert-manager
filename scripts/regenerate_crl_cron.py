@@ -15,7 +15,7 @@ from app.main import create_app
 
 def main() -> int:
     app = create_app()
-    app.state.regenerate_and_push_crl()
+    app.state.regenerate_and_push_crl(background=False)
     return 0
 
 
