@@ -8,3 +8,5 @@ __pycache__/
 .pytest_cache/
 .claude/
 /c/cmdemo/
+docs/
+HANDOFF-SUBSIDIARY-NETWORK-ROLES.md
