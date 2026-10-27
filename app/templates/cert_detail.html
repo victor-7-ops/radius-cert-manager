@@ -9,6 +9,12 @@
   Certificates
 </a>
 
+{% if no_bundle_notice %}
+<div role="alert" class="mb-4 text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-lg px-3 py-2.5">
+  No private key bundle to download for this submission &mdash; it reused a request already issued, and the key only ever exists at the moment of first issuance. Click <strong>Reissue</strong> below to get a new certificate with a downloadable bundle.
+</div>
+{% endif %}
+
 <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
   <div>
     <h1 class="page-title font-mono">{{ cert.cn }}</h1>
