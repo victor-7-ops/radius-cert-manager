@@ -2,10 +2,10 @@
 {% import "_spinner.html" as spin %}
 {% block title %}Your sessions — Certificate Manager{% endblock %}
 {% block content %}
-<div class="mb-6 flex items-start justify-between gap-3">
+<div class="mb-6 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
   <div>
-    <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Your sessions</h1>
-    <p class="text-sm text-slate-500 mt-1">Every device currently signed in as {{ admin.username }}. End any you don't recognize.</p>
+    <h1 class="page-title">Your sessions</h1>
+    <p class="page-subtitle">Every device currently signed in as {{ admin.username }}. End any you don't recognize.</p>
   </div>
   <a href="/account/change-password" class="btn-secondary shrink-0">
     <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 7a4 4 0 1 1 4.83 3.9 1 1 0 0 0-.7.29l-5.66 5.66a1 1 0 0 1-.7.29H4a1 1 0 0 1-1-1v-1.76a1 1 0 0 1 .3-.7l5.66-5.67a1 1 0 0 0 .29-.7A4 4 0 0 1 8 7Zm4-2a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" clip-rule="evenodd"/></svg>
@@ -26,21 +26,21 @@
     </thead>
     <tbody>
       {% for s in sessions %}
-      <tr>
+      <tr class="anim-rise hover:bg-slate-50/75 dark:hover:bg-slate-800/40 transition-colors" style="animation-delay: {{ loop.index0 * 30 }}ms;">
         <td>
-          <span class="text-slate-700 text-sm">{{ s.user_agent or "Unknown device" }}</span>
+          <span class="text-slate-800 dark:text-slate-200 text-sm font-medium">{{ s.user_agent or "Unknown device" }}</span>
           {% if s.is_current %}
-          <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-900 text-white ml-1">This device</span>
+          <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 ml-1.5 shadow-sm">This device</span>
           {% endif %}
         </td>
-        <td class="text-slate-500 font-mono text-xs">{{ s.ip_address or "—" }}</td>
-        <td class="text-slate-500">{{ s.created_at }}</td>
-        <td class="text-slate-500">{{ s.last_seen_at }}</td>
+        <td class="text-slate-500 dark:text-slate-400 font-mono text-xs">{{ s.ip_address or "—" }}</td>
+        <td class="text-slate-500 dark:text-slate-400 text-sm">{{ s.created_at }}</td>
+        <td class="text-slate-500 dark:text-slate-400 text-sm">{{ s.last_seen_at }}</td>
         <td class="text-right">
           {% if not s.is_current %}
           <button hx-post="/account/sessions/{{ s.id }}/revoke" hx-confirm="End this session?"
                   hx-target="closest tr" hx-swap="outerHTML"
-                  class="text-red-700 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+                  class="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
             {{ spin.spinner() }}<span class="htmx-hide-on-request">End session</span>
           </button>
           {% endif %}

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Activity log — Certificate Manager{% endblock %}
 {% block content %}
-<div class="mb-6">
-  <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Activity log</h1>
-  <p class="text-sm text-slate-500 mt-1">Every issue, suspend, revoke, and admin change, in order.</p>
+<div class="page-header">
+  <h1 class="page-title">Activity log</h1>
+  <p class="page-subtitle">Every issue, suspend, revoke, and admin change, in order.</p>
 </div>
 
 <form method="get" action="/activity" class="flex flex-wrap items-end gap-2 mb-5">
@@ -38,7 +38,7 @@
 </form>
 
 {% if truncated %}
-<p class="text-xs text-amber-600 mb-3">Showing the latest {{ result_limit }} matching entries — narrow the filters to see more.</p>
+<p class="text-xs text-amber-600 dark:text-amber-400 mb-3">Showing the latest {{ result_limit }} matching entries — narrow the filters to see more.</p>
 {% endif %}
 
 {% if entries %}
@@ -55,21 +55,22 @@
     </thead>
     <tbody>
       {% for e in entries %}
-      <tr>
-        <td class="text-slate-500 whitespace-nowrap">{{ e.timestamp }}</td>
-        <td class="text-slate-900 font-medium">{{ e.actor }}</td>
-        <td class="text-slate-600">{{ e.action }}</td>
-        <td class="text-slate-600 font-mono text-xs">{{ e.target }}</td>
-        <td class="text-slate-500">{{ e.detail or "" }}</td>
+      <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition anim-rise" style="animation-delay: {{ [loop.index0, 15] | min * 25 }}ms">
+        <td class="text-slate-500 dark:text-slate-400 whitespace-nowrap">{{ e.timestamp }}</td>
+        <td class="text-slate-900 dark:text-slate-100 font-medium">{{ e.actor }}</td>
+        <td class="text-slate-600 dark:text-slate-300">{{ e.action }}</td>
+        <td class="text-slate-600 dark:text-slate-300 font-mono text-xs">{{ e.target }}</td>
+        <td class="text-slate-500 dark:text-slate-400">{{ e.detail or "" }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 {% else %}
-<div class="card p-12 text-center text-slate-500">
-  <svg class="w-10 h-10 mx-auto mb-3 text-slate-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>
-  No activity matches this filter.
+<div class="empty-state">
+  <svg class="empty-state-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>
+  <div class="font-medium text-slate-700 dark:text-slate-300">No activity matches this filter.</div>
+  <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Try adjusting the actor, action, or date range.</p>
 </div>
 {% endif %}
 {% endblock %}

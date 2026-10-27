@@ -1,27 +1,27 @@
 {% import "_device_icon.html" as dicon %}
 {% macro row(r, index, batch_token) -%}
-<tr id="bulk-row-{{ index }}">
-  <td class="font-mono text-slate-900">{{ r.identifier }}</td>
-  <td class="text-slate-600">{{ r.employee_name or "" }}</td>
-  <td class="text-slate-500 text-xs">{{ r.subsidiary or "" }}</td>
-  <td class="text-slate-500">
+<tr id="bulk-row-{{ index }}" class="anim-rise hover:bg-slate-50/75 dark:hover:bg-slate-800/40 transition-colors" style="animation-delay: {{ index * 20 }}ms;">
+  <td class="font-mono text-slate-900 dark:text-slate-100 font-medium">{{ r.identifier }}</td>
+  <td class="text-slate-600 dark:text-slate-300">{{ r.employee_name or "" }}</td>
+  <td class="text-slate-500 dark:text-slate-400 text-xs">{{ r.subsidiary or "" }}</td>
+  <td class="text-slate-500 dark:text-slate-400">
     {% if r.device_type or r.device_model %}<span class="inline-flex items-center gap-1">{% if r.device_type %}{{ dicon.device_icon(r.device_type, "w-3.5 h-3.5 text-slate-400") }}{{ r.device_type }}{% endif %}{% if r.device_type and r.device_model %} · {% endif %}{{ r.device_model or "" }}</span>{% endif %}
     {% if r.device_mac %} <span class="font-mono text-xs">{{ r.device_mac }}</span>{% endif %}
   </td>
   <td>
     {% if r.classification == "valid" %}
-    <span class="bulk-valid-badge inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-green-50 text-green-700"><span class="w-1.5 h-1.5 rounded-full bg-green-600"></span> Valid</span>
+    <span class="bulk-valid-badge badge badge-green"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Valid</span>
     {% elif r.classification == "duplicate" %}
-    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700"><span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Duplicate</span>
+    <span class="badge badge-amber"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Duplicate</span>
     {% else %}
-    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full bg-red-50 text-red-700"><span class="w-1.5 h-1.5 rounded-full bg-red-600"></span> Malformed</span>
+    <span class="badge badge-red"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Malformed</span>
     {% endif %}
   </td>
-  <td class="text-slate-500">
+  <td class="text-slate-500 dark:text-slate-400">
     {% if r.classification == "valid" %}
     {{ r.reason or "" }}
     {% if r.employee_spelling_matches %}
-    <span class="text-amber-700 text-xs" title="Already on record as: {{ r.employee_spelling_matches | join(', ') }}">
+    <span class="text-amber-700 dark:text-amber-400 text-xs" title="Already on record as: {{ r.employee_spelling_matches | join(', ') }}">
       other spelling on file: {{ r.employee_spelling_matches | join(', ') }}
     </span>
     {% endif %}
@@ -45,7 +45,7 @@
              class="field-input text-xs !min-h-0 !h-7 w-24 font-mono">
       <button type="submit" class="btn-secondary text-xs !min-h-0 !h-7 !px-2">Save</button>
     </form>
-    <p class="text-xs text-red-600 mt-1">{{ r.reason or "" }}</p>
+    <p class="text-xs text-rose-600 dark:text-rose-400 mt-1">{{ r.reason or "" }}</p>
     {% endif %}
   </td>
 </tr>

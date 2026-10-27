@@ -1,7 +1,7 @@
 <form hx-post="/sites" hx-target="#new-site-slot" hx-swap="innerHTML"
-      class="card p-5 space-y-4 max-w-sm">
+      class="card p-5 space-y-4 max-w-sm anim-rise">
   {% if error %}
-  <div class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{{ error }}</div>
+  <div class="text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded-lg px-3 py-2">{{ error }}</div>
   {% endif %}
   <div>
     <label class="field-label">Name</label>
@@ -38,5 +38,5 @@
     <label class="field-label">Notes (optional)</label>
     <input name="notes" class="field-input">
   </div>
-  <button type="submit" class="btn-primary">Create site</button>
+  <button type="submit" class="btn-primary w-full">Create site</button>
 </form>

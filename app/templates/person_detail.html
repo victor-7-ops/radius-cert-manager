@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Employee details — Certificate Manager{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <!-- Breadcrumb & Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div class="space-y-1">
+      <nav class="breadcrumb">
+        <a href="/employees">Employees</a>
+        <span class="breadcrumb-sep"></span>
+        <span>{{ employee.display_name }}</span>
+      </nav>
+      <div class="flex items-center gap-3">
+        <h1 class="page-title">{{ employee.display_name }}</h1>
+        {% if employee.status == 'active' %}
+        <span class="badge badge-emerald">Active</span>
+        {% elif employee.status == 'offboarding' %}
+        <span class="badge badge-amber">Offboarding</span>
+        {% else %}
+        <span class="badge badge-red">Offboarded</span>
+        {% endif %}
+      </div>
+      <div class="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400 pt-1">
+        <span>Employee #: <strong class="font-mono text-slate-700 dark:text-slate-300">{{ employee.employee_number or 'None' }}</strong></span>
+        <span>&bull;</span>
+        <span>Subsidiary: <strong class="text-slate-700 dark:text-slate-300">{{ subsidiary.display_name }}</strong></span>
+        <span>&bull;</span>
+        <span>Department: <strong class="text-slate-700 dark:text-slate-300">{{ department.display_name }} ({{ department.code }})</strong></span>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      {% if can_manage and employee.status == 'active' %}
+      <a href="#new-device-modal" onclick="document.getElementById('new-device-modal').classList.remove('hidden')" class="btn-primary text-sm flex items-center gap-1.5">
+        <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z"/></svg>
+        <span>Add Device</span>
+      </a>
+      <a href="/people/{{ employee.id }}/offboard" class="btn-ghost text-sm text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/50">
+        Offboard Employee
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Summary Cards -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div class="card p-4 space-y-1 anim-rise" title="Total registered physical devices (active, lost, retired)">
+      <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Registered Devices</div>
+      <div class="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100">{{ metrics.registered_devices }}</div>
+      <div class="text-[11px] text-slate-400 dark:text-slate-500">Physical inventory</div>
+    </div>
+    <div class="card p-4 space-y-1 anim-rise" style="animation-delay: 40ms" title="Distinct active devices with active, matching, unexpired credentials">
+      <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Usable Credentials</div>
+      <div class="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">{{ metrics.devices_with_usable_credentials }}</div>
+      <div class="text-[11px] text-slate-400 dark:text-slate-500">Eligible on network</div>
+    </div>
+    <div class="card p-4 space-y-1 anim-rise" style="animation-delay: 80ms" title="All active, unexpired client certificates including renewal overlaps">
+      <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Active Certificates</div>
+      <div class="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100">{{ metrics.active_certificates }}</div>
+      <div class="text-[11px] text-slate-400 dark:text-slate-500">Signed credentials</div>
+    </div>
+    <div class="card p-4 space-y-1 anim-rise" style="animation-delay: 120ms" title="Devices lost, missing credentials, or expiring within 30 days">
+      <div class="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Needs Attention</div>
+      <div class="text-2xl font-bold font-mono {{ 'text-amber-600 dark:text-amber-400' if metrics.needs_attention > 0 else 'text-slate-400 dark:text-slate-500' }}">
+        {{ metrics.needs_attention }}
+      </div>
+      <div class="text-[11px] text-slate-400 dark:text-slate-500">Warnings/exceptions</div>
+    </div>
+  </div>
+
+  <!-- Devices Table -->
+  <div class="card overflow-hidden">
+    <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      <h3 class="font-bold text-slate-900 dark:text-slate-100 text-sm">Assigned Devices</h3>
+      <span class="text-xs text-slate-400 dark:text-slate-500 font-mono">{{ devices|length }} device(s)</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 font-semibold text-xs uppercase tracking-wider">
+            <th class="p-3 pl-4">Device</th>
+            <th class="p-3">Asset Tag</th>
+            <th class="p-3">Assigned Role</th>
+            <th class="p-3">Current Credential</th>
+            <th class="p-3 text-center">Status</th>
+            <th class="p-3 pr-4 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+          {% if not devices %}
+          <tr>
+            <td colspan="6" class="p-8 text-center text-slate-400 dark:text-slate-500">
+              No devices registered for this employee yet.
+            </td>
+          </tr>
+          {% endif %}
+          {% for dev in devices %}
+          <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition anim-rise" style="animation-delay: {{ [loop.index0, 15] | min * 30 }}ms">
+            <td class="p-3 pl-4">
+              <a href="/devices/{{ dev.id }}" class="font-medium text-indigo-600 dark:text-indigo-400 hover:underline">
+                {{ dev.display_name }}
+              </a>
+              <div class="text-xs text-slate-400 dark:text-slate-500">
+                {{ dev.device_type or 'Device' }}{% if dev.device_model %} &bull; {{ dev.device_model }}{% endif %}
+              </div>
+            </td>
+            <td class="p-3 font-mono text-xs text-slate-600 dark:text-slate-400">
+              {{ dev.asset_tag or '-' }}
+            </td>
+            <td class="p-3 text-slate-700 dark:text-slate-300">
+              <span class="badge badge-slate">
+                {{ dev.network_role_name }}
+              </span>
+            </td>
+            <td class="p-3 text-xs">
+              {% if dev.has_usable_credentials %}
+              <div class="text-emerald-600 dark:text-emerald-400 font-medium">Valid credential ({{ dev.active_cert_count }})</div>
+              {% elif dev.active_cert_count > 0 %}
+              <div class="text-amber-600 dark:text-amber-400 font-medium">Role mismatch</div>
+              {% else %}
+              <div class="text-red-500 font-medium">No active certificate</div>
+              {% endif %}
+            </td>
+            <td class="p-3 text-center">
+              {% if dev.status == 'active' %}
+              <span class="badge badge-green">Active</span>
+              {% elif dev.status == 'lost' %}
+              <span class="badge badge-red">Lost</span>
+              {% else %}
+              <span class="badge badge-slate">Retired</span>
+              {% endif %}
+            </td>
+            <td class="p-3 pr-4 text-right space-x-2">
+              <a href="/devices/{{ dev.id }}" class="btn-ghost text-xs py-1 px-2">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Add Device -->
+{% if can_manage and employee.status == 'active' %}
+<div id="new-device-modal" class="hidden modal-overlay">
+  <div class="modal-panel max-w-lg">
+    <div class="modal-header">
+      <h3 class="modal-title">Add Device for {{ employee.display_name }}</h3>
+      <button onclick="document.getElementById('new-device-modal').classList.add('hidden')" class="btn-ghost !p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">&times;</button>
+    </div>
+    <form method="post" action="/people/{{ employee.id }}/devices/new" class="space-y-4">
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="person_detail-display_name-0">Device Name *</label>
+        <input type="text" name="display_name" required placeholder="e.g. Juan's ThinkPad" class="field-input text-sm" id="person_detail-display_name-0">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="person_detail-device_type-1">Device Type</label>
+          <select name="device_type" class="field-input text-sm" id="person_detail-device_type-1">
+            <option value="Laptop">Laptop</option>
+            <option value="Phone">Phone</option>
+            <option value="Tablet">Tablet</option>
+            <option value="Desktop">Desktop</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="person_detail-device_model-2">Model</label>
+          <input type="text" name="device_model" placeholder="e.g. T14 Gen 3" class="field-input text-sm" id="person_detail-device_model-2">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="person_detail-asset_tag-3">Asset Tag</label>
+          <input type="text" name="asset_tag" placeholder="e.g. TAG-204" class="field-input text-sm font-mono" id="person_detail-asset_tag-3">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="person_detail-serial_number-4">Serial Number</label>
+          <input type="text" name="serial_number" placeholder="e.g. SN12345678" class="field-input text-sm font-mono" id="person_detail-serial_number-4">
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="person_detail-mac_address-5">MAC Address</label>
+        <input type="text" name="mac_address" placeholder="e.g. AA:BB:CC:DD:EE:FF" class="field-input text-sm font-mono" id="person_detail-mac_address-5">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="modal-dept-select">Department *</label>
+          <select name="department_id" required class="field-input text-sm" id="modal-dept-select">
+            {% for dept in departments %}
+            <option value="{{ dept.id }}" {{ 'selected' if dept.id == employee.department_id else '' }}>{{ dept.display_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="modal-role-select">Network Role *</label>
+          <select name="network_role_id" required class="field-input text-sm" id="modal-role-select">
+            {% for role in available_roles %}
+            <option value="{{ role.id }}">{{ role.display_name }} ({{ role.code }})</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" onclick="document.getElementById('new-device-modal').classList.add('hidden')" class="btn-ghost text-sm">Cancel</button>
+        <button type="submit" class="btn-primary text-sm">Register Device</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

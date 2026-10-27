@@ -1,0 +1,10 @@
+[Unit]
+Description=Run certmanager site network policy refresh every 4 hours
+
+[Timer]
+OnCalendar=*-*-* 00/4:15:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -6,19 +6,19 @@
 {% block content %}
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
   <div>
-    <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Certificates</h1>
+    <h1 class="page-title">Certificates</h1>
     {% if employee_filter %}
-    <p class="text-sm text-slate-500 mt-1">
-      Devices for <span class="font-medium text-slate-700">{{ employee_filter }}</span> —
-      <a href="/certs" class="text-slate-600 hover:text-slate-900 underline">clear</a>
+    <p class="page-subtitle">
+      Devices for <span class="font-medium text-slate-700 dark:text-slate-300">{{ employee_filter }}</span> —
+      <a href="/certs" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 underline">clear</a>
     </p>
     {% elif subsidiary_filter %}
-    <p class="text-sm text-slate-500 mt-1">
-      Certificates for <span class="font-medium text-slate-700">{{ subsidiary_filter }}</span> —
-      <a href="/certs" class="text-slate-600 hover:text-slate-900 underline">clear</a>
+    <p class="page-subtitle">
+      Certificates for <span class="font-medium text-slate-700 dark:text-slate-300">{{ subsidiary_filter }}</span> —
+      <a href="/certs" class="text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 underline">clear</a>
     </p>
     {% else %}
-    <p class="text-sm text-slate-500 mt-1">Search, filter, and manage issued client certificates.</p>
+    <p class="page-subtitle">Search, filter, and manage issued client certificates.</p>
     {% endif %}
   </div>
   <div class="flex gap-2">
@@ -36,7 +36,7 @@
       Bulk issue
     </a>
     <a href="/certs/issue" class="btn-primary">
-      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4Z"/><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
       Issue certificate
     </a>
   </div>
@@ -55,9 +55,16 @@
            hx-include="[name=status],[name=employee],[name=subsidiary]" hx-indicator="#search-spinner"
            class="field-input pl-9 pr-9">
   </div>
+  <label class="min-h-[44px] flex items-center gap-1.5 px-3.5 rounded-full border text-sm font-medium cursor-pointer transition-colors
+                {{ 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white' if not status_filter else 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700' }}">
+    <input type="radio" name="status" value="" class="hidden"
+           hx-get="/certs" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML" hx-include="[name=q],[name=employee],[name=subsidiary]"
+           {{ 'checked' if not status_filter else '' }}>
+    All
+  </label>
   {% for s in ["active", "suspended", "revoked", "expired"] %}
   <label class="min-h-[44px] flex items-center gap-1.5 px-3.5 rounded-full border text-sm font-medium cursor-pointer transition-colors
-                {{ 'bg-slate-900 text-white border-slate-900' if status_filter == s else 'border-slate-300 text-slate-600 hover:bg-slate-50' }}">
+                {{ 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-slate-900 dark:border-white' if status_filter == s else 'border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700' }}">
     <input type="radio" name="status" value="{{ s }}" class="hidden"
            hx-get="/certs" hx-target="#cert-results" hx-select="#cert-results" hx-swap="outerHTML" hx-include="[name=q],[name=employee],[name=subsidiary]"
            {{ 'checked' if status_filter == s else '' }}>
@@ -95,16 +102,16 @@
       </thead>
       <tbody>
         {% for c in items %}
-        <tr class="anim-rise" style="animation-delay: {{ [loop.index0, 12] | min * 30 }}ms">
+        <tr class="anim-rise hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition" style="animation-delay: {{ [loop.index0, 12] | min * 30 }}ms">
           <td>
             {% if c.status != "revoked" %}
             <input type="checkbox" class="bulk-select rounded border-slate-300 dark:border-slate-600" value="{{ c.serial }}" data-cn="{{ c.cn }}" aria-label="Select {{ c.cn }}">
             {% endif %}
           </td>
           <td>
-            <a href="/certs/{{ c.serial }}" class="text-slate-900 font-medium hover:underline">{{ c.cn }}</a>
+            <a href="/certs/{{ c.serial }}" class="text-slate-900 dark:text-slate-100 font-medium hover:underline">{{ c.cn }}</a>
             {% if c.subsidiary %}
-            <div class="text-xs text-slate-400 flex items-center gap-1">
+            <div class="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1">
               <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background: {{ c.subsidiary | subsidiary_color }}"></span>
               {{ c.subsidiary }}
             </div>
@@ -112,30 +119,30 @@
           </td>
           <td>
             {% if c.employee_name %}
-            <a href="/certs?employee={{ c.employee_name | urlencode }}" class="text-slate-700 hover:text-slate-900 hover:underline">{{ c.employee_name }}</a>
+            <a href="/certs?employee={{ c.employee_name | urlencode }}" class="text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:underline">{{ c.employee_name }}</a>
             {% else %}
-            <span class="text-slate-300">—</span>
+            <span class="text-slate-300 dark:text-slate-600">—</span>
             {% endif %}
           </td>
-          <td class="text-slate-500">
+          <td class="text-slate-500 dark:text-slate-400">
             {% if c.device_type or c.device_model %}
             <div class="flex items-center gap-1.5">
-              {% if c.device_type %}<span class="text-slate-400">{{ dicon.device_icon(c.device_type) }}</span>{% endif %}
+              {% if c.device_type %}<span class="text-slate-400 dark:text-slate-500">{{ dicon.device_icon(c.device_type) }}</span>{% endif %}
               {{ c.device_type or "" }}{% if c.device_type and c.device_model %} · {% endif %}{{ c.device_model or "" }}
             </div>
             {% else %}
-            <span class="text-slate-300">—</span>
+            <span class="text-slate-300 dark:text-slate-600">—</span>
             {% endif %}
-            {% if c.device_mac %}<div class="text-xs font-mono text-slate-400 ml-[22px]">{{ c.device_mac }}</div>{% endif %}
+            {% if c.device_mac %}<div class="text-xs font-mono text-slate-400 dark:text-slate-500 ml-[22px]">{{ c.device_mac }}</div>{% endif %}
           </td>
           <td>{{ badge.status_badge(c.status) }}</td>
-          <td class="text-slate-500">{{ c.issued_at }}</td>
-          <td class="text-right text-slate-500">{{ c.expires_relative }}</td>
+          <td class="text-slate-500 dark:text-slate-400">{{ c.issued_at }}</td>
+          <td class="text-right text-slate-500 dark:text-slate-400">{{ c.expires_relative }}</td>
           <td class="text-right">
             {% if c.status == "active" %}
             <button hx-post="/certs/{{ c.serial }}/suspend" hx-prompt="Reason for suspending {{ c.cn }}?"
                     hx-confirm="Suspend {{ c.cn }}?" hx-target="closest tr" hx-swap="outerHTML"
-                    class="text-amber-700 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+                    class="text-amber-700 dark:text-amber-400 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
               {{ spin.spinner() }}
               <span class="htmx-hide-on-request">Suspend</span>
             </button>
@@ -149,28 +156,30 @@
 
   <div class="md:hidden space-y-3">
     {% for c in items %}
-    <a href="/certs/{{ c.serial }}" class="card block p-4 hover:border-slate-300 hover:shadow-md transition-all anim-rise" style="animation-delay: {{ [loop.index0, 12] | min * 30 }}ms">
+    <a href="/certs/{{ c.serial }}" class="card block p-4 hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-md transition-all anim-rise" style="animation-delay: {{ [loop.index0, 12] | min * 30 }}ms">
       <div class="flex items-center justify-between mb-2">
-        <span class="font-medium text-slate-900">{{ c.cn }}</span>
+        <span class="font-medium text-slate-900 dark:text-slate-100">{{ c.cn }}</span>
         {{ badge.status_badge(c.status) }}
       </div>
-      <div class="text-sm text-slate-500">Expires {{ c.expires_relative }}</div>
+      <div class="text-sm text-slate-500 dark:text-slate-400">Expires {{ c.expires_relative }}</div>
       {% if c.employee_name or c.device_type %}
-      <div class="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+      <div class="text-xs text-slate-400 dark:text-slate-500 mt-0.5 flex items-center gap-1">
         {% if c.device_type %}{{ dicon.device_icon(c.device_type, "w-3.5 h-3.5") }}{% endif %}
         {{ c.employee_name or "" }}{% if c.employee_name and c.device_type %} · {% endif %}{{ c.device_type or "" }}
       </div>
       {% else %}
-      <div class="text-xs text-slate-400 mt-0.5">issued by {{ c.issued_by }}</div>
+      <div class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">issued by {{ c.issued_by }}</div>
       {% endif %}
     </a>
     {% endfor %}
   </div>
 
   {% else %}
-  <div class="card p-12 text-center text-slate-500">
-    <svg class="w-10 h-10 mx-auto mb-3 text-slate-300" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4Zm2 3a1 1 0 0 0 0 2h8a1 1 0 1 0 0-2H6Zm0 4a1 1 0 1 0 0 2h4a1 1 0 1 0 0-2H6Z" clip-rule="evenodd"/></svg>
-    No certificates match this filter.
+  <div class="empty-state">
+    <svg class="empty-state-icon" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4Zm2 3a1 1 0 0 0 0 2h8a1 1 0 1 0 0-2H6Zm0 4a1 1 0 1 0 0 2h4a1 1 0 1 0 0-2H6Z" clip-rule="evenodd"/></svg>
+    <div class="font-medium text-slate-700 dark:text-slate-300">No certificates match this filter.</div>
+    <p class="text-xs text-slate-400 dark:text-slate-500 mt-1">Try adjusting your search terms or clearing status filters.</p>
+    <a href="/certs" class="inline-block mt-3 text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium">Clear all filters</a>
   </div>
   {% endif %}
 </div>

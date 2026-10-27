@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}Device details — Certificate Manager{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <!-- Breadcrumb & Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div class="space-y-1">
+      <nav class="breadcrumb">
+        <a href="/employees">Employees</a>
+        <span class="breadcrumb-sep"></span>
+        <a href="/people/{{ employee.id }}">{{ employee.display_name }}</a>
+        <span class="breadcrumb-sep"></span>
+        <span>{{ device.display_name }}</span>
+      </nav>
+      <div class="flex items-center gap-3">
+        <h1 class="page-title">{{ device.display_name }}</h1>
+        {% if device.status == 'active' %}
+        <span class="badge badge-emerald">Active</span>
+        {% elif device.status == 'lost' %}
+        <span class="badge badge-red">Lost</span>
+        {% else %}
+        <span class="badge badge-slate">Retired</span>
+        {% endif %}
+      </div>
+      <div class="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400 pt-1">
+        <span>Owner: <a href="/people/{{ employee.id }}" class="font-semibold text-indigo-600 dark:text-indigo-400 hover:underline">{{ employee.display_name }}</a></span>
+        <span>&bull;</span>
+        <span>Subsidiary: <strong class="text-slate-700 dark:text-slate-300">{{ subsidiary.display_name }}</strong></span>
+        <span>&bull;</span>
+        <span>Department: <strong class="text-slate-700 dark:text-slate-300">{{ department.display_name }}</strong></span>
+        <span>&bull;</span>
+        <span>Role: <strong class="text-slate-700 dark:text-slate-300">{{ network_role.display_name }} ({{ network_role.code }})</strong></span>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if can_manage %}
+      <a href="/certs/issue?device_id={{ device.id }}" class="btn-primary text-sm">
+        Issue Credential
+      </a>
+      <button type="button" onclick="document.getElementById('status-modal').classList.remove('hidden')" class="btn-secondary text-sm">
+        Change Status
+      </button>
+      <button type="button" onclick="document.getElementById('revoke-modal').classList.remove('hidden')" class="btn-ghost text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
+        Revoke Credentials
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Hardware Details Card -->
+  <div class="card p-5 anim-rise">
+    <h3 class="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-3">Hardware & Identity Specification</h3>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm font-mono">
+      <div>
+        <div class="text-slate-400 dark:text-slate-500 text-xs font-sans">Device Type / Model</div>
+        <div class="font-semibold text-slate-800 dark:text-slate-200">{{ device.device_type or '-' }} {% if device.device_model %}({{ device.device_model }}){% endif %}</div>
+      </div>
+      <div>
+        <div class="text-slate-400 dark:text-slate-500 text-xs font-sans">Asset Tag</div>
+        <div class="font-semibold text-slate-800 dark:text-slate-200">{{ device.asset_tag or '-' }}</div>
+      </div>
+      <div>
+        <div class="text-slate-400 dark:text-slate-500 text-xs font-sans">Serial Number</div>
+        <div class="font-semibold text-slate-800 dark:text-slate-200">{{ device.serial_number or '-' }}</div>
+      </div>
+      <div>
+        <div class="text-slate-400 dark:text-slate-500 text-xs font-sans">MAC Address</div>
+        <div class="font-semibold text-slate-800 dark:text-slate-200">{{ device.mac_address or '-' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Site Access-Policy Summary (B10 §53) -->
+  <div class="card overflow-hidden">
+    <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      <div>
+        <h3 class="font-bold text-slate-900 dark:text-slate-100 text-sm">Site Access Policy</h3>
+        <p class="text-xs text-slate-400 dark:text-slate-500">Policy distribution and effective VLAN configuration per site for role <strong>{{ network_role.display_name }}</strong></p>
+      </div>
+      <div class="text-xs text-slate-400 dark:text-slate-500 font-mono">Observed connectivity: <span class="italic">Not observed</span></div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 font-semibold text-xs uppercase tracking-wider">
+            <th class="p-3 pl-4">Site</th>
+            <th class="p-3 text-center">Normal VLAN</th>
+            <th class="p-3 text-center">Fallback VLAN</th>
+            <th class="p-3 text-center">Role Switch State</th>
+            <th class="p-3 text-center">Platform Ceiling</th>
+            <th class="p-3 pr-4 text-center">Distribution Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+          {% if not site_policies %}
+          <tr>
+            <td colspan="6" class="p-6 text-center text-slate-400 dark:text-slate-500">
+              No site bindings configured for this role yet. Platform administrator must configure site infrastructure bindings.
+            </td>
+          </tr>
+          {% endif %}
+          {% for sp in site_policies %}
+          <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition anim-rise" style="animation-delay: {{ [loop.index0, 15] | min * 30 }}ms">
+            <td class="p-3 pl-4 font-medium text-slate-800 dark:text-slate-200">
+              {{ sp.site_name }}
+            </td>
+            <td class="p-3 text-center font-mono">
+              <span class="badge badge-blue">
+                VLAN {{ sp.vlan_id }}
+              </span>
+            </td>
+            <td class="p-3 text-center font-mono">
+              {% if sp.fallback_vlan_id %}
+              <span class="badge badge-amber">
+                VLAN {{ sp.fallback_vlan_id }}
+              </span>
+              {% else %}
+              <span class="text-xs text-red-500 dark:text-red-400 font-semibold">Missing (Rejects)</span>
+              {% endif %}
+            </td>
+            <td class="p-3 text-center text-xs">
+              {% if sp.tenant_enabled %}
+              <span class="text-emerald-600 dark:text-emerald-400 font-medium">Normal role VLAN</span>
+              {% else %}
+              <span class="text-amber-600 dark:text-amber-400 font-medium">Fallback VLAN</span>
+              {% endif %}
+            </td>
+            <td class="p-3 text-center text-xs">
+              {% if sp.platform_enabled %}
+              <span class="text-slate-600 dark:text-slate-400">Approved</span>
+              {% else %}
+              <span class="text-red-500 dark:text-red-400 font-bold">Blocked by platform</span>
+              {% endif %}
+            </td>
+            <td class="p-3 pr-4 text-center text-xs">
+              {% if sp.distribution_status == 'installed' %}
+              <span class="badge badge-emerald">Installed</span>
+              {% else %}
+              <span class="badge badge-amber">Pending distribution</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Certificate History Table -->
+  <div class="card overflow-hidden">
+    <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      <h3 class="font-bold text-slate-900 dark:text-slate-100 text-sm">Certificate History</h3>
+      <span class="text-xs text-slate-400 dark:text-slate-500 font-mono">{{ certificates|length }} certificate(s)</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 font-semibold text-xs uppercase tracking-wider">
+            <th class="p-3 pl-4">Common Name (CN)</th>
+            <th class="p-3">Serial</th>
+            <th class="p-3">Issued Date</th>
+            <th class="p-3">Expiry Date</th>
+            <th class="p-3 text-center">Status</th>
+            <th class="p-3 pr-4 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+          {% if not certificates %}
+          <tr>
+            <td colspan="6" class="p-6 text-center text-slate-400 dark:text-slate-500">
+              No certificates issued for this device yet.
+            </td>
+          </tr>
+          {% endif %}
+          {% for cert in certificates %}
+          <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition anim-rise" style="animation-delay: {{ [loop.index0, 15] | min * 30 }}ms">
+            <td class="p-3 pl-4 font-mono font-medium text-slate-800 dark:text-slate-200">
+              <a href="/certs/{{ cert.serial }}" class="text-indigo-600 dark:text-indigo-400 hover:underline">{{ cert.cn }}</a>
+            </td>
+            <td class="p-3 font-mono text-xs text-slate-500 dark:text-slate-400">
+              {{ cert.serial }}
+            </td>
+            <td class="p-3 text-xs text-slate-500 dark:text-slate-400">
+              {{ cert.issued_at }}
+            </td>
+            <td class="p-3 text-xs text-slate-500 dark:text-slate-400">
+              {{ cert.expires_at }}
+            </td>
+            <td class="p-3 text-center">
+              {% if cert.status == 'active' and not cert.is_expired() %}
+              <span class="badge badge-emerald">Active</span>
+              {% elif cert.status == 'revoked' %}
+              <span class="badge badge-red">Revoked</span>
+              {% elif cert.status == 'suspended' %}
+              <span class="badge badge-amber">Suspended</span>
+              {% else %}
+              <span class="badge badge-slate">Expired</span>
+              {% endif %}
+            </td>
+            <td class="p-3 pr-4 text-right">
+              <a href="/certs/{{ cert.serial }}" class="btn-ghost text-xs py-1 px-2">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Revoke Credentials -->
+{% if can_manage %}
+<div id="revoke-modal" class="hidden modal-overlay">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <h3 class="modal-title !text-red-600 dark:!text-red-400">Revoke Credentials on {{ device.display_name }}</h3>
+      <button onclick="document.getElementById('revoke-modal').classList.add('hidden')" class="btn-ghost !p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">&times;</button>
+    </div>
+    <form method="post" action="/devices/{{ device.id }}/revoke" class="space-y-4">
+      <p class="text-xs text-slate-500 dark:text-slate-400">
+        This will immediately revoke all usable certificates assigned to this physical device and publish an updated CRL.
+      </p>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1" for="device_detail-reason-0">Reason *</label>
+        <input type="text" name="reason" required placeholder="e.g. Device lost, stolen, or compromised" class="field-input text-sm" id="device_detail-reason-0">
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" onclick="document.getElementById('revoke-modal').classList.add('hidden')" class="btn-ghost text-sm">Cancel</button>
+        <button type="submit" class="btn-danger text-sm">Revoke Credentials</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Change Status -->
+<div id="status-modal" class="hidden modal-overlay">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <h3 class="modal-title">Change Device Status</h3>
+      <button onclick="document.getElementById('status-modal').classList.add('hidden')" class="btn-ghost !p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">&times;</button>
+    </div>
+    <form method="post" action="/devices/{{ device.id }}/status" class="space-y-4">
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1" for="device_detail-status-1">Status *</label>
+        <select name="status" class="field-input text-sm" id="device_detail-status-1">
+          <option value="active" {{ 'selected' if device.status == 'active' else '' }}>Active</option>
+          <option value="lost" {{ 'selected' if device.status == 'lost' else '' }}>Lost / Stolen</option>
+          <option value="retired" {{ 'selected' if device.status == 'retired' else '' }}>Retired / Decommissioned</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1" for="device_detail-reason-2">Reason *</label>
+        <input type="text" name="reason" required placeholder="e.g. Device decommissioned after refresh cycle" class="field-input text-sm" id="device_detail-reason-2">
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" onclick="document.getElementById('status-modal').classList.add('hidden')" class="btn-ghost text-sm">Cancel</button>
+        <button type="submit" class="btn-primary text-sm">Update Status</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

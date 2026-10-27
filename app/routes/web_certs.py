@@ -184,8 +184,26 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         return HTMLResponse('<span class="text-green-600">Available.</span>')
 
     @router.get("/certs/issue")
-    def issue_form(request: Request, admin: db.Admin = Depends(deps.require_admin)):
+    def issue_form(
+        request: Request,
+        device_id: str | None = None,
+        admin: db.Admin = Depends(deps.require_admin),
+    ):
         session = deps.get_db_session()
+        device = session.get(db.Device, device_id) if device_id else None
+        form_data = {"subsidiary": admin.subsidiary_scope} if admin.subsidiary_scope else {}
+        if device:
+            h.require_subsidiary_scope(admin, device.subsidiary_id)
+            form_data.update({
+                "cn": device.asset_tag or device.display_name.lower().replace(" ", "-"),
+                "employee_name": device.employee.display_name if device.employee else "",
+                "device_type": device.device_type or "",
+                "device_model": device.device_model or "",
+                "device_mac": device.mac_address or "",
+                "device_serial": device.serial_number or device.asset_tag or "",
+                "subsidiary": device.subsidiary.display_name if device.subsidiary else "",
+            })
+
         return templates.TemplateResponse(
             request,
             "issue.html",
@@ -194,7 +212,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "request_id": str(uuid.uuid4()),
                 "device_types": db.DEVICE_TYPES,
                 "subsidiaries": [admin.subsidiary_scope] if admin.subsidiary_scope else db.SUBSIDIARIES,
-                "form": {"subsidiary": admin.subsidiary_scope} if admin.subsidiary_scope else None,
+                "form": form_data if form_data else None,
+                "device": device,
                 **_crl_banner_context(session),
             },
         )
@@ -212,9 +231,14 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         subsidiary: str = Form(""),
         request_id: str = Form(...),
         confirm_duplicate: str = Form(""),
+        device_id: str = Form(""),
         admin: db.Admin = Depends(deps.require_write),
     ):
         session = deps.get_db_session()
+        device = session.get(db.Device, device_id) if device_id else None
+        if device:
+            h.require_subsidiary_scope(admin, device.subsidiary_id)
+
         if admin.subsidiary_scope:
             # Scoped admin: the subsidiary isn't a free-text choice, it's
             # who they are. Ignore whatever the form sent (hidden/disabled
@@ -225,6 +249,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             "request_id": request_id,
             "device_types": db.DEVICE_TYPES,
             "subsidiaries": [admin.subsidiary_scope] if admin.subsidiary_scope else db.SUBSIDIARIES,
+            "device": device,
             "form": {
                 "cn": cn,
                 "employee_name": employee_name,
@@ -234,6 +259,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "device_serial": device_serial,
                 "subsidiary": subsidiary,
                 "note": note,
+                "device_id": device_id,
             },
             **_crl_banner_context(session),
         }
@@ -310,6 +336,16 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                     {**form_context, "employee_spelling_matches": existing_spellings},
                 )
 
+        assignment = None
+        if device:
+            assignment = cert_service.NetworkAssignment(
+                subsidiary_id=device.subsidiary_id,
+                department_id=device.department_id,
+                network_role_id=device.network_role_id,
+                employee_id=device.employee_id,
+                device_id=device.id,
+            )
+
         try:
             result = cert_service.issue_certificate(
                 session,
@@ -330,6 +366,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                     device_serial=device_serial.strip() or None,
                     subsidiary=stripped_subsidiary,
                 ),
+                assignment=assignment,
             )
         except cert_service.CNConflictError:
             return templates.TemplateResponse(

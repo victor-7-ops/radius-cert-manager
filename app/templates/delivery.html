@@ -3,24 +3,24 @@
 {% block content %}
 <div class="max-w-lg mx-auto">
   <div class="flex items-center gap-2 mb-1">
-    <svg class="w-5 h-5 text-green-600 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/></svg>
-    <h1 class="text-2xl font-semibold text-slate-900 tracking-tight font-mono">{{ cn }}</h1>
+    <svg class="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/></svg>
+    <h1 class="text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight font-mono">{{ cn }}</h1>
   </div>
-  <p class="text-sm text-slate-500 mb-6">
+  <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">
     This page shows the export password once. It cannot be shown again — if you lose it, reissue the certificate.
   </p>
 
-  <div class="card p-6 space-y-5">
+  <div class="card p-6 space-y-5 anim-rise">
     <div>
-      <div class="text-sm font-medium text-slate-700 mb-1.5">Export password</div>
+      <div class="text-sm font-medium text-slate-700 dark:text-slate-200 mb-1.5">Export password</div>
       <div class="flex items-center gap-2">
-        <code id="export-password" class="flex-1 font-mono text-lg bg-slate-100 rounded-lg px-3 py-2.5 select-all border border-slate-200">{{ export_password }}</code>
+        <code id="export-password" class="flex-1 font-mono text-lg bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg px-3 py-2.5 select-all border border-slate-200 dark:border-slate-700">{{ export_password }}</code>
         <button id="copy-btn" type="button" class="btn-secondary shrink-0">
           <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3.5A1.5 1.5 0 0 1 8.5 2h3.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 17 6.622V12.5a1.5 1.5 0 0 1-1.5 1.5h-1v-3.379a3 3 0 0 0-.879-2.121L10.5 5.379A3 3 0 0 0 8.379 4.5H7v-1Z"/><path d="M4.5 6A1.5 1.5 0 0 0 3 7.5v9A1.5 1.5 0 0 0 4.5 18h7a1.5 1.5 0 0 0 1.5-1.5v-5.879a1.5 1.5 0 0 0-.44-1.06L9.44 6.439A1.5 1.5 0 0 0 8.378 6H4.5Z"/></svg>
           Copy
         </button>
       </div>
-      <div id="clipboard-status" class="mt-2 text-xs text-slate-500"></div>
+      <div id="clipboard-status" class="mt-2 text-xs text-slate-500 dark:text-slate-400"></div>
     </div>
 
     <div class="flex flex-col sm:flex-row gap-3">
@@ -37,32 +37,32 @@
         Windows Wi-Fi (.xml)
       </a>
     </div>
-    <div id="bundle-consumed-notice" class="hidden text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+    <div id="bundle-consumed-notice" class="hidden text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-lg p-2.5">
       The client identity bundle has been downloaded. Under our single-use security policy, private keys cannot be re-downloaded.
     </div>
-    <div class="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-2.5 space-y-1">
+    <div class="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-lg p-2.5 space-y-1">
       <div><strong>Platform guide:</strong> Use <code>.mobileconfig</code> for Apple (iOS/macOS) devices. Use <code>.p12</code> for Android and Windows. For Windows, import the <code>.p12</code> into the User Store, download the Wi-Fi profile XML, and run:</div>
-      <code class="block font-mono text-[11px] bg-white p-1 rounded border border-slate-200 select-all">netsh wlan add profile filename="Corporate-WiFi-Profile.xml" user=current</code>
+      <code class="block font-mono text-[11px] bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 p-1.5 rounded border border-slate-200 dark:border-slate-700 select-all">netsh wlan add profile filename="Corporate-WiFi-Profile.xml" user=current</code>
     </div>
 
     {% if qr_svg %}
     <details class="group">
-      <summary class="text-sm font-medium text-slate-700 cursor-pointer select-none flex items-center gap-1.5">
+      <summary class="text-sm font-medium text-slate-700 dark:text-slate-200 cursor-pointer select-none flex items-center gap-1.5">
         <svg class="w-4 h-4 shrink-0 transition-transform group-open:rotate-90" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clip-rule="evenodd"/></svg>
         Scan on the device instead
       </summary>
-      <div class="mt-3 flex flex-col items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-600 p-4" style="background: #fff;">
+      <div class="mt-3 flex flex-col items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-800">
         {% if qr_mobileconfig_svg %}
-        <div class="flex items-center gap-1 p-1 bg-slate-100 rounded-lg text-xs font-medium text-slate-600">
-          <button type="button" id="tab-qr-p12" class="px-2.5 py-1 rounded bg-white text-slate-900 shadow-sm" onclick="showQrTab('p12')">Standard / Android (.p12)</button>
-          <button type="button" id="tab-qr-mc" class="px-2.5 py-1 rounded text-slate-600 hover:text-slate-900" onclick="showQrTab('mc')">Apple (.mobileconfig)</button>
+        <div class="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900/60 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400">
+          <button type="button" id="tab-qr-p12" class="px-2.5 py-1 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm" onclick="showQrTab('p12')">Standard / Android (.p12)</button>
+          <button type="button" id="tab-qr-mc" class="px-2.5 py-1 rounded text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100" onclick="showQrTab('mc')">Apple (.mobileconfig)</button>
         </div>
         {% endif %}
-        <div id="qr-container-p12" class="w-40 h-40 [&_svg]:w-full [&_svg]:h-full">{{ qr_svg | safe }}</div>
+        <div id="qr-container-p12" class="w-40 h-40 [&_svg]:w-full [&_svg]:h-full p-2 bg-white rounded-lg shadow-inner">{{ qr_svg | safe }}</div>
         {% if qr_mobileconfig_svg %}
-        <div id="qr-container-mc" class="hidden w-40 h-40 [&_svg]:w-full [&_svg]:h-full">{{ qr_mobileconfig_svg | safe }}</div>
+        <div id="qr-container-mc" class="hidden w-40 h-40 [&_svg]:w-full [&_svg]:h-full p-2 bg-white rounded-lg shadow-inner">{{ qr_mobileconfig_svg | safe }}</div>
         {% endif %}
-        <p class="text-xs text-slate-500 text-center">
+        <p class="text-xs text-slate-500 dark:text-slate-400 text-center">
           Scan with the device's camera to download directly — no login needed there.
           Link expires in {{ qr_expires_minutes }} minutes, and works only once.
         </p>
@@ -70,14 +70,14 @@
     </details>
     {% endif %}
 
-    <p class="text-sm text-slate-600 bg-slate-50 border border-slate-100 rounded-lg p-3">
+    <p class="text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-lg p-3">
       Install this on the device, then delete the downloaded file. The password protects the
       file at rest and in transit to the device — it is not protection against anyone who could
       read this page.
     </p>
 
-    <label class="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
-      <input type="checkbox" id="saved-confirm" class="mt-1 w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900/20">
+    <label class="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer">
+      <input type="checkbox" id="saved-confirm" class="mt-1 w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-brand-600 focus:ring-brand-500/20">
       I've saved this password and the file.
     </label>
 

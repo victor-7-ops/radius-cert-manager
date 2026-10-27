@@ -15,10 +15,12 @@
       document.documentElement.classList.toggle('dark', wantsDark);
     })();
   </script>
-  <link rel="stylesheet" href="/static/tailwind.css?v=19">
+  <link rel="stylesheet" href="/static/tailwind.css?v=21">
+  <link rel="stylesheet" href="/static/shell.css?v=1">
   <script src="/static/htmx.min.js"></script>
 </head>
-<body class="h-full text-slate-800 dark:text-slate-100 antialiased">
+<body class="h-full text-slate-800 dark:text-slate-100 antialiased{% if admin %} app-shell{% endif %}">
+  <a class="skip-link" href="#main-content">Skip to content</a>
   {% if crl_critical %}
   <div role="alert" class="w-full bg-red-600 text-white text-sm font-medium px-4 py-3 text-center flex items-center justify-center gap-2">
     <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.516 2.63H3.72c-1.347 0-2.189-1.463-1.515-2.63L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
@@ -29,77 +31,115 @@
 
   {% if admin %}
   {% set path = request.url.path %}
-  <nav hx-boost="true" class="border-b border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-slate-900/60 sticky top-0 z-10">
-    <div class="max-w-6xl mx-auto px-4 flex items-center justify-between h-16">
-      <div class="flex items-center gap-1 sm:gap-6">
-        <a href="/dashboard" class="flex items-center gap-2 font-semibold text-slate-900 mr-2 shrink-0">
-          <img src="/static/logo-icon.png" alt="Topline" width="32" height="32" class="w-8 h-8 rounded-lg object-cover">
-          <span class="hidden sm:inline">Topline <span class="font-normal text-slate-400">Certificate Manager</span></span>
-        </a>
-        <a href="/certs" class="{{ 'nav-link-active' if path.startswith('/certs') and not path.startswith('/certs/bulk') else 'nav-link' }}">
-          <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4Zm2 3a1 1 0 0 0 0 2h8a1 1 0 1 0 0-2H6Zm0 4a1 1 0 1 0 0 2h4a1 1 0 1 0 0-2H6Z" clip-rule="evenodd"/></svg>
-          <span class="hidden sm:inline">Certificates</span>
-        </a>
-        {% if not admin.subsidiary_scope %}
-        <a href="/certs/bulk" class="{{ 'nav-link-active' if path.startswith('/certs/bulk') else 'nav-link' }}">
-          <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4Z"/><path fill-rule="evenodd" d="M3 10a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6Zm4 2a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2H7Z" clip-rule="evenodd"/></svg>
-          <span class="hidden sm:inline">Bulk issue</span>
-        </a>
-        {% endif %}
-        <a href="/renewals" class="{{ 'nav-link-active' if path.startswith('/renewals') else 'nav-link' }}">
-          <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z" clip-rule="evenodd"/></svg>
-          <span class="hidden sm:inline">Renewals</span>
-        </a>
-        {% if admin.role.value == "super_admin" %}
-        <a href="/admins" class="{{ 'nav-link-active' if path.startswith('/admins') else 'nav-link' }}">
-          <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z"/></svg>
-          <span class="hidden sm:inline">Admins</span>
-        </a>
-        <a href="/health" class="{{ 'nav-link-active' if path.startswith('/health') else 'nav-link' }}">
-          <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h4.362l-1.095 6.093a.75.75 0 0 0 1.292.657l8.5-9.5a.75.75 0 0 0-.557-1.25h-4.362l1.093-6.093Z" clip-rule="evenodd"/></svg>
-          <span class="hidden sm:inline">Health</span>
-        </a>
-        <a href="/sites" class="{{ 'nav-link-active' if path.startswith('/sites') else 'nav-link' }}">
-          <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a5 5 0 0 0-5 5c0 5 5 11 5 11s5-6 5-11a5 5 0 0 0-5-5Zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z"/></svg>
-          <span class="hidden sm:inline">Sites</span>
-        </a>
-        {% endif %}
-        {% if not admin.subsidiary_scope %}
-        <a href="/activity" class="{{ 'nav-link-active' if path.startswith('/activity') else 'nav-link' }}">
-          <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>
-          <span class="hidden sm:inline">Activity</span>
-        </a>
-        {% endif %}
-      </div>
-      <div class="flex items-center gap-2 sm:gap-3 shrink-0">
-        <button type="button" id="theme-toggle" class="btn-ghost !px-2" title="Toggle dark mode" aria-label="Toggle dark mode">
+  <header class="app-header">
+    <div class="app-brand">
+      <button id="mobile-menu-btn" type="button" class="btn-ghost menu-trigger" aria-label="Open navigation" aria-controls="mobile-menu" aria-expanded="false"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg></button>
+      <a href="/dashboard" class="brand-link"><img src="/static/logo-icon.png" width="32" height="32" alt=""><span><strong>Topline</strong><small>Certificate Manager</small></span></a>
+    </div>
+    <div class="header-account"><button type="button" id="theme-toggle" class="btn-ghost !px-2" title="Toggle dark mode" aria-label="Toggle dark mode">
           <svg id="theme-icon-sun" class="w-4 h-4 hidden" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm0 13a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1Zm8-5a1 1 0 0 1-1 1h-1a1 1 0 1 1 0-2h1a1 1 0 0 1 1 1ZM4 10a1 1 0 0 1-1 1H2a1 1 0 1 1 0-2h1a1 1 0 0 1 1 1Zm11.66 5.66a1 1 0 0 1-1.41 0l-.71-.71a1 1 0 1 1 1.41-1.41l.71.71a1 1 0 0 1 0 1.41ZM6.46 6.46a1 1 0 0 1-1.41 0l-.71-.71A1 1 0 1 1 5.75 4.34l.71.71a1 1 0 0 1 0 1.41Zm9.2-2.12a1 1 0 0 1 0 1.41l-.71.71a1 1 0 1 1-1.41-1.41l.71-.71a1 1 0 0 1 1.41 0ZM5.75 15.66a1 1 0 0 1-1.41-1.41l.71-.71a1 1 0 1 1 1.41 1.41l-.71.71ZM10 6a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z"/></svg>
           <svg id="theme-icon-moon" class="w-4 h-4 hidden" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17.293 13.293A8 8 0 0 1 6.707 2.707a8.001 8.001 0 1 0 10.586 10.586Z" clip-rule="evenodd"/></svg>
-        </button>
-      <form method="post" action="/auth/logout" class="flex items-center gap-2 sm:gap-3 shrink-0">
-        <a href="/account/sessions" class="hidden sm:flex items-center gap-2 hover:opacity-80" title="Your sessions">
+        </button><form method="post" action="/auth/logout" class="flex items-center gap-2 sm:gap-3 shrink-0">
+        <a href="/account/sessions" class="hidden sm:flex items-center gap-2 hover:opacity-80 transition-opacity" title="Your sessions">
           <div class="w-7 h-7 rounded-full text-white text-xs font-semibold flex items-center justify-center uppercase"
                style="background: hsl({{ admin.username | avatar_hue }} 55% 42%)">
             {{ admin.username[0] }}
           </div>
-          <span class="text-sm text-slate-600">{{ admin.username }}</span>
+          <span class="text-sm text-slate-600 dark:text-slate-400">{{ admin.username }}</span>
         </a>
         <button class="btn-ghost">
           <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4.25A2.25 2.25 0 0 1 5.25 2h5.5A2.25 2.25 0 0 1 13 4.25v2a.75.75 0 0 1-1.5 0v-2a.75.75 0 0 0-.75-.75h-5.5a.75.75 0 0 0-.75.75v11.5c0 .414.336.75.75.75h5.5a.75.75 0 0 0 .75-.75v-2a.75.75 0 0 1 1.5 0v2A2.25 2.25 0 0 1 10.75 18h-5.5A2.25 2.25 0 0 1 3 15.75V4.25Z" clip-rule="evenodd"/><path fill-rule="evenodd" d="M6 10a.75.75 0 0 1 .75-.75h9.19l-2.72-2.72a.75.75 0 1 1 1.06-1.06l4 4a.75.75 0 0 1 0 1.06l-4 4a.75.75 0 1 1-1.06-1.06l2.72-2.72H6.75A.75.75 0 0 1 6 10Z" clip-rule="evenodd"/></svg>
           <span class="hidden sm:inline">Log out</span>
         </button>
-      </form>
+      </form></div>
+  </header>
+
+  <div id="mobile-menu" class="app-navigation">
+    <div class="navigation-backdrop" id="mobile-menu-backdrop"></div>
+    <nav class="sidebar-panel" aria-label="Primary navigation">
+      <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center gap-2">
+          <img src="/static/logo-icon.png" alt="Topline" width="28" height="28" class="w-7 h-7 rounded-lg object-cover">
+          <span class="font-semibold text-slate-900 dark:text-slate-100 text-sm">Topline Certificate Manager</span>
+        </div>
+        <button type="button" id="mobile-menu-close" aria-label="Close navigation" class="btn-ghost !px-1.5 !min-h-0 h-8 text-slate-400 hover:text-slate-600">
+          <svg class="w-5 h-5" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z"/></svg>
+        </button>
       </div>
-    </div>
-  </nav>
+      <div class="space-y-1" hx-boost="true">
+        <a href="/dashboard" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{ 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' if path == '/dashboard' else 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50' }} transition-colors" onclick="closeMobileMenu()">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 0 0-1.414 0l-7 7a1 1 0 0 0 1.414 1.414L4 10.414V17a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-6.586l.293.293a1 1 0 0 0 1.414-1.414l-7-7Z"/></svg>
+          Dashboard
+        </a>
+        <a href="/certs" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{ 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' if path.startswith('/certs') and not path.startswith('/certs/bulk') else 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50' }} transition-colors" onclick="closeMobileMenu()">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H4Zm2 3a1 1 0 0 0 0 2h8a1 1 0 1 0 0-2H6Zm0 4a1 1 0 1 0 0 2h4a1 1 0 1 0 0-2H6Z" clip-rule="evenodd"/></svg>
+          Certificates
+        </a>
+        {% if not admin.subsidiary_scope %}
+        <a href="/certs/bulk" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{ 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' if path.startswith('/certs/bulk') else 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50' }} transition-colors" onclick="closeMobileMenu()">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4Z"/><path fill-rule="evenodd" d="M3 10a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6Zm4 2a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2H7Z" clip-rule="evenodd"/></svg>
+          Bulk Issue
+        </a>
+        {% endif %}
+        <a href="/employees" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{ 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' if path.startswith('/employees') or path.startswith('/people') or path.startswith('/devices') else 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50' }} transition-colors" onclick="closeMobileMenu()">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm5 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Zm5 0c-.55 0-1.2.06-1.9.18 1.16.84 1.9 2.02 1.9 3.82v2h6v-2c0-2.66-5.33-4-6-4Z"/></svg>
+          Employees
+        </a>
+        <a href="/renewals" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{ 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' if path.startswith('/renewals') else 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50' }} transition-colors" onclick="closeMobileMenu()">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.433a.75.75 0 0 0 0-1.5H3.989a.75.75 0 0 0-.75.75v4.242a.75.75 0 0 0 1.5 0v-2.43l.31.31a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm1.23-3.723a.75.75 0 0 0 .219-.53V2.929a.75.75 0 0 0-1.5 0V5.36l-.31-.31A7 7 0 0 0 3.239 8.188a.75.75 0 1 0 1.448.389A5.5 5.5 0 0 1 13.89 6.11l.311.31h-2.432a.75.75 0 0 0 0 1.5h4.243a.75.75 0 0 0 .53-.219Z" clip-rule="evenodd"/></svg>
+          Renewals
+        </a>
+        {% if admin.role.value == "super_admin" %}
+        <div class="pt-3 mt-3 border-t border-slate-100 dark:border-slate-700">
+          <div class="px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2">Super Admin</div>
+        </div>
+        <a href="/admins" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{ 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' if path.startswith('/admins') else 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50' }} transition-colors" onclick="closeMobileMenu()">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M10 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-7 9a7 7 0 1 1 14 0H3Z"/></svg>
+          Admins
+        </a>
+        <a href="/health" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{ 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' if path.startswith('/health') else 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50' }} transition-colors" onclick="closeMobileMenu()">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M11.983 1.907a.75.75 0 0 0-1.292-.657l-8.5 9.5A.75.75 0 0 0 2.75 12h4.362l-1.095 6.093a.75.75 0 0 0 1.292.657l8.5-9.5a.75.75 0 0 0-.557-1.25h-4.362l1.093-6.093Z" clip-rule="evenodd"/></svg>
+          Health
+        </a>
+        <a href="/sites" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{ 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' if path.startswith('/sites') else 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50' }} transition-colors" onclick="closeMobileMenu()">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a5 5 0 0 0-5 5c0 5 5 11 5 11s5-6 5-11a5 5 0 0 0-5-5Zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z"/></svg>
+          Sites
+        </a>
+        {% endif %}
+        {% if not admin.subsidiary_scope %}
+        <a href="/activity" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{ 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' if path.startswith('/activity') else 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50' }} transition-colors" onclick="closeMobileMenu()">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>
+          Activity
+        </a>
+        {% endif %}
+      </div>
+      <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-700">
+        <a href="/account/sessions" class="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors" onclick="closeMobileMenu()">
+          <div class="w-7 h-7 rounded-full text-white text-xs font-semibold flex items-center justify-center uppercase"
+               style="background: hsl({{ admin.username | avatar_hue }} 55% 42%)">
+            {{ admin.username[0] }}
+          </div>
+          <span class="text-sm font-medium text-slate-700 dark:text-slate-300">{{ admin.username }}</span>
+        </a>
+      </div>
+    </nav>
+  </div>
   {% endif %}
 
-  <main class="max-w-6xl mx-auto px-4 py-8 page-fade">
+  <main id="main-content" tabindex="-1" class="app-main max-w-6xl mx-auto px-4 py-8 page-fade">
     {% block content %}{% endblock %}
   </main>
 
   {% if admin %}
-  <div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 items-end pointer-events-none"></div>
+  <footer class="site-footer">
+    <span>Topline Certificate Manager</span>
+    <span class="mx-1.5">·</span>
+    <span>Internal use only</span>
+  </footer>
+  {% endif %}
+
+  {% if admin %}
+  <div id="toast-container" role="status" aria-live="polite" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 items-end pointer-events-none"></div>
   {% endif %}
 
   <script>
@@ -183,6 +223,52 @@
 
   {% if admin %}
   <script>
+    // Mobile menu toggle
+    (function () {
+      var menu = document.getElementById('mobile-menu');
+      var btn = document.getElementById('mobile-menu-btn');
+      var closeBtn = document.getElementById('mobile-menu-close');
+      var backdrop = document.getElementById('mobile-menu-backdrop');
+      if (!menu || !btn) return;
+
+      var previousFocus;
+      var smallScreen = window.matchMedia('(max-width: 1023px)');
+      function updateInert() { menu.inert = smallScreen.matches && !menu.classList.contains('is-open'); }
+      window.closeMobileMenu = function () {
+        menu.classList.remove('is-open');
+        btn.setAttribute('aria-expanded', 'false');
+        document.body.classList.remove('navigation-open');
+        updateInert();
+        if (smallScreen.matches && previousFocus) previousFocus.focus();
+      };
+      btn.addEventListener('click', function () {
+        previousFocus = document.activeElement;
+        menu.classList.add('is-open');
+        btn.setAttribute('aria-expanded', 'true');
+        document.body.classList.add('navigation-open');
+        updateInert();
+        if (closeBtn) closeBtn.focus();
+      });
+      menu.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { window.closeMobileMenu(); return; }
+        if (event.key !== 'Tab' || !smallScreen.matches) return;
+        var items = Array.from(menu.querySelectorAll('a[href], button:not([disabled])')).filter(function (el) { return el.getClientRects().length; });
+        var first = items[0], last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      });
+      smallScreen.addEventListener('change', window.closeMobileMenu);
+      updateInert();
+      menu.querySelectorAll('a').forEach(function (link) {
+        var current = link.classList.contains('bg-slate-100');
+        if (current) link.setAttribute('aria-current', 'page');
+      });
+      if (closeBtn) closeBtn.addEventListener('click', window.closeMobileMenu);
+      if (backdrop) backdrop.addEventListener('click', window.closeMobileMenu);
+    })();
+  </script>
+
+  <script>
     // Session-expiry warning: the cookie is a 15-minute sliding window
     // (auth.SESSION_MAX_AGE_SECONDS), silently refreshed on every
     // authenticated request. If the tab just sits idle, warn before it
@@ -200,12 +286,22 @@
       function showWarning() {
         var container = document.getElementById('toast-container');
         if (!container) return;
+        var isDark = document.documentElement.classList.contains('dark');
         var el = document.createElement('div');
-        el.className = 'anim-rise pointer-events-auto flex items-center gap-3 text-sm font-medium px-4 py-3 rounded-lg shadow-lg border max-w-sm bg-white border-slate-200 text-slate-700';
+        el.className = 'anim-rise pointer-events-auto flex items-center gap-3 text-sm font-medium px-4 py-3 rounded-lg shadow-lg border max-w-sm';
+        if (isDark) {
+          el.style.background = '#1e293b';
+          el.style.borderColor = '#334155';
+          el.style.color = '#e2e8f0';
+        } else {
+          el.style.background = '#ffffff';
+          el.style.borderColor = '#e2e8f0';
+          el.style.color = '#334155';
+        }
         el.innerHTML =
           '<svg class="w-4 h-4 shrink-0 text-amber-500" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm1-13a1 1 0 1 0-2 0v5a1 1 0 0 0 .3.7l3 3a1 1 0 0 0 1.4-1.4L11 9.6V5Z" clip-rule="evenodd"/></svg>' +
           '<span>Your session is about to expire.</span>' +
-          '<button type="button" class="shrink-0 text-xs font-semibold px-2 py-1 rounded bg-slate-900 text-white">Stay signed in</button>';
+          '<button type="button" class="shrink-0 text-xs font-semibold px-2 py-1 rounded ' + (isDark ? 'bg-slate-100 text-slate-900' : 'bg-slate-900 text-white') + '">Stay signed in</button>';
         el.querySelector('button').addEventListener('click', function () {
           fetch('/auth/ping', {credentials: 'same-origin'}).then(function () {
             el.remove();

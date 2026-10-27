@@ -4,14 +4,14 @@
 {% import "_device_icon.html" as dicon %}
 {% block title %}{{ cert.cn }} — Certificate Manager{% endblock %}
 {% block content %}
-<a href="/certs" class="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-4">
+<a href="/certs" class="inline-flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 mb-4 transition-colors">
   <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd"/></svg>
   Certificates
 </a>
 
 <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
   <div>
-    <h1 class="text-2xl font-semibold text-slate-900 tracking-tight font-mono">{{ cert.cn }}</h1>
+    <h1 class="page-title font-mono">{{ cert.cn }}</h1>
     <div class="mt-2">{{ badge.status_badge(cert.status) }}</div>
   </div>
   <div class="flex gap-2">
@@ -50,23 +50,23 @@
 </div>
 
 {% if cert.employee_name or cert.device_type or cert.device_model or cert.device_mac or cert.device_serial or cert.subsidiary %}
-<section class="card p-5 mb-6 relative overflow-hidden">
-  <div class="absolute -right-6 -top-6 w-28 h-28 rounded-full bg-slate-50 opacity-60"></div>
+<section class="card p-5 mb-6 relative overflow-hidden anim-rise">
+  <div class="absolute -right-6 -top-6 w-28 h-28 rounded-full bg-slate-50 dark:bg-slate-700/30 opacity-60"></div>
   <div class="relative flex items-start gap-4">
-    <div class="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
+    <div class="w-12 h-12 rounded-xl bg-slate-900 dark:bg-slate-700 text-white flex items-center justify-center shrink-0">
       {{ dicon.device_icon(cert.device_type, "w-6 h-6") }}
     </div>
     <div class="flex-1 min-w-0">
       <div class="flex items-center justify-between flex-wrap gap-2">
         <div>
           {% if cert.employee_name %}
-          <a href="{{ ('/employees/' ~ (cert.employee_key | urlencode)) if cert.employee_key else ('/certs?employee=' ~ (cert.employee_name | urlencode)) }}" class="text-base font-semibold text-slate-900 hover:underline">
+          <a href="{{ ('/employees/' ~ (cert.employee_key | urlencode)) if cert.employee_key else ('/certs?employee=' ~ (cert.employee_name | urlencode)) }}" class="text-base font-semibold text-slate-900 dark:text-slate-100 hover:underline">
             {{ cert.employee_name }}
           </a>
           {% else %}
-          <span class="text-base font-semibold text-slate-400">Unassigned</span>
+          <span class="text-base font-semibold text-slate-400 dark:text-slate-500">Unassigned</span>
           {% endif %}
-          <div class="text-sm text-slate-500">
+          <div class="text-sm text-slate-500 dark:text-slate-400">
             {{ cert.device_type or "Device type not set" }}{% if cert.device_model %} · {{ cert.device_model }}{% endif %}
           </div>
           {% if cert.subsidiary %}
@@ -80,17 +80,17 @@
         </div>
         {% if other_device_count %}
         <a href="/certs?employee={{ cert.employee_name | urlencode }}"
-           class="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
+           class="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
           +{{ other_device_count }} more device{{ "s" if other_device_count != 1 else "" }}
         </a>
         {% endif %}
       </div>
       <dl class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
         {% if cert.device_mac %}
-        <div class="flex justify-between gap-4"><dt class="text-slate-500">MAC address</dt><dd class="text-slate-800 font-mono">{{ cert.device_mac }}</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-slate-500 dark:text-slate-400">MAC address</dt><dd class="text-slate-800 dark:text-slate-200 font-mono">{{ cert.device_mac }}</dd></div>
         {% endif %}
         {% if cert.device_serial %}
-        <div class="flex justify-between gap-4"><dt class="text-slate-500">Device serial</dt><dd class="text-slate-800 font-mono">{{ cert.device_serial }}</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-slate-500 dark:text-slate-400">Device serial</dt><dd class="text-slate-800 dark:text-slate-200 font-mono">{{ cert.device_serial }}</dd></div>
         {% endif %}
       </dl>
     </div>
@@ -100,53 +100,53 @@
 
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
   <section class="card p-5">
-    <h2 class="font-semibold text-slate-900 mb-4">Metadata</h2>
+    <h2 class="font-semibold text-slate-900 dark:text-slate-100 mb-4">Metadata</h2>
     <dl class="text-sm space-y-3">
       <div class="flex justify-between gap-4">
-        <dt class="text-slate-500">Serial</dt>
-        <dd class="font-mono text-slate-800 text-right break-all flex items-center gap-1.5">
+        <dt class="text-slate-500 dark:text-slate-400">Serial</dt>
+        <dd class="font-mono text-slate-800 dark:text-slate-200 text-right break-all flex items-center gap-1.5">
           <span id="serial-value">{{ cert.serial }}</span>
           <button type="button" id="copy-serial-btn" title="Copy serial"
                   onclick="navigator.clipboard.writeText(document.getElementById('serial-value').textContent).then(() => { const t=document.getElementById('copy-serial-tip'); t.textContent='Copied'; setTimeout(() => t.textContent='', 1200); })"
-                  class="shrink-0 text-slate-400 hover:text-slate-700 -m-1 p-1">
+                  class="shrink-0 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 -m-1 p-1">
             <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3.5A1.5 1.5 0 0 1 8.5 2h3.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 17 6.622V12.5a1.5 1.5 0 0 1-1.5 1.5h-1v-3.379a3 3 0 0 0-.879-2.121L10.5 5.379A3 3 0 0 0 8.379 4.5H7v-1Z"/><path d="M4.5 6A1.5 1.5 0 0 0 3 7.5v9A1.5 1.5 0 0 0 4.5 18h7a1.5 1.5 0 0 0 1.5-1.5v-5.879a1.5 1.5 0 0 0-.44-1.06L9.44 6.439A1.5 1.5 0 0 0 8.378 6H4.5Z"/></svg>
           </button>
-          <span id="copy-serial-tip" class="text-xs text-green-600 font-normal"></span>
+          <span id="copy-serial-tip" class="text-xs text-green-600 dark:text-green-400 font-normal"></span>
         </dd>
       </div>
-      <div class="flex justify-between gap-4"><dt class="text-slate-500">Issued</dt><dd class="text-slate-800">{{ cert.issued_at }}</dd></div>
-      <div class="flex justify-between gap-4"><dt class="text-slate-500">Expires</dt><dd class="text-slate-800">{{ cert.expires_at }}</dd></div>
-      <div class="flex justify-between gap-4"><dt class="text-slate-500">Issued by</dt><dd class="text-slate-800">{{ cert.issued_by }}</dd></div>
-      {% if cert.note %}<div class="flex justify-between gap-4"><dt class="text-slate-500">Note</dt><dd class="text-slate-800">{{ cert.note }}</dd></div>{% endif %}
+      <div class="flex justify-between gap-4"><dt class="text-slate-500 dark:text-slate-400">Issued</dt><dd class="text-slate-800 dark:text-slate-200">{{ cert.issued_at }}</dd></div>
+      <div class="flex justify-between gap-4"><dt class="text-slate-500 dark:text-slate-400">Expires</dt><dd class="text-slate-800 dark:text-slate-200">{{ cert.expires_at }}</dd></div>
+      <div class="flex justify-between gap-4"><dt class="text-slate-500 dark:text-slate-400">Issued by</dt><dd class="text-slate-800 dark:text-slate-200">{{ cert.issued_by }}</dd></div>
+      {% if cert.note %}<div class="flex justify-between gap-4"><dt class="text-slate-500 dark:text-slate-400">Note</dt><dd class="text-slate-800 dark:text-slate-200">{{ cert.note }}</dd></div>{% endif %}
       {% if cert.supersedes_cn %}
-      <div class="flex justify-between gap-4"><dt class="text-slate-500">Supersedes</dt>
-        <dd><a href="/certs/{{ cert.supersedes_serial }}" class="text-slate-700 hover:underline font-medium">{{ cert.supersedes_cn }}</a></dd></div>
+      <div class="flex justify-between gap-4"><dt class="text-slate-500 dark:text-slate-400">Supersedes</dt>
+        <dd><a href="/certs/{{ cert.supersedes_serial }}" class="text-slate-700 dark:text-slate-300 hover:underline font-medium">{{ cert.supersedes_cn }}</a></dd></div>
       {% endif %}
       {% if cert.superseded_by_cn %}
-      <div class="flex justify-between gap-4"><dt class="text-slate-500">Superseded by</dt>
-        <dd><a href="/certs/{{ cert.superseded_by_serial }}" class="text-slate-700 hover:underline font-medium">{{ cert.superseded_by_cn }}</a></dd></div>
+      <div class="flex justify-between gap-4"><dt class="text-slate-500 dark:text-slate-400">Superseded by</dt>
+        <dd><a href="/certs/{{ cert.superseded_by_serial }}" class="text-slate-700 dark:text-slate-300 hover:underline font-medium">{{ cert.superseded_by_cn }}</a></dd></div>
       {% endif %}
     </dl>
   </section>
 
   <section class="card p-5">
-    <h2 class="font-semibold text-slate-900 mb-4">Status history</h2>
+    <h2 class="font-semibold text-slate-900 dark:text-slate-100 mb-4">Status history</h2>
     {% if history %}
-    <ol class="relative border-l border-slate-200 ml-2 space-y-4">
+    <ol class="relative border-l border-slate-200 dark:border-slate-700 ml-2 space-y-4">
       {% for h in history %}
       <li class="pl-4 relative">
-        <span class="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-slate-400"></span>
+        <span class="absolute -left-[5px] top-1 w-2 h-2 rounded-full {{ 'bg-green-500' if loop.first and 'issued' in h.action|lower else 'bg-slate-400 dark:bg-slate-500' }}"></span>
         <div class="text-sm">
-          <span class="font-medium text-slate-800">{{ h.action }}</span>
-          <span class="text-slate-500">by {{ h.actor }}</span>
+          <span class="font-medium text-slate-800 dark:text-slate-200">{{ h.action }}</span>
+          <span class="text-slate-500 dark:text-slate-400">by {{ h.actor }}</span>
         </div>
-        {% if h.detail %}<div class="text-sm text-slate-500">{{ h.detail }}</div>{% endif %}
-        <div class="text-xs text-slate-400 mt-0.5">{{ h.timestamp }}</div>
+        {% if h.detail %}<div class="text-sm text-slate-500 dark:text-slate-400">{{ h.detail }}</div>{% endif %}
+        <div class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{{ h.timestamp }}</div>
       </li>
       {% endfor %}
     </ol>
     {% else %}
-    <p class="text-sm text-slate-500">No history yet.</p>
+    <p class="text-sm text-slate-500 dark:text-slate-400">No history yet.</p>
     {% endif %}
   </section>
 </div>
