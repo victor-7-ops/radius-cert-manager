@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}Employees — Certificate Manager{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div class="page-header !mb-0">
+      <h1 class="page-title">Employee Directory</h1>
+      <p class="page-subtitle">Track each employee’s devices, certificates and items needing attention.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      {% if can_manage %}
+      <a href="#new-employee-modal" onclick="document.getElementById('new-employee-modal').classList.remove('hidden')" class="btn-primary flex items-center gap-2">
+        <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z"/></svg>
+        <span>Add Employee</span>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Filters & Search -->
+  <form method="get" action="/employees" class="card p-4 flex flex-wrap items-center gap-4">
+    {% if is_platform_superadmin %}
+    <div class="w-48">
+      <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1" for="employees_list-subsidiary_id-0">Subsidiary</label>
+      <select name="subsidiary_id" onchange="this.form.submit()" class="field-input text-sm py-1.5" id="employees_list-subsidiary_id-0">
+        <option value="">All subsidiaries</option>
+        {% for sub in subsidiaries %}
+        <option value="{{ sub.id }}" {{ 'selected' if selected_subsidiary_id == sub.id else '' }}>{{ sub.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+    <div class="w-48">
+      <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1" for="employees_list-department_id-1">Department</label>
+      <select name="department_id" onchange="this.form.submit()" class="field-input text-sm py-1.5" id="employees_list-department_id-1">
+        <option value="">All departments</option>
+        {% for dept in departments %}
+        <option value="{{ dept.id }}" {{ 'selected' if selected_department_id == dept.id else '' }}>{{ dept.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="w-40">
+      <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1" for="employees_list-status-2">Status</label>
+      <select name="status" onchange="this.form.submit()" class="field-input text-sm py-1.5" id="employees_list-status-2">
+        <option value="">All statuses</option>
+        <option value="active" {{ 'selected' if selected_status == 'active' else '' }}>Active</option>
+        <option value="offboarded" {{ 'selected' if selected_status == 'offboarded' else '' }}>Offboarded</option>
+      </select>
+    </div>
+
+    <div class="flex-1 min-w-[200px]">
+      <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1" for="employees_list-q-3">Search</label>
+      <input type="text" name="q" value="{{ search_query or '' }}" placeholder="Search by name, employee #, asset tag..." class="field-input text-sm py-1.5" id="employees_list-q-3">
+    </div>
+
+    <div class="self-end">
+      <button type="submit" class="btn-secondary text-sm py-1.5">Filter</button>
+      {% if search_query or selected_department_id or selected_status or (is_platform_superadmin and selected_subsidiary_id) %}
+      <a href="/employees" class="btn-ghost text-sm ml-2">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+
+  <p class="text-xs text-slate-500">Devices are counted once. Certificate totals include renewal overlaps.</p>
+
+  <!-- Table View -->
+  <div class="card overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-slate-600 dark:text-slate-400 font-semibold text-xs uppercase tracking-wider">
+            <th class="p-3 pl-4">Employee</th>
+            <th class="p-3">Subsidiary</th>
+            <th class="p-3">Department</th>
+            <th class="p-3 text-center" title="Distinct linked physical devices">Registered Devices</th>
+            <th class="p-3 text-center" title="Active devices holding active, matching, unexpired credentials">Devices with credentials</th>
+            <th class="p-3 text-center" title="Active, unexpired client certificates (including renewal overlaps)">Active certificates</th>
+            <th class="p-3 text-center" title="Devices needing attention: lost, missing credentials, expiring">Attention</th>
+            <th class="p-3 pr-4 text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+          {% if not employees %}
+          <tr>
+            <td colspan="8" class="p-8 text-center text-slate-400 dark:text-slate-500">
+              No employees match these filters. Try another search or clear the filters.
+            </td>
+          </tr>
+          {% endif %}
+          {% for emp in employees %}
+          <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition anim-rise" style="animation-delay: {{ [loop.index0, 15] | min * 30 }}ms">
+            <td class="p-3 pl-4">
+              <div class="font-medium text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <a href="/people/{{ emp.id }}" class="hover:underline text-indigo-600 dark:text-indigo-400 font-semibold">
+                  {{ emp.display_name }}
+                </a>
+                {% if emp.status == 'offboarded' %}
+                <span class="badge badge-red">Offboarded</span>
+                {% elif emp.status == 'offboarding' %}
+                <span class="badge badge-amber">Offboarding</span>
+                {% endif %}
+              </div>
+              <div class="text-xs text-slate-400 dark:text-slate-500 font-mono">
+                {{ emp.employee_number or 'No employee #' }}
+              </div>
+            </td>
+            <td class="p-3 text-slate-600 dark:text-slate-300">
+              <span class="badge badge-slate">
+                {{ emp.subsidiary_name }}
+              </span>
+            </td>
+            <td class="p-3 text-slate-600 dark:text-slate-300">
+              {{ emp.department_name }}
+            </td>
+            <td class="p-3 text-center font-mono font-medium text-slate-700 dark:text-slate-300">
+              {{ emp.registered_devices }}
+            </td>
+            <td class="p-3 text-center font-mono font-medium">
+              {% if emp.devices_with_usable_credentials > 0 %}
+              <span class="text-emerald-600 dark:text-emerald-400 font-semibold">{{ emp.devices_with_usable_credentials }}</span>
+              {% else %}
+              <span class="text-slate-400 dark:text-slate-500">0</span>
+              {% endif %}
+            </td>
+            <td class="p-3 text-center font-mono font-medium text-slate-700 dark:text-slate-300">
+              {{ emp.active_certificates }}
+            </td>
+            <td class="p-3 text-center">
+              {% if emp.needs_attention > 0 %}
+              <span class="badge badge-amber" title="{{ emp.needs_attention }} device(s) need attention">
+                {{ emp.needs_attention }} warning{{ 's' if emp.needs_attention > 1 else '' }}
+              </span>
+              {% else %}
+              <span class="text-slate-400 dark:text-slate-500 text-xs font-mono">-</span>
+              {% endif %}
+            </td>
+            <td class="p-3 pr-4 text-right space-x-2">
+              <a href="/people/{{ emp.id }}" class="btn-ghost text-xs py-1 px-2">View details</a>
+              {% if can_manage and emp.status == 'active' %}
+              <a href="/people/{{ emp.id }}/offboard" class="btn-ghost text-xs py-1 px-2 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">Offboard</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if total > limit %}
+    <div class="p-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+      <div>Showing {{ offset + 1 }} to {{ offset + employees|length }} of {{ total }} employees</div>
+      <div class="flex gap-2">
+        {% if offset > 0 %}
+        <a href="?offset={{ [offset - limit, 0]|max }}&limit={{ limit }}&q={{ search_query or '' }}&subsidiary_id={{ selected_subsidiary_id or '' }}&department_id={{ selected_department_id or '' }}&status={{ selected_status or '' }}" class="btn-secondary text-xs py-1 px-3">Previous</a>
+        {% endif %}
+        {% if offset + limit < total %}
+        <a href="?offset={{ offset + limit }}&limit={{ limit }}&q={{ search_query or '' }}&subsidiary_id={{ selected_subsidiary_id or '' }}&department_id={{ selected_department_id or '' }}&status={{ selected_status or '' }}" class="btn-secondary text-xs py-1 px-3">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Modal: Add Employee -->
+{% if can_manage %}
+<div id="new-employee-modal" class="hidden modal-overlay">
+  <div class="modal-panel">
+    <div class="modal-header">
+      <h3 class="modal-title">Add New Employee</h3>
+      <button onclick="document.getElementById('new-employee-modal').classList.add('hidden')" class="btn-ghost !p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">&times;</button>
+    </div>
+    <form method="post" action="/people/new" class="space-y-4">
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="employees_list-display_name-4">Display Name *</label>
+        <input type="text" name="display_name" required placeholder="e.g. Juan dela Cruz" class="field-input text-sm" id="employees_list-display_name-4">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="employees_list-employee_number-5">Employee Number (Optional)</label>
+        <input type="text" name="employee_number" placeholder="e.g. EMP-1049" class="field-input text-sm font-mono" id="employees_list-employee_number-5">
+      </div>
+      {% if is_platform_superadmin %}
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="employees_list-subsidiary_id-6">Subsidiary *</label>
+        <select name="subsidiary_id" required class="field-input text-sm" onchange="window.location.href='/employees?subsidiary_id=' + this.value" id="employees_list-subsidiary_id-6">
+          <option value="">Select subsidiary...</option>
+          {% for sub in subsidiaries %}
+          <option value="{{ sub.id }}" {{ 'selected' if selected_subsidiary_id == sub.id else '' }}>{{ sub.display_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <input type="hidden" name="subsidiary_id" value="{{ actor_subsidiary_id }}">
+      {% endif %}
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="employees_list-department_id-7">Department *</label>
+        <select name="department_id" required class="field-input text-sm" id="employees_list-department_id-7">
+          <option value="">Select department...</option>
+          {% for dept in modal_departments %}
+          <option value="{{ dept.id }}">{{ dept.display_name }} ({{ dept.code }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="button" onclick="document.getElementById('new-employee-modal').classList.add('hidden')" class="btn-ghost text-sm">Cancel</button>
+        <button type="submit" class="btn-primary text-sm">Create Employee</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

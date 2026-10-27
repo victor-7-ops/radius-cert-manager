@@ -17,6 +17,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint,
     create_engine,
     event,
     select,
@@ -46,6 +47,7 @@ class AdminRole(str, enum.Enum):
     admin = "admin"
     super_admin = "super_admin"
     viewer = "viewer"
+    subsidiary_super_admin = "subsidiary_super_admin"
     # Read-only (HANDOFF-COMPLIANCE.md §3): can see the cert list, detail
     # pages, activity log and dashboard, same as `admin` — but every
     # mutating route, plus bundle download and export, rejects it with
@@ -102,6 +104,25 @@ class Certificate(Base):
     device_serial: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     subsidiary: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
 
+    subsidiary_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
+    department_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
+    network_role_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
+    employee_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
+    device_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
+    identity_schema_version: Mapped[int] = mapped_column(Integer, default=1)
+    issuance_policy_snapshot: Mapped[str | None] = mapped_column(String, nullable=True)
+    request_fingerprint: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+
     expiry_alert_sent_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -153,6 +174,289 @@ class Certificate(Base):
             # SQLite drops tzinfo on round-trip; treat naive values as UTC.
             expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
         return expires_at < now
+
+
+class Subsidiary(Base):
+    __tablename__ = "subsidiaries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String, unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String)
+    is_active: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    departments: Mapped[list["Department"]] = relationship(
+        back_populates="subsidiary", cascade="all, delete-orphan"
+    )
+    network_roles: Mapped[list["NetworkRole"]] = relationship(
+        back_populates="subsidiary", cascade="all, delete-orphan"
+    )
+
+
+class Department(Base):
+    __tablename__ = "departments"
+    __table_args__ = (
+        UniqueConstraint("subsidiary_id", "code", name="uq_department_subsidiary_code"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    subsidiary_id: Mapped[str] = mapped_column(
+        String, ForeignKey("subsidiaries.id"), index=True
+    )
+    code: Mapped[str] = mapped_column(String, index=True)
+    display_name: Mapped[str] = mapped_column(String)
+    is_active: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    subsidiary: Mapped["Subsidiary"] = relationship(back_populates="departments")
+
+
+class NetworkRole(Base):
+    __tablename__ = "network_roles"
+    __table_args__ = (
+        UniqueConstraint("subsidiary_id", "code", name="uq_network_role_subsidiary_code"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    subsidiary_id: Mapped[str] = mapped_column(
+        String, ForeignKey("subsidiaries.id"), index=True
+    )
+    code: Mapped[str] = mapped_column(String, index=True)
+    display_name: Mapped[str] = mapped_column(String)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True, index=True)
+    is_privileged: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    subsidiary: Mapped["Subsidiary"] = relationship(back_populates="network_roles")
+
+
+class DepartmentRole(Base):
+    __tablename__ = "department_roles"
+    __table_args__ = (
+        UniqueConstraint("department_id", "network_role_id", name="uq_department_network_role"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    department_id: Mapped[str] = mapped_column(
+        String, ForeignKey("departments.id"), index=True
+    )
+    network_role_id: Mapped[str] = mapped_column(
+        String, ForeignKey("network_roles.id"), index=True
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+
+
+class AdminRoleGrant(Base):
+    __tablename__ = "admin_role_grants"
+    __table_args__ = (
+        UniqueConstraint("admin_id", "network_role_id", name="uq_admin_network_role_grant"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    admin_id: Mapped[str] = mapped_column(
+        String, ForeignKey("admins.id"), index=True
+    )
+    network_role_id: Mapped[str] = mapped_column(
+        String, ForeignKey("network_roles.id"), index=True
+    )
+    granted_by: Mapped[str] = mapped_column(String)
+    granted_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+
+
+class SiteSubsidiary(Base):
+    __tablename__ = "site_subsidiaries"
+    __table_args__ = (
+        UniqueConstraint("site_id", "subsidiary_id", name="uq_site_subsidiary"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    site_id: Mapped[str] = mapped_column(
+        String, ForeignKey("sites.id"), index=True
+    )
+    subsidiary_id: Mapped[str] = mapped_column(
+        String, ForeignKey("subsidiaries.id"), index=True
+    )
+    is_active: Mapped[bool] = mapped_column(default=True, index=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+
+
+class SiteRoleBinding(Base):
+    __tablename__ = "site_role_bindings"
+    __table_args__ = (
+        UniqueConstraint("site_id", "subsidiary_id", "network_role_id", name="uq_site_role_binding"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    site_id: Mapped[str] = mapped_column(
+        String, ForeignKey("sites.id"), index=True
+    )
+    subsidiary_id: Mapped[str] = mapped_column(
+        String, ForeignKey("subsidiaries.id"), index=True
+    )
+    network_role_id: Mapped[str] = mapped_column(
+        String, ForeignKey("network_roles.id"), index=True
+    )
+    vlan_id: Mapped[int] = mapped_column(Integer)
+    fallback_vlan_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    platform_enabled: Mapped[bool] = mapped_column(default=True, index=True)
+    tenant_enabled: Mapped[bool] = mapped_column(default=True, index=True)
+    config_revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+
+class SitePolicyRevision(Base):
+    __tablename__ = "site_policy_revisions"
+    __table_args__ = (
+        UniqueConstraint("site_id", "revision", name="uq_site_policy_revision"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    site_id: Mapped[str] = mapped_column(
+        String, ForeignKey("sites.id"), index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, index=True)
+    payload_json: Mapped[str] = mapped_column(String)
+    payload_hash: Mapped[str] = mapped_column(String)
+    signature: Mapped[str] = mapped_column(String)
+    signing_key_id: Mapped[str] = mapped_column(String, default="default")
+    issued_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    expires_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), index=True
+    )
+    actor: Mapped[str] = mapped_column(String)
+
+
+class SitePolicyAck(Base):
+    __tablename__ = "site_policy_acks"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    site_id: Mapped[str] = mapped_column(
+        String, ForeignKey("sites.id"), index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, index=True)
+    payload_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    installed_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    success: Mapped[bool] = mapped_column(default=True, index=True)
+    detail: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+class Employee(Base):
+    __tablename__ = "employees"
+    __table_args__ = (
+        UniqueConstraint("subsidiary_id", "employee_number", name="uq_employee_subsidiary_number"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    subsidiary_id: Mapped[str] = mapped_column(
+        String, ForeignKey("subsidiaries.id"), index=True
+    )
+    employee_number: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    display_name: Mapped[str] = mapped_column(String, index=True)
+    department_id: Mapped[str] = mapped_column(
+        String, ForeignKey("departments.id"), index=True
+    )
+    status: Mapped[str] = mapped_column(String, default="active", index=True)  # active, offboarding, offboarded
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    devices: Mapped[list["Device"]] = relationship(
+        back_populates="employee", cascade="all, delete-orphan"
+    )
+
+
+class Device(Base):
+    __tablename__ = "devices"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    subsidiary_id: Mapped[str] = mapped_column(
+        String, ForeignKey("subsidiaries.id"), index=True
+    )
+    employee_id: Mapped[str] = mapped_column(
+        String, ForeignKey("employees.id"), index=True
+    )
+    display_name: Mapped[str] = mapped_column(String, index=True)
+    device_type: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    device_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    asset_tag: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    serial_number: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    mac_address: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    department_id: Mapped[str] = mapped_column(
+        String, ForeignKey("departments.id"), index=True
+    )
+    network_role_id: Mapped[str] = mapped_column(
+        String, ForeignKey("network_roles.id"), index=True
+    )
+    status: Mapped[str] = mapped_column(String, default="active", index=True)  # active, lost, retired
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
+
+    employee: Mapped["Employee"] = relationship(back_populates="devices")
+
+
+class OffboardingOperation(Base):
+    __tablename__ = "offboarding_operations"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    subsidiary_id: Mapped[str] = mapped_column(
+        String, ForeignKey("subsidiaries.id"), index=True
+    )
+    employee_id: Mapped[str] = mapped_column(
+        String, ForeignKey("employees.id"), index=True
+    )
+    requested_by: Mapped[str] = mapped_column(String, index=True)
+    reason: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String, default="pending", index=True)  # pending, in_progress, completed, failed
+    target_serials_json: Mapped[str] = mapped_column(String, default="[]")
+    revoked_serials_json: Mapped[str] = mapped_column(String, default="[]")
+    crl_published_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, onupdate=_now
+    )
 
 
 class Admin(Base):
@@ -291,6 +595,7 @@ def make_engine(db_path: str):
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA busy_timeout=5000")
         cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
     return engine
@@ -317,6 +622,14 @@ _CERTIFICATE_COLUMN_MIGRATIONS = [
     ("minimised_at", "DATETIME"),
     ("employee_key", "VARCHAR"),
     ("retired_at", "DATETIME"),
+    ("subsidiary_id", "VARCHAR"),
+    ("department_id", "VARCHAR"),
+    ("network_role_id", "VARCHAR"),
+    ("employee_id", "VARCHAR"),
+    ("device_id", "VARCHAR"),
+    ("identity_schema_version", "INTEGER DEFAULT 1"),
+    ("issuance_policy_snapshot", "TEXT"),
+    ("request_fingerprint", "VARCHAR"),
 ]
 
 DEVICE_TYPES = ["Laptop", "Phone", "Tablet", "Desktop", "Other"]
@@ -390,6 +703,8 @@ def init_db(engine) -> None:
     _migrate_columns(engine, "audit_log", _AUDIT_LOG_COLUMN_MIGRATIONS)
     run_once(engine, "audit_log_subsidiary_backfill", lambda: backfill_audit_log_subsidiary(engine))
     run_once(engine, "certificate_employee_key_backfill", lambda: backfill_employee_key(engine))
+    from app.network_migrations import run_network_migrations
+    run_network_migrations(engine)
 
 
 def run_once(engine, name: str, fn) -> bool:

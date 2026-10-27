@@ -1,0 +1,21 @@
+[Unit]
+Description=Certmanager site network policy refresh and lease renewal
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=certmgr
+Group=certmgr
+WorkingDirectory=/opt/certmanager
+EnvironmentFile=/opt/certmanager/.env
+ExecStart=/opt/certmanager/.venv/bin/python scripts/refresh_site_policy.py --threshold-hours 6 --lease-hours 24
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/opt/certmanager
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target

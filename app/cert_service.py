@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -51,6 +52,22 @@ class DeviceInfo:
 
 
 @dataclass
+class NetworkAssignment:
+    """Trusted authorization assignment built into the signed certificate (Schema 2).
+    
+    Signed attributes:
+      O = subsidiary_id
+      OU = network_role_id
+    """
+
+    subsidiary_id: str
+    department_id: str
+    network_role_id: str
+    employee_id: str | None = None
+    device_id: str | None = None
+
+
+@dataclass
 class IssueResult:
     certificate: db.Certificate
     bundle: pki.Pkcs12Bundle | None
@@ -86,16 +103,19 @@ def _issue_one_locked(
     device: DeviceInfo | None = None,
     supersedes_id: str | None = None,
     skip_conflict_check: bool = False,
+    assignment: NetworkAssignment | None = None,
 ) -> IssueResult:
     """Caller must already hold _lock(pki_path)."""
     existing = session.scalar(select(db.Certificate).where(db.Certificate.request_id == request_id))
     if existing is not None:
-        # Retried submission with the same request_id: dedupe, don't
-        # re-mint. The original .p12 is gone (never persisted), so
-        # the caller gets the existing DB row with a fresh bundle
-        # only if it still has the private key in memory — callers
-        # that hit this path are expected to treat it as "already
-        # issued", not to re-deliver a bundle.
+        if assignment is not None:
+            expected_fp = hashlib.sha256(
+                f"{cn}:{assignment.subsidiary_id}:{assignment.department_id}:{assignment.network_role_id}:{assignment.device_id or ''}".encode()
+            ).hexdigest()
+            if existing.request_fingerprint and existing.request_fingerprint != expected_fp:
+                raise ValueError("Reused request_id with differing assignment or CN")
+            if existing.subsidiary_id and existing.subsidiary_id != assignment.subsidiary_id:
+                raise ValueError("Reused request_id with differing subsidiary")
         return IssueResult(certificate=existing, bundle=None, deduped=True)
 
     if not skip_conflict_check:
@@ -112,7 +132,13 @@ def _issue_one_locked(
     key = pki.generate_private_key()
     csr = pki.build_csr(key, cn)
     serial = _unique_serial(session)
-    cert = pki.sign_client_cert(csr, inter_cert, inter_key, serial, days)
+    
+    sub_id = assignment.subsidiary_id if assignment else None
+    role_id = assignment.network_role_id if assignment else None
+    cert = pki.sign_client_cert(
+        csr, inter_cert, inter_key, serial, days,
+        subsidiary_id=sub_id, network_role_id=role_id,
+    )
     bundle = pki.build_pkcs12(cn, key, cert, [inter_cert], password=export_password)
 
     issued_dir = pki_path / "issued"
@@ -123,6 +149,23 @@ def _issue_one_locked(
     (issued_dir / f"{cn}.{serial}.crt").write_bytes(pki.cert_to_pem(cert))
 
     device = device or DeviceInfo()
+    schema_ver = 2 if assignment else 1
+    snapshot_json = None
+    req_fp = None
+    if assignment:
+        req_fp = hashlib.sha256(
+            f"{cn}:{assignment.subsidiary_id}:{assignment.department_id}:{assignment.network_role_id}:{assignment.device_id or ''}".encode()
+        ).hexdigest()
+        snapshot_json = json.dumps({
+            "subsidiary_id": assignment.subsidiary_id,
+            "department_id": assignment.department_id,
+            "network_role_id": assignment.network_role_id,
+            "employee_id": assignment.employee_id,
+            "device_id": assignment.device_id,
+            "issued_by": issued_by,
+            "issued_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        })
+
     row = db.Certificate(
         cn=cn,
         serial=str(serial),
@@ -141,6 +184,14 @@ def _issue_one_locked(
         device_serial=device.device_serial,
         subsidiary=device.subsidiary,
         supersedes_id=supersedes_id,
+        subsidiary_id=assignment.subsidiary_id if assignment else None,
+        department_id=assignment.department_id if assignment else None,
+        network_role_id=assignment.network_role_id if assignment else None,
+        employee_id=assignment.employee_id if assignment else None,
+        device_id=assignment.device_id if assignment else None,
+        identity_schema_version=schema_ver,
+        issuance_policy_snapshot=snapshot_json,
+        request_fingerprint=req_fp,
     )
     session.add(row)
     audit_detail = f"serial={serial}"
@@ -148,6 +199,8 @@ def _issue_one_locked(
         audit_detail += f" employee={device.employee_name}"
     if supersedes_id:
         audit_detail += f" supersedes={supersedes_id}"
+    if assignment:
+        audit_detail += f" role={assignment.network_role_id} dept={assignment.department_id}"
     db.audit(
         session, actor=issued_by, action="issue", target=cn, detail=audit_detail,
         subsidiary=device.subsidiary,
@@ -171,11 +224,13 @@ def issue_certificate(
     days: int,
     batch_id: str | None = None,
     device: DeviceInfo | None = None,
+    assignment: NetworkAssignment | None = None,
 ) -> IssueResult:
     with _lock(pki_path):
         return _issue_one_locked(
             session, pki_path, inter_cert, inter_key, cn, note, request_id,
             export_password, issued_by, days, batch_id, device,
+            assignment=assignment,
         )
 
 
@@ -193,6 +248,7 @@ def reissue_certificate(
     export_password: str | None,
     issued_by: str,
     days: int,
+    assignment: NetworkAssignment | None = None,
 ) -> IssueResult:
     """Handoff §8.1: generate a new cert under the SAME CN as an existing
     one, linked via supersedes_id. Old and new coexist — the old cert is
@@ -215,11 +271,21 @@ def reissue_certificate(
             device_serial=old.device_serial,
             subsidiary=old.subsidiary,
         )
+        if assignment is None and old.subsidiary_id and old.network_role_id:
+            assignment = NetworkAssignment(
+                subsidiary_id=old.subsidiary_id,
+                department_id=old.department_id,
+                network_role_id=old.network_role_id,
+                employee_id=old.employee_id,
+                device_id=old.device_id,
+            )
+
         return _issue_one_locked(
             session, pki_path, inter_cert, inter_key,
             cn=old.cn, note=old.note, request_id=request_id,
             export_password=export_password, issued_by=issued_by, days=days,
             batch_id=None, device=device, supersedes_id=old.id, skip_conflict_check=True,
+            assignment=assignment,
         )
 
 

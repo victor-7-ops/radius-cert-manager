@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+  <div class="space-y-1">
+    <div class="breadcrumb mb-2">
+      <a href="/employees">Employees</a>
+      <span class="breadcrumb-sep">&rsaquo;</span>
+      <a href="/people/{{ employee.id }}">{{ employee.display_name }}</a>
+      <span class="breadcrumb-sep">&rsaquo;</span>
+      <span class="text-slate-900 dark:text-slate-100">Offboard</span>
+    </div>
+    <h1 class="text-2xl font-bold text-rose-600 dark:text-rose-400">Offboard Employee</h1>
+    <p class="text-sm text-slate-500 dark:text-slate-400">
+      Revoke all credentials for this employee across all devices and update the Certificate Revocation List (CRL).
+    </p>
+  </div>
+
+  {% if error %}
+  <div class="p-3 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 rounded-lg text-sm text-red-700 dark:text-red-300">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  <!-- Impact summary card -->
+  <div class="card p-5 space-y-4 border-l-4 border-l-rose-500 anim-rise">
+    <h3 class="font-bold text-slate-900 dark:text-slate-100 text-sm uppercase tracking-wide">Impact Assessment</h3>
+    <div class="grid grid-cols-2 gap-4 text-sm">
+      <div>
+        <span class="text-slate-500 dark:text-slate-400 text-xs">Employee:</span>
+        <div class="font-semibold text-slate-900 dark:text-slate-100">{{ employee.display_name }}</div>
+        <div class="text-xs text-slate-400 dark:text-slate-500 font-mono">{{ employee.employee_number or 'No employee #' }}</div>
+      </div>
+      <div>
+        <span class="text-slate-500 dark:text-slate-400 text-xs">Subsidiary:</span>
+        <div class="font-semibold text-slate-900 dark:text-slate-100">{{ subsidiary.display_name }}</div>
+      </div>
+      <div>
+        <span class="text-slate-500 dark:text-slate-400 text-xs">Affected Physical Devices:</span>
+        <div class="font-bold text-slate-900 dark:text-slate-100 font-mono text-lg">{{ devices|length }}</div>
+      </div>
+      <div>
+        <span class="text-slate-500 dark:text-slate-400 text-xs">Usable Certificates to Revoke:</span>
+        <div class="font-bold text-rose-600 dark:text-rose-400 font-mono text-lg">{{ target_certs|length }}</div>
+      </div>
+    </div>
+
+    {% if target_certs %}
+    <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+      <div class="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">Target Credentials:</div>
+      <div class="max-h-40 overflow-y-auto space-y-1 text-xs font-mono">
+        {% for c in target_certs %}
+        <div class="flex items-center justify-between p-1.5 bg-slate-50 dark:bg-slate-800/50 rounded">
+          <span class="font-semibold text-slate-800 dark:text-slate-200">{{ c.cn }}</span>
+          <span class="text-slate-400 dark:text-slate-500">SN: {{ c.serial }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <div class="pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500">
+      No active or suspended credentials currently held by this employee. Offboarding will update employee lifecycle state to 'offboarded'.
+    </div>
+    {% endif %}
+
+    <div class="text-xs text-slate-600 dark:text-slate-300 bg-amber-50 dark:bg-amber-950/40 p-3 rounded border border-amber-200 dark:border-amber-900/50 space-y-1">
+      <div class="font-semibold text-amber-800 dark:text-amber-300">Security Invariants:</div>
+      <ul class="list-disc list-inside space-y-0.5">
+        <li>Revoked credentials are rejected and will <strong>never</strong> receive fallback VLAN access.</li>
+        <li>The shared network role remains active for other employees.</li>
+        <li>Revocation is durable and published to the fleet CRL immediately.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Confirmation Form -->
+  <form method="post" action="/people/{{ employee.id }}/offboard" class="card p-6 space-y-4 anim-rise" style="animation-delay: 50ms;">
+    <div>
+      <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+        To confirm, type the employee's display name (<strong class="text-slate-900 dark:text-slate-100">{{ employee.display_name }}</strong>):
+      </label>
+      <input type="text" name="confirm_name" required autocomplete="off" class="field-input text-sm">
+    </div>
+
+    <div>
+      <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+        Reason for Offboarding *
+      </label>
+      <input type="text" name="reason" required placeholder="e.g. Resignation, end of contract, security review" class="field-input text-sm">
+    </div>
+
+    <div class="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+      <a href="/people/{{ employee.id }}" class="btn-ghost text-sm">Cancel</a>
+      <button type="submit" class="btn-danger text-sm">
+        Confirm and Revoke All Credentials
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}

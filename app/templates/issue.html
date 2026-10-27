@@ -1,20 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Issue certificate — Certificate Manager{% endblock %}
 {% block content %}
-<a href="/certs" class="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900 mb-4">
+<a href="/certs" class="breadcrumb mb-4 inline-flex items-center gap-1.5">
   <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd"/></svg>
   Certificates
 </a>
-<h1 class="text-2xl font-semibold text-slate-900 tracking-tight mb-6">Issue certificate</h1>
+<h1 class="page-title mb-6">Issue certificate</h1>
 
-<div class="max-w-md card p-6">
+<div class="max-w-md card p-6 anim-rise">
   {% if error %}
-  <div role="alert" class="mb-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+  <div role="alert" class="mb-4 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded-lg px-3 py-2.5">
     {{ error }}
   </div>
   {% endif %}
   {% if duplicate_matches %}
-  <div role="alert" class="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+  <div role="alert" class="mb-4 text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-lg px-3 py-2.5">
     <div class="font-medium mb-1">This MAC and/or serial is already on an active certificate:</div>
     <ul class="list-disc list-inside space-y-0.5">
       {% for c in duplicate_matches %}
@@ -25,7 +25,7 @@
   </div>
   {% endif %}
   {% if employee_spelling_matches %}
-  <div role="alert" class="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+  <div role="alert" class="mb-4 text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-lg px-3 py-2.5">
     <div class="font-medium mb-1">This employee already has certificates under a different spelling:</div>
     <ul class="list-disc list-inside space-y-0.5">
       {% for name in employee_spelling_matches %}
@@ -39,6 +39,21 @@
         onsubmit="const b=this.querySelector('button[type=submit]'); b.disabled=true; b.innerText='Issuing…';">
     <input type="hidden" name="request_id" value="{{ request_id }}">
     <input type="hidden" name="confirm_duplicate" value="{{ '1' if (duplicate_matches or employee_spelling_matches) else '' }}">
+    <input type="hidden" name="device_id" value="{{ device.id if device else (form.device_id if form and form.device_id else '') }}">
+
+    {% if device %}
+    <div class="p-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/50 rounded-lg text-sm text-blue-900 dark:text-blue-200 mb-4">
+      <div class="font-semibold flex items-center gap-1.5 mb-1 text-blue-800 dark:text-blue-300">
+        <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h11.5A2.25 2.25 0 0 1 18 4.25v8.5A2.25 2.25 0 0 1 15.75 15h-3.105a3.515 3.515 0 0 0 1.355 2.25H15a.75.75 0 0 1 0 1.5H5a.75.75 0 0 1 0-1.5h2.5a3.515 3.515 0 0 0 1.355-2.25H4.25A2.25 2.25 0 0 1 2 12.75v-8.5Zm2.25-.75a.75.75 0 0 0-.75.75v8.5c0 .414.336.75.75.75h11.5a.75.75 0 0 0 .75-.75v-8.5a.75.75 0 0 0-.75-.75H4.25Z" clip-rule="evenodd"/></svg>
+        Linked to Inventory Device
+      </div>
+      <div class="text-xs space-y-0.5">
+        <div>Device: <strong>{{ device.display_name }}</strong> {% if device.asset_tag %}(Tag: {{ device.asset_tag }}){% endif %}</div>
+        <div>Owner: <strong>{{ device.employee.display_name if device.employee else '-' }}</strong></div>
+        <div>Network Role: <strong>{{ device.network_role.display_name if device.network_role else '-' }}</strong></div>
+      </div>
+    </div>
+    {% endif %}
     <div>
       <label for="cn" class="field-label">Identifier (CN)</label>
       <input id="cn" name="cn" type="text" required autofocus value="{{ form.cn if form else '' }}"
@@ -54,8 +69,8 @@
       </div>
     </div>
 
-    <div class="pt-2 border-t border-slate-100">
-      <div class="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-3">Device &amp; owner (optional, for tracking)</div>
+    <div class="pt-2 border-t border-slate-100 dark:border-slate-800">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-3">Device &amp; owner (optional, for tracking)</div>
 
       <div class="mb-3">
         <label for="employee_name" class="field-label">Employee name</label>

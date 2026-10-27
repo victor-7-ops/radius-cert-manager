@@ -4,8 +4,8 @@
 {% block content %}
 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
   <div>
-    <h1 class="text-2xl font-semibold text-slate-900 tracking-tight">Admin management</h1>
-    <p class="text-sm text-slate-500 mt-1">Super Admin only — manage who can issue and revoke certificates.</p>
+    <h1 class="page-title">Admin management</h1>
+    <p class="page-subtitle">Super Admin only — manage who can issue and revoke certificates.</p>
   </div>
   <button hx-get="/admins/new-form" hx-target="#new-admin-slot" hx-swap="innerHTML" class="btn-primary">
     {{ spin.spinner() }}
@@ -16,8 +16,8 @@
 <div id="new-admin-slot" class="mb-4"></div>
 
 {% if only_one_super_admin %}
-<div class="mb-4 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 flex items-center gap-2">
-  <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.516 2.63H3.72c-1.347 0-2.189-1.463-1.515-2.63L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
+<div class="mb-4 text-sm text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-lg px-3 py-2.5 flex items-center gap-2">
+  <svg class="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.63-1.516 2.63H3.72c-1.347 0-2.189-1.463-1.515-2.63L8.485 2.495ZM10 6a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 6Zm0 8a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd"/></svg>
   Only one active Super Admin exists. Operationally, keep at least two so one person leaving
   doesn't strand the system.
 </div>
@@ -35,19 +35,19 @@
     </thead>
     <tbody>
       {% for a in admins %}
-      <tr>
-        <td class="text-slate-900 font-medium">
+      <tr class="anim-rise hover:bg-slate-50/75 dark:hover:bg-slate-800/40 transition-colors" style="animation-delay: {{ loop.index0 * 30 }}ms;">
+        <td class="text-slate-900 dark:text-slate-100 font-medium">
           <div class="flex items-center gap-2">
-            <div class="w-6 h-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center uppercase"
+            <div class="w-6 h-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center uppercase shadow-sm"
                  style="background: hsl({{ a.username | avatar_hue }} 55% 42%)">{{ a.username[0] }}</div>
             {{ a.username }}
           </div>
         </td>
         <td>
           {% if a.role == "super_admin" %}
-          <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-900 text-white">Super Admin</span>
+          <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Super Admin</span>
           {% else %}
-          <span class="text-slate-600 text-sm">Admin</span>
+          <span class="text-slate-600 dark:text-slate-400 text-sm">Admin</span>
           {% endif %}
           {% if a.subsidiary_scope %}
           <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ml-1" style="background: {{ a.subsidiary_scope | subsidiary_color }}22; color: {{ a.subsidiary_scope | subsidiary_color }};">{{ a.subsidiary_scope }}</span>
@@ -55,27 +55,27 @@
         </td>
         <td>
           {% if a.is_active %}
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-green-700"><span class="w-1.5 h-1.5 rounded-full bg-green-600"></span> Active</span>
+          <span class="badge badge-green"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Active</span>
           {% else %}
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400"><span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Deactivated</span>
+          <span class="badge badge-slate"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Deactivated</span>
           {% endif %}
         </td>
         <td class="text-right space-x-1">
           {% if a.is_active %}
             {% if a.is_last_super_admin %}
-            <span class="text-xs text-slate-400" title="Cannot deactivate the last active Super Admin">Protected</span>
+            <span class="text-xs text-slate-400 dark:text-slate-500" title="Cannot deactivate the last active Super Admin">Protected</span>
             {% else %}
             <button hx-post="/admins/{{ a.id }}/deactivate" hx-confirm="Deactivate {{ a.username }}?"
-                    class="text-red-700 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+                    class="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
               {{ spin.spinner() }}<span class="htmx-hide-on-request">Deactivate</span>
             </button>
             {% endif %}
             <button hx-post="/admins/{{ a.id }}/reset-password" hx-confirm="Force a password reset for {{ a.username }}?"
-                    class="text-slate-600 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+                    class="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
               {{ spin.spinner() }}<span class="htmx-hide-on-request">Reset password</span>
             </button>
             <button hx-post="/admins/{{ a.id }}/force-logout" hx-confirm="Force logout for {{ a.username }}?"
-                    class="text-slate-600 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
+                    class="text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 hover:underline text-sm font-medium min-h-[44px] px-2 inline-flex items-center gap-1.5">
               {{ spin.spinner() }}<span class="htmx-hide-on-request">Force logout</span>
             </button>
           {% endif %}

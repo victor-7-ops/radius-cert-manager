@@ -79,6 +79,8 @@ def _cert_builder(
     public_key,
     serial: int,
     days: int,
+    subsidiary_id: str | None = None,
+    network_role_id: str | None = None,
 ) -> x509.CertificateBuilder:
     now = datetime.datetime.now(datetime.timezone.utc)
     not_before = now - datetime.timedelta(minutes=5)
@@ -92,9 +94,14 @@ def _cert_builder(
     if not_after > ca_not_after:
         not_after = ca_not_after
 
+    subject_attrs = [x509.NameAttribute(NameOID.COMMON_NAME, subject_cn)]
+    if subsidiary_id and network_role_id:
+        subject_attrs.append(x509.NameAttribute(NameOID.ORGANIZATION_NAME, subsidiary_id))
+        subject_attrs.append(x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, network_role_id))
+
     return (
         x509.CertificateBuilder()
-        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, subject_cn)]))
+        .subject_name(x509.Name(subject_attrs))
         .issuer_name(issuer_cert.subject)
         .public_key(public_key)
         .serial_number(serial)
@@ -110,6 +117,8 @@ def sign_client_cert(
     serial: int,
     days: int,
     crl_dp_url: str | None = None,
+    subsidiary_id: str | None = None,
+    network_role_id: str | None = None,
 ) -> x509.Certificate:
     builder = _cert_builder(
         csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value,
@@ -117,6 +126,8 @@ def sign_client_cert(
         csr.public_key(),
         serial,
         days,
+        subsidiary_id=subsidiary_id,
+        network_role_id=network_role_id,
     )
     builder = (
         builder.add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
@@ -159,6 +170,34 @@ def sign_client_cert(
             critical=False,
         )
     return builder.sign(issuer_key, hashes.SHA256())
+
+
+def extract_certificate_identity(cert: x509.Certificate) -> tuple[str, str | None, str | None]:
+    """Extracts signed (cn, subsidiary_id, network_role_id) from an issued certificate.
+    
+    Enforces exact cardinality (one O, one OU) if present.
+    If multiple O or OU are present, raises ValueError (malformed identity).
+    If only one of O or OU is present, raises ValueError (incomplete identity).
+    If neither O nor OU is present, returns (cn, None, None) representing legacy Schema 1.
+    """
+    cn_attrs = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+    if not cn_attrs:
+        raise ValueError("Certificate is missing Common Name (CN)")
+    cn = cn_attrs[0].value
+
+    org_attrs = cert.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)
+    ou_attrs = cert.subject.get_attributes_for_oid(NameOID.ORGANIZATIONAL_UNIT_NAME)
+
+    if len(org_attrs) > 1 or len(ou_attrs) > 1:
+        raise ValueError("Certificate contains duplicate signed identity attributes")
+
+    if (len(org_attrs) == 1 and len(ou_attrs) == 0) or (len(org_attrs) == 0 and len(ou_attrs) == 1):
+        raise ValueError("Certificate contains incomplete signed identity attributes (must have both O and OU or neither)")
+
+    if org_attrs and ou_attrs:
+        return cn, org_attrs[0].value, ou_attrs[0].value
+
+    return cn, None, None
 
 
 @dataclass

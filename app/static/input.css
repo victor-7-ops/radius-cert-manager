@@ -1,9 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     font-feature-settings: "cv11", "ss01";
   }
 }
@@ -12,10 +15,10 @@
    htmx adds/removes .htmx-swapping on the incoming content mid-transition;
    .body-fade lives on <body> so it also covers full-body boosted swaps. */
 .page-fade {
-  animation: page-fade-in 180ms ease-out;
+  animation: page-fade-in 200ms ease-out;
 }
 @keyframes page-fade-in {
-  from { opacity: 0; transform: translateY(2px); }
+  from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -38,6 +41,31 @@
   to { opacity: 1; transform: scale(1); }
 }
 
+/* Modal entrance — scale + slide up */
+.anim-modal {
+  animation: anim-modal-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes anim-modal-in {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Skeleton shimmer for async-loaded content */
+.skeleton {
+  background: linear-gradient(90deg, theme("colors.slate.100") 25%, theme("colors.slate.200") 50%, theme("colors.slate.100") 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: theme("borderRadius.lg");
+}
+.dark .skeleton {
+  background: linear-gradient(90deg, theme("colors.slate.700") 25%, theme("colors.slate.600") 50%, theme("colors.slate.700") 75%);
+  background-size: 200% 100%;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 /* The company/status bars start at width:0 in markup; a tiny inline
    script sets the real width one frame later so this transition fires. */
 .bar-grow {
@@ -45,8 +73,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .anim-rise, .anim-pop, .page-fade { animation: none; }
+  .anim-rise, .anim-pop, .anim-modal, .page-fade { animation: none; }
   .bar-grow { transition: none; }
+  .skeleton { animation: none; }
 }
 
 /* Dark mode, added after the handoff's v1 "no dark mode" decision, at
@@ -102,6 +131,21 @@ html.dark { color-scheme: dark; background-color: theme("colors.slate.900"); }
 .dark .text-green-600 { color: theme("colors.green.400"); }
 .dark .border-green-200 { border-color: theme("colors.green.800"); }
 
+/* Blue, indigo, emerald — used by employee/device pages */
+.dark .bg-blue-50 { background-color: theme("colors.blue.950"); }
+.dark .text-blue-700 { color: theme("colors.blue.400"); }
+.dark .text-blue-800 { color: theme("colors.blue.300"); }
+.dark .text-blue-900 { color: theme("colors.blue.200"); }
+.dark .border-blue-200 { border-color: theme("colors.blue.800"); }
+
+.dark .bg-indigo-50 { background-color: theme("colors.indigo.950"); }
+.dark .text-indigo-700 { color: theme("colors.indigo.400"); }
+
+.dark .bg-emerald-100 { background-color: theme("colors.emerald.950"); }
+.dark .text-emerald-800 { color: theme("colors.emerald.300"); }
+.dark .bg-emerald-50 { background-color: theme("colors.emerald.950"); }
+.dark .text-emerald-600 { color: theme("colors.emerald.400"); }
+
 /* file: pseudo-variant on the CSV inputs re-applies .btn-secondary,
    which already carries its own dark: rules — nothing extra needed. */
 
@@ -140,6 +184,10 @@ html.dark { color-scheme: dark; background-color: theme("colors.slate.900"); }
            text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500
            focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-slate-100/10 focus:border-slate-400 dark:focus:border-slate-500 transition-shadow;
   }
+  /* Alias: employees/person/device pages use input-text; keep it working. */
+  .input-text {
+    @apply field-input;
+  }
   .field-label {
     @apply block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5;
   }
@@ -175,6 +223,62 @@ html.dark { color-scheme: dark; background-color: theme("colors.slate.900"); }
   }
   .table-shell td {
     @apply px-4 py-3;
+  }
+
+  /* --- Unified component classes --- */
+
+  /* Page headers */
+  .page-title {
+    @apply text-2xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight;
+  }
+  .page-subtitle {
+    @apply text-sm text-slate-500 dark:text-slate-400 mt-1;
+  }
+
+  /* Breadcrumb */
+  .breadcrumb {
+    @apply flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium mb-2;
+  }
+  .breadcrumb a {
+    @apply hover:text-slate-700 dark:hover:text-slate-300 hover:underline transition-colors;
+  }
+
+  /* Badges — unified status/role indicators */
+  .badge {
+    @apply inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full;
+  }
+  .badge-green  { @apply bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 ring-1 ring-inset ring-green-600/20; }
+  .badge-amber  { @apply bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400 ring-1 ring-inset ring-amber-600/20; }
+  .badge-red    { @apply bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 ring-1 ring-inset ring-red-600/20; }
+  .badge-slate  { @apply bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 ring-1 ring-inset ring-slate-400/20; }
+  .badge-blue   { @apply bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 ring-1 ring-inset ring-blue-600/20; }
+  .badge-emerald { @apply bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 ring-1 ring-inset ring-emerald-600/20; }
+
+  /* Modal */
+  .modal-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4;
+  }
+  .modal-panel {
+    @apply card max-w-md w-full p-6 space-y-4 anim-modal;
+  }
+  .modal-header {
+    @apply flex items-center justify-between border-b border-slate-100 dark:border-slate-700 pb-3;
+  }
+  .modal-title {
+    @apply font-semibold text-slate-900 dark:text-slate-100;
+  }
+
+  /* Empty state */
+  .empty-state {
+    @apply card p-12 text-center text-slate-500 dark:text-slate-400;
+  }
+  .empty-state-icon {
+    @apply w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-600;
+  }
+
+  /* Footer */
+  .site-footer {
+    @apply max-w-6xl mx-auto px-4 py-6 mt-8 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-400 dark:text-slate-500 text-center;
   }
 
   /* htmx puts the .htmx-request class on the element (or its

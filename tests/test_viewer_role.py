@@ -6,6 +6,7 @@ forgets to opt into require_write fails this test instead of silently
 shipping a hole.
 """
 
+import re
 import uuid
 
 import pytest
@@ -24,6 +25,7 @@ from tests.conftest import login_as
 _EXEMPT = {
     ("POST", "/api/site/checkin"),
     ("POST", "/api/site/server-cert/renew"),
+    ("POST", "/api/site/network-policy/ack"),
     ("POST", "/auth/login"),
     ("POST", "/auth/logout"),
     ("POST", auth.PASSWORD_CHANGE_PATH),
@@ -112,11 +114,7 @@ def test_every_mutating_route_rejects_viewer(viewer_client):
     for method, path in routes:
         if (method, path) in _EXEMPT:
             continue
-        url = path.format(
-            serial="nonexistent", batch_token="nonexistent", batch_id="nonexistent",
-            site_id="nonexistent", admin_id="nonexistent", session_id="nonexistent",
-            token="nonexistent", employee_key="nonexistent",
-        )
+        url = re.sub(r"\{[^}]+\}", "nonexistent", path)
         kwargs = _PAYLOADS.get((method, path), {})
         resp = client.request(method, url, **kwargs)
         if resp.status_code != 403:

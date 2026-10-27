@@ -1,0 +1,68 @@
+/* Shared application shell. Compiled utility classes remain in tailwind.css. */
+:root { --shell-border: #dfe6ef; --shell-panel: #fff; --shell-muted: #52657d; --shell-focus: #2563eb; }
+html.dark { --shell-border: #334155; --shell-panel: #172235; --shell-muted: #b4c2d5; }
+.skip-link { position: fixed; left: 16px; top: -80px; z-index: 100; padding: 12px 18px; background: var(--shell-panel); border: 2px solid var(--shell-focus); border-radius: 8px; }
+.skip-link:focus { top: 8px; }
+.app-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 72px; padding: 12px 28px; background: var(--shell-panel); border-bottom: 1px solid var(--shell-border); position: sticky; top: 0; z-index: 20; }
+.app-brand, .brand-link, .header-account { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand-link { text-decoration: none; }
+.brand-link img { border-radius: 8px; flex: none; }
+.brand-link strong { display: block; font-size: 15px; line-height: 20px; letter-spacing: -.2px; }
+.brand-link small { display: block; font-size: 11px; line-height: 16px; color: var(--shell-muted); }
+.header-account { flex-shrink: 0; }
+.header-account form { margin: 0; }
+.header-account a { max-width: 180px; }
+.header-account a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-main { min-width: 0; width: 100%; }
+.app-main:focus { outline: none; }
+.page-header { margin-bottom: 24px; }
+.dashboard-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.dashboard-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .13em; color: var(--shell-muted); margin-bottom: 6px; }
+.dashboard-heading .btn-primary { flex-shrink: 0; }
+.app-main .page-title { font-size: 26px; line-height: 1.25; font-weight: 650; letter-spacing: -.65px; }
+.app-main .page-subtitle { color: var(--shell-muted); line-height: 1.6; }
+.app-main .stat-card { min-height: 112px; align-items: center; box-shadow: none; transform: none; }
+.app-main .card { box-shadow: 0 1px 2px rgb(15 23 42 / .025); }
+.app-main th { white-space: nowrap; }
+.app-main td { vertical-align: middle; }
+.app-main :is(input,select,textarea) { max-width: 100%; }
+.app-main a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--shell-focus); outline-offset: 3px; }
+.app-main .text-slate-400 { color: #667891; }
+.dark .app-main .text-slate-400 { color: #a2b2c9; }
+.sidebar-panel { background: var(--shell-panel); padding: 20px 16px; }
+.sidebar-panel > div:first-child { display: none; }
+.sidebar-panel a { min-height: 44px; border-radius: 8px; }
+.sidebar-panel a[aria-current=page] { background: #eaf0fa; color: #153769; box-shadow: inset 3px 0 #315f9c; }
+.dark .sidebar-panel a[aria-current=page] { background: #253953; color: #e2edff; }
+.navigation-backdrop { display: none; }
+@media (min-width: 1024px) {
+  .app-shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: auto 1fr auto; min-height: 100vh; height: auto; }
+  .app-shell > [role=alert], .app-header { grid-column: 1 / -1; }
+  .app-shell .menu-trigger { display: none; }
+  .app-navigation { grid-column: 1; grid-row: span 2; align-self: stretch; border-right: 1px solid var(--shell-border); background: var(--shell-panel); }
+  .sidebar-panel { position: sticky; top: 72px; max-height: calc(100vh - 72px); overflow-y: auto; }
+  .app-shell .app-main { grid-column: 2; margin: 0 auto; padding: 32px 36px; max-width: 1440px; }
+  .app-shell .site-footer { grid-column: 2; width: calc(100% - 72px); margin: 0 auto; }
+}
+@media (max-width: 1023px) {
+  .app-header { padding: 12px 16px; }
+  .app-navigation { display: none; }
+  .app-navigation.is-open { display: block; position: fixed; inset: 0; z-index: 60; }
+  .navigation-backdrop { display: block; position: absolute; inset: 0; background: rgb(15 23 42 / .48); }
+  .sidebar-panel { position: absolute; top: 0; bottom: 0; left: 0; width: min(310px, 88vw); overflow-y: auto; box-shadow: 12px 0 40px rgb(0 0 0 / .15); }
+  .sidebar-panel > div:first-child { display: flex; }
+  .navigation-open { overflow: hidden; }
+  .app-main { padding: 24px 18px; }
+}
+@media (max-width: 600px) {
+  .app-header { gap: 8px; padding: 10px 12px; }
+  .header-account { gap: 4px; }
+  .brand-link { gap: 8px; }
+  .brand-link small { font-size: 10px; }
+  .header-account a { display: none; }
+  .dashboard-heading { align-items: flex-start; flex-direction: column; }
+  .app-main .page-title { font-size: 23px; }
+  .app-main .stat-card { min-height: 96px; padding: 14px; gap: 8px; }
+  .app-main > .space-y-6 > form { gap: 12px; }
+  .app-main > .space-y-6 > form > div { width: 100%; min-width: 0; }
+}

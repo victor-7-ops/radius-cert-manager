@@ -2,9 +2,9 @@
 {% import "_bulk_preview_row.html" as rowmacro %}
 {% block title %}Bulk issue preview — Certificate Manager{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-semibold text-slate-900 tracking-tight mb-1">Bulk issue preview</h1>
-<p class="text-sm text-slate-500 mb-6">
-  Nothing is signed until you confirm. <span class="font-medium text-slate-700"><span id="valid-count-summary">{{ valid_count }} of {{ total_count }}</span></span> identifiers are valid.
+<h1 class="page-title mb-1">Bulk issue preview</h1>
+<p class="page-subtitle mb-6">
+  Nothing is signed until you confirm. <span class="font-medium text-slate-700 dark:text-slate-200"><span id="valid-count-summary">{{ valid_count }} of {{ total_count }}</span></span> identifiers are valid.
   {% if valid_count < total_count %}Fix a malformed or duplicate row's identifier below and save — no need to start over.{% endif %}
 </p>
 
@@ -29,7 +29,7 @@
 </div>
 
 <div id="bulk-confirm-block" data-total="{{ total_count }}">
-  <div class="max-w-md card p-6" id="bulk-confirm-form-card" style="{{ '' if valid_count > 0 else 'display:none;' }}">
+  <div class="max-w-md card p-6 anim-rise" id="bulk-confirm-form-card" style="{{ '' if valid_count > 0 else 'display:none;' }}">
     <form method="post" action="/certs/bulk/confirm" class="space-y-4"
           onsubmit="const b=this.querySelector('button'); b.disabled=true; b.innerText='Issuing…';">
       <input type="hidden" name="batch_token" value="{{ batch_token }}">
@@ -38,7 +38,7 @@
           Export password for this batch
         </label>
         <input id="export_password" name="export_password" type="text" required minlength="12" class="field-input font-mono">
-        <p class="mt-1.5 text-xs text-slate-500">One password protects every .p12 in this batch. Shown once, on the results page.</p>
+        <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">One password protects every .p12 in this batch. Shown once, on the results page.</p>
       </div>
       <button type="submit" class="btn-primary w-full">
         <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
@@ -46,7 +46,7 @@
       </button>
     </form>
   </div>
-  <p class="text-sm text-slate-500" id="bulk-confirm-empty-message" style="{{ 'display:none;' if valid_count > 0 else '' }}">
+  <p class="text-sm text-slate-500 dark:text-slate-400" id="bulk-confirm-empty-message" style="{{ 'display:none;' if valid_count > 0 else '' }}">
     No valid identifiers to issue. Fix a row above or go back and start over.
   </p>
 </div>

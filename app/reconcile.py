@@ -25,7 +25,8 @@ def import_existing_certs(session: Session, issued_dir: Path) -> list[str]:
         existing = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
         if existing is not None:
             continue
-        cn = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+        cn, sub_id, role_id = pki.extract_certificate_identity(cert)
+        schema_version = 2 if (sub_id and role_id) else 1
         row = db.Certificate(
             cn=cn,
             serial=serial,
@@ -34,6 +35,9 @@ def import_existing_certs(session: Session, issued_dir: Path) -> list[str]:
             status=db.CertStatus.active,
             issued_by="imported",
             request_id=f"imported-{serial}",
+            subsidiary_id=sub_id,
+            network_role_id=role_id,
+            identity_schema_version=schema_version,
         )
         session.add(row)
         imported.append(cn)
