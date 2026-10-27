@@ -43,6 +43,8 @@ from app.routes.web_employees import get_router as get_web_employees_router
 from app.routes.web_renewals import get_router as get_web_renewals_router
 from app.routes.liveness import get_router as get_liveness_router
 from app.routes.metrics import get_router as get_metrics_router
+from app.routes.network_policy import get_router as get_network_policy_router
+from app.routes.employees import get_router as get_employees_router
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -67,6 +69,7 @@ class RouteDeps:
     get_db_session: callable
     pki_path: Path
     db_path: Path
+    radius_adapter_path: Path
     inter_cert: object
     inter_key: object
     client_cert_days: int
@@ -311,6 +314,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         get_db_session=request_scoped_db,
         pki_path=settings.pki_path,
         db_path=settings.db_path,
+        radius_adapter_path=BASE_DIR.parent / "deploy" / "radius" / "authorize_policy.py",
         inter_cert=inter_cert,
         inter_key=inter_key,
         client_cert_days=settings.client_cert_days,
@@ -396,6 +400,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(get_web_renewals_router(deps, templates))
     app.include_router(get_liveness_router(deps))
     app.include_router(get_metrics_router(deps))
+    app.include_router(get_network_policy_router(deps))
+    app.include_router(get_employees_router(deps))
     app.include_router(get_web_certs_router(deps, templates))
     app.include_router(get_web_account_router(deps, templates))
     app.include_router(get_web_admins_router(deps, templates))

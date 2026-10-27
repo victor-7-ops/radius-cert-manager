@@ -3,13 +3,33 @@
 Runs on each site's FreeRADIUS box (never on the hub). One script,
 `site_agent.py`, standard library + `requests`, invoked once per pass by
 a systemd timer — not a daemon. Every pass: check in, pull a newer CRL
-if the hub reports one, renew the server cert if the hub says it's due.
+if the hub reports one, renew the server cert if the hub says it's due,
+sync the signed network policy, and sync the signed FreeRADIUS adapter
+source (`deploy/radius/authorize_policy.py`) itself.
 
 Install is safe by construction (HANDOFF-FLEET.md §3.4): stage the new
 file(s) → `freeradius -XC` → only on success install and reload → verify
 `freeradius` is active → on any failure, restore what was there before,
 reload again, and let it show up in the next check-in as
 `freeradius_ok=False` (the fleet view already treats that as CRITICAL).
+An adapter-source change is staged the same way but applies with a real
+`systemctl restart` instead of a reload — a SIGHUP doesn't make the
+embedded Python interpreter reimport the module.
+
+## Deploying an adapter code change
+
+This is pull-only, same as the policy and CRL: there's no push mechanism
+from the hub, by design (`app/db.py`'s `Site` model — a site is never
+pushed to). To ship a fix to `deploy/radius/authorize_policy.py`:
+
+1. `git pull` + restart the hub app — that's the only "deploy" step.
+2. Every site picks up the new signed bundle on its next poll via
+   `GET /api/site/radius-adapter`, verified against the same
+   `POLICY_PUBLIC_KEY_FILE` pin already used for policy sync (one key,
+   both purposes), then installed via the safety path above.
+
+Set `RADIUS_ADAPTER_PATH` in a site's `.env` only if the module lives
+somewhere other than the default `/opt/certmanager/deploy/radius/authorize_policy.py`.
 
 ## Install
 
