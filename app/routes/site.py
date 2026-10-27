@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 
-from app import cert_service, db, rate_limit
+from app import cert_service, db, rate_limit, site_policy
 
 
 def _now() -> datetime.datetime:
@@ -149,5 +150,124 @@ def get_router(deps) -> APIRouter:
             "serial": result.certificate.serial,
             "not_after": result.certificate.expires_at.isoformat(),
         }
+
+    @router.get("/network-policy")
+    def get_network_policy(
+        request: Request,
+        site: db.Site = Depends(deps.require_site),
+    ):
+        _enforce_rate_limit(site, "network_policy", (30, 60.0))
+        session = deps.get_db_session()
+
+        latest = session.scalar(
+            select(db.SitePolicyRevision)
+            .where(db.SitePolicyRevision.site_id == site.id)
+            .order_by(db.SitePolicyRevision.revision.desc())
+            .limit(1)
+        )
+
+        now = _now()
+        def _as_utc(dt):
+            return dt.replace(tzinfo=datetime.timezone.utc) if dt.tzinfo is None else dt
+
+        # If no policy exists or current policy lease has expired, publish fresh revision
+        if latest is None or (latest.expires_at and _as_utc(latest.expires_at) < now):
+            priv_key, _ = site_policy.get_or_create_policy_signing_key(deps.pki_path)
+            latest = site_policy.publish_site_policy(
+                site_id=site.id,
+                actor_username=f"site:{site.radius_cn}",
+                session=session,
+                private_key=priv_key,
+            )
+            session.commit()
+
+        etag = latest.payload_hash
+
+        db.audit(
+            session,
+            actor=f"site:{site.radius_cn}",
+            action="site_policy.pull",
+            target=site.radius_cn,
+            detail=f"rev={latest.revision} etag={etag[:16]}",
+            subsidiary=site.subsidiary,
+            site_id=site.id,
+        )
+        session.commit()
+
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+
+        return Response(content=latest.payload_json, media_type="application/json", headers={"ETag": etag})
+
+    @router.get("/radius-adapter")
+    def get_radius_adapter(
+        request: Request,
+        site: db.Site = Depends(deps.require_site),
+    ):
+        """Serves the hub's currently deployed FreeRADIUS adapter source
+        (deploy/radius/authorize_policy.py), signed with the same Ed25519
+        key sites already pin for policy — a code update ships by deploying
+        the hub (git pull + restart), then each site picks it up on its next
+        poll, same pull-only trust model as the CRL and policy routes."""
+        _enforce_rate_limit(site, "radius_adapter", (30, 60.0))
+        session = deps.get_db_session()
+
+        if not deps.radius_adapter_path.is_file():
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No radius adapter bundle available")
+
+        content = deps.radius_adapter_path.read_bytes()
+        content_sha256 = hashlib.sha256(content).hexdigest()
+        etag = content_sha256
+
+        db.audit(
+            session, actor=f"site:{site.radius_cn}", action="radius_adapter.pull", target=site.radius_cn,
+            detail=f"sha256={etag[:16]}", subsidiary=site.subsidiary, site_id=site.id,
+        )
+        session.commit()
+
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+
+        priv_key, _ = site_policy.get_or_create_policy_signing_key(deps.pki_path)
+        envelope = site_policy.sign_code_bundle(content, version=content_sha256[:12], private_key=priv_key)
+
+        return Response(content=json.dumps(envelope).encode("utf-8"), media_type="application/json", headers={"ETag": etag})
+
+    @router.post("/network-policy/ack")
+    def ack_network_policy(
+        payload: dict,
+        site: db.Site = Depends(deps.require_site),
+    ):
+        _enforce_rate_limit(site, "network_policy_ack", (30, 60.0))
+        session = deps.get_db_session()
+
+        rev = payload.get("revision")
+        payload_hash = payload.get("payload_hash")
+        success = payload.get("success", True)
+        detail = payload.get("detail", "")
+        agent_version = payload.get("agent_version")
+
+        ack = db.SitePolicyAck(
+            site_id=site.id,
+            revision=int(rev) if rev is not None else 0,
+            payload_hash=str(payload_hash) if payload_hash else None,
+            installed_at=_now(),
+            success=bool(success),
+            detail=f"{detail} agent={agent_version}" if agent_version else detail,
+        )
+        session.add(ack)
+        session.commit()
+
+        db.audit(
+            session,
+            actor=f"site:{site.radius_cn}",
+            action="site_policy.ack",
+            target=site.radius_cn,
+            detail=f"rev={rev} success={success} detail={detail}",
+            subsidiary=site.subsidiary,
+            site_id=site.id,
+        )
+        session.commit()
+        return {"ok": True, "revision": ack.revision}
 
     return router

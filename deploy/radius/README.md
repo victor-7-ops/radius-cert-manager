@@ -13,6 +13,8 @@ This adapter implements the authoritative 802.1X EAP-TLS decision tree for FreeR
   * `Tunnel-Private-Group-Id = "<vlan_id>"` (81)
 - Never makes online HTTP calls during authentication; fail-closed on expired lease or missing binding.
 
+This file itself (`authorize_policy.py`) is also synchronized by `site_agent.py`, the same pull-only, Ed25519-signed way as `policy.json` — see [deploy/agent/README.md](../agent/README.md#deploying-an-adapter-code-change). A code fix ships by redeploying the hub; sites pick it up on their next poll, no manual per-site `scp`.
+
 ## Authoritative Decision Matrix
 
 | Role Switch (Tenant) | Site Switch (Tenant) | Platform State | Result | VLAN Assigned |

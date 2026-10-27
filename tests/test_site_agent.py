@@ -4,6 +4,8 @@ is mocked — this test must never touch a real FreeRADIUS process or make
 a real HTTP request (same rule as the rest of this suite, handoff §12)."""
 
 import sys
+import datetime
+import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -12,6 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "deploy" / "agent"))
 
 import site_agent  # noqa: E402
+from app import site_policy  # noqa: E402
 
 
 def _ok(stdout="", stderr=""):
@@ -29,8 +32,12 @@ def _make_cfg(tmp_path):
     cfg.hub_url = "https://hub.example"
     cfg.token = "tok"
     cfg.site_cn = "radius-x.internal"
+    cfg.site_id = "site-radius-x"
     cfg.cert_dir = cert_dir
     cfg.state_dir = tmp_path / "state"
+    cfg.policy_dir = tmp_path / "policy"
+    cfg.policy_filename = "policy.json"
+    cfg.policy_public_key_file = str(tmp_path / "policy-signing.pub")
     cfg.crl_filename = "crl.pem"
     cfg.server_cert_filename = "server.pem"
     cfg.server_key_filename = "server.key"
@@ -38,6 +45,7 @@ def _make_cfg(tmp_path):
     cfg.freeradius_service = "freeradius"
     cfg.request_timeout = 5.0
     cfg.hub_ca_bundle = str(tmp_path / "ca-chain.pem")
+    cfg.radius_adapter_path = tmp_path / "radius" / "authorize_policy.py"
     return cfg
 
 
@@ -254,9 +262,153 @@ def test_config_accepts_existing_ca_bundle(monkeypatch, tmp_path):
     _set_base_env(monkeypatch)
     bundle = tmp_path / "ca-chain.pem"
     bundle.write_text("fake pem")
+    public_key = tmp_path / "policy-signing.pub"
+    public_key.write_text("fake pem")
     monkeypatch.setenv("HUB_CA_BUNDLE", str(bundle))
+    monkeypatch.setenv("POLICY_PUBLIC_KEY_FILE", str(public_key))
     cfg = site_agent.Config()
     assert cfg.hub_ca_bundle == str(bundle)
+
+
+def test_config_fails_closed_when_policy_pin_unset(monkeypatch, tmp_path):
+    _set_base_env(monkeypatch)
+    bundle = tmp_path / "ca-chain.pem"
+    bundle.write_text("fake pem")
+    monkeypatch.setenv("HUB_CA_BUNDLE", str(bundle))
+    monkeypatch.delenv("POLICY_PUBLIC_KEY_FILE", raising=False)
+    with pytest.raises(SystemExit, match="POLICY_PUBLIC_KEY_FILE"):
+        site_agent.Config()
+
+
+def _signed_policy_response(cfg, *, revision=1, expires_delta=datetime.timedelta(hours=1)):
+    private_key, _ = site_policy.generate_policy_signing_key()
+    public_key_path = Path(cfg.policy_public_key_file)
+    public_key_path.write_bytes(site_policy.export_public_key_pem(private_key.public_key()))
+    payload = {
+        "schema_version": 2,
+        "site_id": cfg.site_id,
+        "revision": revision,
+        "issued_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "expires_at": (datetime.datetime.now(datetime.timezone.utc) + expires_delta).isoformat(),
+        "bindings": [],
+    }
+    envelope = site_policy.sign_policy_payload(payload, private_key)
+    content = json.dumps(envelope).encode()
+    return MagicMock(
+        status_code=200,
+        headers={"ETag": "hash-one"},
+        content=content,
+        json=lambda: envelope,
+    )
+
+
+def test_policy_fetch_rejects_forged_envelope(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    response = _signed_policy_response(cfg)
+    forged = dict(response.json())
+    forged["signature_base64"] = "AAAA"
+    response.json = lambda: forged
+    monkeypatch.setattr(site_agent, "_hub_request", lambda *a, **k: response)
+    monkeypatch.setattr(site_agent, "_send_policy_ack", lambda *a, **k: None)
+    assert site_agent.fetch_and_install_policy(cfg, MagicMock()) is False
+
+
+def test_policy_304_rejects_expired_cached_policy(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    cfg.state_dir.mkdir()
+    cfg.policy_dir.mkdir()
+    (cfg.state_dir / "policy_hash.txt").write_text("hash-one")
+    (cfg.state_dir / "policy_revision.txt").write_text("1")
+    expired = {
+        "schema_version": 2,
+        "site_id": cfg.site_id,
+        "revision": 1,
+        "expires_at": (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=1)).isoformat(),
+        "bindings": [],
+    }
+    (cfg.policy_dir / cfg.policy_filename).write_text(json.dumps(expired))
+    response = MagicMock(status_code=304)
+    monkeypatch.setattr(site_agent, "_hub_request", lambda *a, **k: response)
+    assert site_agent.fetch_and_install_policy(cfg, MagicMock()) is False
+
+
+def test_policy_fetch_rejects_same_revision_with_different_hash(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    cfg.state_dir.mkdir()
+    (cfg.state_dir / "policy_hash.txt").write_text("old-hash")
+    (cfg.state_dir / "policy_revision.txt").write_text("7")
+    response = _signed_policy_response(cfg, revision=7)
+    response.headers = {"ETag": "new-hash"}
+    monkeypatch.setattr(site_agent, "_hub_request", lambda *a, **k: response)
+    monkeypatch.setattr(site_agent, "_send_policy_ack", lambda *a, **k: None)
+    monkeypatch.setattr(site_agent, "_install_with_safety", lambda *a, **k: pytest.fail("must not install"))
+    assert site_agent.fetch_and_install_policy(cfg, MagicMock()) is False
+
+
+def _pin_adapter_pub_key(cfg):
+    priv, _ = site_policy.generate_policy_signing_key()
+    Path(cfg.policy_public_key_file).write_bytes(site_policy.export_public_key_pem(priv.public_key()))
+    return priv
+
+
+def test_radius_adapter_fetch_installs_on_200(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    cfg.state_dir.mkdir()
+    priv = _pin_adapter_pub_key(cfg)
+    content = b"# new adapter source\n"
+    envelope = site_policy.sign_code_bundle(content, version="v1", private_key=priv)
+    response = MagicMock(status_code=200, json=lambda: envelope)
+    monkeypatch.setattr(site_agent, "_hub_request", lambda *a, **k: response)
+
+    installed = []
+    monkeypatch.setattr(
+        site_agent, "_install_with_safety",
+        lambda cfg, staged, label, restart=False: installed.append((staged, restart)) or True,
+    )
+
+    assert site_agent.fetch_and_install_radius_adapter(cfg, MagicMock()) is True
+    staged, restart = installed[0]
+    assert staged == {cfg.radius_adapter_path: content}
+    assert restart is True
+
+
+def test_radius_adapter_fetch_rejects_forged_signature(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    _pin_adapter_pub_key(cfg)
+    other_priv, _ = site_policy.generate_policy_signing_key()
+    envelope = site_policy.sign_code_bundle(b"content", version="v1", private_key=other_priv)
+    response = MagicMock(status_code=200, json=lambda: envelope)
+    monkeypatch.setattr(site_agent, "_hub_request", lambda *a, **k: response)
+    monkeypatch.setattr(
+        site_agent, "_install_with_safety",
+        lambda *a, **k: pytest.fail("must not install an unverified bundle"),
+    )
+
+    assert site_agent.fetch_and_install_radius_adapter(cfg, MagicMock()) is False
+
+
+def test_radius_adapter_fetch_304_is_noop(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    response = MagicMock(status_code=304)
+    monkeypatch.setattr(site_agent, "_hub_request", lambda *a, **k: response)
+    monkeypatch.setattr(
+        site_agent, "_install_with_safety",
+        lambda *a, **k: pytest.fail("must not install on 304"),
+    )
+
+    assert site_agent.fetch_and_install_radius_adapter(cfg, MagicMock()) is True
+
+
+def test_radius_adapter_fetch_404_is_noop(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    response = MagicMock(status_code=404)
+    monkeypatch.setattr(site_agent, "_hub_request", lambda *a, **k: response)
+    monkeypatch.setattr(
+        site_agent, "_install_with_safety",
+        lambda *a, **k: pytest.fail("must not install when hub has no bundle"),
+    )
+
+    assert site_agent.fetch_and_install_radius_adapter(cfg, MagicMock()) is True
 
 
 def test_run_once_verifies_against_hub_ca_bundle(tmp_path, monkeypatch):
@@ -277,10 +429,27 @@ def test_run_once_verifies_against_hub_ca_bundle(tmp_path, monkeypatch):
 
     monkeypatch.setattr(site_agent.requests, "Session", _FakeSession)
     monkeypatch.setattr(site_agent, "_freeradius_is_active", lambda service: True)
+    monkeypatch.setattr(site_agent, "fetch_and_install_policy", lambda cfg, session: True)
+    monkeypatch.setattr(site_agent, "fetch_and_install_radius_adapter", lambda cfg, session: True)
 
     site_agent.run_once(cfg)
 
     assert seen_sessions[0].verify == cfg.hub_ca_bundle
+
+
+def test_run_once_returns_failure_when_policy_sync_fails(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    session = MagicMock()
+    session.post.return_value = MagicMock(
+        status_code=200,
+        raise_for_status=lambda: None,
+        json=lambda: {"newer_crl_available": False, "renewal_due": False},
+    )
+    monkeypatch.setattr(site_agent.requests, "Session", lambda: session)
+    monkeypatch.setattr(site_agent, "_freeradius_is_active", lambda service: True)
+    monkeypatch.setattr(site_agent, "fetch_and_install_policy", lambda cfg, session: False)
+    monkeypatch.setattr(site_agent, "fetch_and_install_radius_adapter", lambda cfg, session: True)
+    assert site_agent.run_once(cfg) == 1
 
 
 def test_dual_hub_failover_on_connection_error(tmp_path):
