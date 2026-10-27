@@ -1,6 +1,6 @@
 # Staging readiness review
 
-26 October 2026. Status: BLOCKED for live pilot. Earlier completion claims are historical reports, not verified production readiness.
+27 October 2026. Status: BLOCKED for a live corporate pilot (no real AP/switch, no real DNS/HTTPS) but the full software chain is now proven end to end against real hardware: hub deployed, real CA, real signed policy sync, real cert issuance, real EAP-TLS Access-Accept. Earlier completion claims predating this session were historical reports, not verified production readiness — this update is based on commands actually run against live systems today.
 
 ## Confirmed blockers
 
@@ -20,13 +20,19 @@ Source and regression tests now close findings 1, 2, 3, 4, 5, 8, and 9: certific
 
    Also found and fixed a real bug during this: `deploy/radius/README.md`'s config snippet had `mod_post_auth`/`func_post_auth` swapped, which fails module instantiation on FreeRADIUS 3.2.x. Corrected in the README.
 
+2. ~~`policy.json` on the CM4 is not yet a real, hub-signed file.~~ **CLOSED.** The hub (`app/main.py`) is now actually deployed (Docker, behind Traefik, on `topline-server`'s 250GB Array B volume) with a bootstrapped root+intermediate CA, and `site_agent.py` runs as a real systemd timer on the CM4, pulling and installing a genuinely hub-signed, Ed25519-verified `policy.json` on every poll — confirmed via a real site binding (`topline` subsidiary, `staff` role, VLAN 10/fallback 99) flowing end to end into the installed file.
+
+3. ~~Confirm... with a real issued cert, not a synthetic subject string.~~ **CLOSED — full real end-to-end device authentication proven.** Issued a real client cert through the hub's own `app/cert_service.py` (tracked in the DB, tied to the real `topline`/`staff` binding, proper department/role eligibility checks), ran `eapol_test` against the live FreeRADIUS, and got a genuine clean result: `MPPE keys OK: 1 mismatch: 0` / `SUCCESS`, no PMK mismatch warning. Two more real bugs found and fixed along the way:
+   - The README's post-auth snippet had an `update outer.reply { &Tunnel-Type := &reply:Tunnel-Type ... }` block that is only valid in a tunneled EAP context (PEAP/TTLS inner-tunnel) — for plain EAP-TLS it's an undefined reference. FreeRADIUS logged `ERROR: Mapping "&reply:Tunnel-Type" -> "&Tunnel-Type" invalid in this context` and silently fell through to Access-Reject even though the module itself returned `ok` with the correct VLAN. Removed; the module's own returned attribute tuple is sufficient. Corrected in `deploy/radius/README.md`.
+   - `CERTMANAGER_SITE_ID` must be the hub's `Site.id` (a UUID), not its `radius_cn`/hostname — a hostname value passes config validation and completes the TLS handshake, then silently rejects every request with a site-ID mismatch. Corrected in `deploy/radius/README.md`.
+
 ### Remaining live-integration blockers
 
-2. Verify the local service environment securely pins `CERTMANAGER_SITE_ID`, `CERTMANAGER_POLICY_FILE`, `SITE_ID`, `POLICY_PUBLIC_KEY_FILE`, and `HUB_CA_BUNDLE`, with ownership and permissions appropriate to the service identities. (`CERTMANAGER_SITE_ID`/`CERTMANAGER_POLICY_FILE` are pinned via a systemd drop-in on the CM4 above; the hub-side vars are not yet applicable since the hub app isn't deployed anywhere yet.)
-3. Confirm policy refresh, expiry withdrawal, acknowledgement recording, and non-zero timer failure status on the Linux staging host.
-4. The hardware inventory and real Ruijie Reyee RAP72/mixed-switch integration remain unverified. Validate module paths, outer/inner hook placement, VLAN trunks, DHCP, reauthentication, CRL behavior, and fail-closed cases on the installed versions.
-5. `policy.json` on the CM4 is not yet a real, hub-signed file — no production `policy.json` is present (test fixture removed in cleanup). Needs `site_agent.py` actually syncing from a deployed hub with Ed25519 signature verification exercised live, not just in unit tests.
-6. Server-side TLS cert for FreeRADIUS is still the distro's default self-signed snakeoil cert — unaddressed, separate from client-cert verification.
+4. Confirm policy refresh, expiry withdrawal, acknowledgement recording, and non-zero timer failure status over a longer observation window (today's test was one forced pull, not a sustained run).
+5. The hardware inventory and real Ruijie Reyee RAP72/mixed-switch integration remain unverified. Validate VLAN trunks, DHCP, reauthentication, CRL behavior, and fail-closed cases on real AP/switch hardware — today's test was `eapol_test` directly against FreeRADIUS, no AP in the loop.
+6. Server-side TLS cert for FreeRADIUS is still the distro's default self-signed snakeoil cert — unaddressed, separate from client-cert verification (which is now the real PKI CA chain, not snakeoil).
+7. The hub itself is on self-signed TLS, LAN-only (`https://192.168.13.73:8443`) — no DNS/port-forward set up yet for `certmanager.topline.ph`.
+8. Root CA private key: backed up (encrypted, handed off), but the live data volume is on Array B, which SERVER_STATE.md documents as RAID0 — zero hardware redundancy. The encrypted backup is the only protection against a drive failure.
 
 ## Next required checks
 

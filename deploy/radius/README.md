@@ -33,9 +33,11 @@ This file itself (`authorize_policy.py`) is also synchronized by `site_agent.py`
 The adapter requires trusted local configuration in the FreeRADIUS service environment:
 
 ```ini
-CERTMANAGER_SITE_ID=site-boracay-station1
+CERTMANAGER_SITE_ID=<the Site row's UUID, not its radius_cn/hostname>
 CERTMANAGER_POLICY_FILE=/etc/freeradius/3.0/policy.json
 ```
+
+**`CERTMANAGER_SITE_ID` must be the hub's `Site.id` (a UUID)**, matching exactly what `site_agent.py`'s `SITE_ID` pulls into `policy.json`'s `site_id` field (`app/site_policy.py`'s `compile_site_policy` always writes `site.id`, never `radius_cn`). A human-readable hostname/CN here will pass config validation and even complete the TLS handshake, but every request silently rejects with `Policy site_id '<uuid>' does not match local site '<hostname>'` — confirmed in production testing.
 
 Do not populate `Site-Id` or `Policy-File` from RADIUS request pairs. The adapter ignores those pairs and fails closed when either local value is absent. It authorizes only when exactly one `TLS-Client-Cert-Subject` pair is present; `User-Name` is never treated as certificate identity.
 
@@ -66,17 +68,14 @@ In `/etc/freeradius/3.0/sites-available/default` (or `inner-tunnel`):
 
 ```unlang
 post-auth {
-    # Call the Python policy adapter after successful EAP-TLS verification
+    # Call the Python policy adapter after successful EAP-TLS verification.
+    # The module writes directly to &reply: via its returned attribute
+    # tuple -- no further mapping needed for plain EAP-TLS.
     python3_policy
-
-    # Ensure tunnel attributes are copied to the outer Access-Accept reply
-    update outer.reply {
-        &Tunnel-Type := &reply:Tunnel-Type
-        &Tunnel-Medium-Type := &reply:Tunnel-Medium-Type
-        &Tunnel-Private-Group-Id := &reply:Tunnel-Private-Group-Id
-    }
 }
 ```
+
+**Do not** add an `update outer.reply { &Tunnel-Type := &reply:Tunnel-Type ... }` block here, despite what you may find in older drafts of this doc. `outer.reply` only exists in a tunneled EAP context (PEAP/TTLS inner-tunnel copying to the outer session) — for plain EAP-TLS (what this adapter targets) it's an undefined reference, and FreeRADIUS logs `ERROR: Mapping "&reply:Tunnel-Type" -> "&Tunnel-Type" invalid in this context` and silently falls through to Access-Reject, even though the module itself returned `ok` with the correct VLAN. Confirmed live: the module alone is sufficient; this fixed a real Access-Reject in production testing (`eapol_test` went from a client-side `SUPP_BE: SUCCESS`/server-side silent reject mismatch to a clean, verified `MPPE keys OK: 1 mismatch: 0` / `SUCCESS` once this block was removed).
 
 ### 3. AP and Switch Trunk Configuration (Ruijie Reyee RAP72 / planned mixed-vendor access switches)
 
