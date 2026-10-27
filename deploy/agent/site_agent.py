@@ -3,9 +3,19 @@
 
 Runs from a systemd timer, not as a daemon — every invocation is a single
 idempotent pass: check in, pull a newer CRL if one exists, renew the
-server cert if the hub says it's due. Standard library + `requests` only,
-so it runs on a CM4 with no build chain; key/CSR generation shells out to
-`openssl`, which is already present on any box running FreeRADIUS.
+server cert if the hub says it's due, sync the signed network policy, and
+sync the signed FreeRADIUS adapter source. Standard library + `requests`
+for everything except signature verification; key/CSR generation shells
+out to `openssl`, already present on any box running FreeRADIUS.
+
+Policy/adapter envelope verification imports `app.site_policy` (and
+transitively `app.db` for its SQLAlchemy 2.x model declarations), so this
+is NOT actually stdlib-only end to end despite the line above — the
+deploy venv needs `cryptography` and `sqlalchemy>=2.0` (see
+deploy/agent/README.md's Install section), and `app/db.py` +
+`app/site_policy.py` must be copied alongside this script with
+PYTHONPATH set to their parent directory. A plain system Python without
+that setup will fail with `ModuleNotFoundError: No module named 'app'`.
 
 Install safety (§3.4) is non-negotiable and applies to both the CRL and
 the server cert: stage -> `freeradius -XC` -> only on success install and

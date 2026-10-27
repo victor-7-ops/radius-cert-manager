@@ -33,25 +33,55 @@ somewhere other than the default `/opt/certmanager/deploy/radius/authorize_polic
 
 ## Install
 
+Despite the "standard library + requests" framing above, policy/adapter
+signature verification imports `app.site_policy` (and transitively
+`app.db`), so the deploy needs a venv with `cryptography` and
+`sqlalchemy>=2.0`, plus copies of those two app files. `NoNewPrivileges=yes`
+in the unit also means sudo-based privilege escalation inside the service
+doesn't work — file/service access has to come from actual group
+membership, not a sudoers rule.
+
 ```bash
 sudo useradd --system --home /opt/certmanager-agent --shell /usr/sbin/nologin certmgr-agent
-sudo mkdir -p /opt/certmanager-agent /var/lib/certmanager-agent
+sudo mkdir -p /opt/certmanager-agent/app /var/lib/certmanager-agent
 sudo cp site_agent.py /opt/certmanager-agent/
 sudo cp site-agent.env.example /opt/certmanager-agent/.env   # then edit it
+sudo touch /opt/certmanager-agent/app/__init__.py
+sudo cp /path/to/repo/app/db.py /path/to/repo/app/site_policy.py /opt/certmanager-agent/app/
 sudo chown -R certmgr-agent:certmgr-agent /opt/certmanager-agent /var/lib/certmanager-agent
 sudo chmod 600 /opt/certmanager-agent/.env
 
-# The hub's TLS cert is issued by the Arekushi intermediate, which isn't
-# in this box's system trust store — copy the hub's ca-chain.pem here and
-# point HUB_CA_BUNDLE at it in .env. The agent refuses to start without
-# it (fails closed: no fallback to system trust, no fallback to no
-# verification — see site_agent.py's _require_ca_bundle).
-sudo cp ca-chain.pem /opt/certmanager-agent/ca-chain.pem
+# Verification deps, pinned to match the hub's own requirements.txt.
+sudo python3 -m venv /opt/certmanager-agent/.venv
+sudo /opt/certmanager-agent/.venv/bin/pip install --no-cache-dir \
+    'sqlalchemy==2.0.52' 'cryptography==44.0.0' 'requests==2.32.3'
+
+# The hub's TLS cert — if self-signed (no real CA yet), export it from
+# wherever the hub terminates TLS and copy it here; if it's issued by a
+# real intermediate not in this box's system trust store, use the
+# intermediate/chain instead. The agent refuses to start without
+# HUB_CA_BUNDLE (fails closed: no fallback to system trust, no fallback
+# to no verification — see site_agent.py's _require_ca_bundle).
+sudo cp ca-chain.pem /opt/certmanager-agent/ca-chain.pem   # or hub's web.crt
 sudo chown certmgr-agent:certmgr-agent /opt/certmanager-agent/ca-chain.pem
 
-# certmgr-agent needs write access to the FreeRADIUS cert dir and
-# permission to run `freeradius -XC` / `systemctl reload freeradius` —
-# grant the minimum via sudoers or a group, don't run this as root.
+# POLICY_PUBLIC_KEY_FILE: export with scripts/export_policy_public_key.py
+# on the hub, copy the output here, point .env at it.
+
+# certmgr-agent needs real group membership, not sudo (NoNewPrivileges
+# blocks escalation inside the unit):
+#  - freerad group: read FreeRADIUS config, write policy.json/certs/adapter
+#  - ssl-cert group: freeradius -XC reads the snakeoil private key as part
+#    of its own config validation, even when the check is only validating
+#    an unrelated file -- this install-safety check runs as whatever user
+#    the agent runs as, not as the freerad service user.
+sudo usermod -aG freerad,ssl-cert certmgr-agent
+sudo chmod g+w /etc/freeradius/3.0 /etc/freeradius/3.0/certs
+sudo chmod g+w /opt/certmanager/deploy/radius/authorize_policy.py 2>/dev/null || true
+# If adapter sync will run (RADIUS_ADAPTER_PATH's parent dir), that whole
+# tree needs certmgr-agent as owner, not just group-write -- the install
+# path chmod()s what it writes, and chmod requires ownership:
+sudo chown -R certmgr-agent:freerad /opt/certmanager/deploy/radius
 
 sudo cp site-agent.service site-agent.timer /etc/systemd/system/
 sudo systemctl daemon-reload
