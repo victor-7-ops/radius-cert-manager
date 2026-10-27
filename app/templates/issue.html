@@ -127,4 +127,20 @@
     </button>
   </form>
 </div>
+<script>
+  // Browsers restore this page from bfcache on Back/Forward with the
+  // same hidden request_id baked in -- resubmitting then dedupes
+  // server-side (cert_service.py's timeout-and-retry guard) and silently
+  // returns the earlier cert with no bundle to download. A fresh id on
+  // restore means a Back-then-resubmit mints a real new certificate
+  // instead of hitting that dead end.
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) {
+      const field = document.querySelector('input[name="request_id"]');
+      if (field && window.crypto && window.crypto.randomUUID) {
+        field.value = window.crypto.randomUUID();
+      }
+    }
+  });
+</script>
 {% endblock %}

@@ -383,7 +383,13 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 status_code=400,
             )
         if result.bundle is None:
-            return RedirectResponse(f"/certs/{result.certificate.serial}", status_code=303)
+            # Deduped on request_id (HANDOFF-FLEET.md: prevents a
+            # timeout-and-retry from minting two certs) -- the private
+            # key only ever existed in the first issuance's response, so
+            # there is nothing left to deliver. Flag it instead of
+            # silently dropping the user on a cert page with no
+            # explanation for why there's no download link.
+            return RedirectResponse(f"/certs/{result.certificate.serial}?no_bundle=1", status_code=303)
         deps.store_pending_bundle(result.certificate.serial, result.bundle)
         deps.store_pending_password(result.certificate.serial, result.bundle.password)
         return RedirectResponse(f"/certs/{result.certificate.serial}/delivery", status_code=303)
@@ -546,7 +552,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         )
 
     @router.get("/certs/{serial}")
-    def cert_detail(request: Request, serial: str, admin: db.Admin = Depends(deps.require_admin)):
+    def cert_detail(request: Request, serial: str, no_bundle: str = "", admin: db.Admin = Depends(deps.require_admin)):
         session = deps.get_db_session()
         cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
         if cert is None:
@@ -579,6 +585,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             "cert_detail.html",
             {
                 "admin": admin,
+                "no_bundle_notice": bool(no_bundle),
                 "cert": {
                     "cn": cert.cn,
                     "serial": cert.serial,
