@@ -36,6 +36,15 @@ observed from the hub side only:
 
 No manual trigger. Just let the timer fire naturally across this window.
 
+**Known limitation hit in practice (28 Oct 2026):** `docker logs` only covers
+the *current* container instance — every `docker compose up -d --build`
+during active development that day silently truncated tick history. On a
+day with ongoing deploys, treat each redeploy as resetting the access-log
+observation window; `db.Site.last_seen_at` survives across redeploys (it's
+DB-persisted) but is a weak liveness signal only — any authenticated agent
+call updates it, not specifically a policy-refresh tick. Real gap-free
+observation needs a day with no redeploys in between.
+
 ## 2. Deliberate policy change mid-window (any tick after T+4h)
 
 From the hub admin UI, change one `SiteRoleBinding` VLAN id (reversible — note old value first). Then:
