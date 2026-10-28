@@ -7,9 +7,25 @@
   Subsidiaries
 </a>
 
-<div class="mb-6">
-  <h1 class="page-title font-mono">{{ sub.display_name }}</h1>
-  <p class="page-subtitle">Code: <span class="font-mono">{{ sub.code }}</span></p>
+<div class="flex flex-wrap items-start justify-between gap-4 mb-6">
+  <div>
+    <h1 class="page-title font-mono">{{ sub.display_name }}</h1>
+    <p class="page-subtitle">Code: <span class="font-mono">{{ sub.code }}</span> (fixed — not editable)</p>
+  </div>
+  <div class="flex items-end gap-3">
+    <form method="post" action="/subsidiaries/{{ sub.id }}/rename" class="flex items-end gap-2">
+      <div>
+        <label class="field-label">Rename</label>
+        <input name="display_name" type="text" value="{{ sub.display_name }}" required class="field-input !w-64">
+      </div>
+      <button type="submit" class="btn-secondary">Save</button>
+    </form>
+    {% if not departments and not roles %}
+    <form method="post" action="/subsidiaries/{{ sub.id }}/delete" onsubmit="return confirm('Delete {{ sub.display_name }}? This cannot be undone.');">
+      <button type="submit" class="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 hover:underline text-sm font-medium min-h-[44px] px-2">Delete subsidiary</button>
+    </form>
+    {% endif %}
+  </div>
 </div>
 
 <!-- Departments -->
@@ -30,16 +46,26 @@
   </form>
   <div class="table-shell">
     <table>
-      <thead><tr><th>Department</th><th>Code</th><th>Linked roles</th></tr></thead>
+      <thead><tr><th>Department</th><th>Code</th><th>Linked roles</th><th></th></tr></thead>
       <tbody>
         {% for d in departments %}
         <tr>
-          <td class="text-slate-900 dark:text-slate-100 font-medium">{{ d.display_name }}</td>
+          <td>
+            <form method="post" action="/subsidiaries/{{ sub.id }}/departments/{{ d.id }}/rename" class="flex items-center gap-1">
+              <input name="display_name" type="text" value="{{ d.display_name }}" class="field-input !py-1 !text-sm !w-40">
+              <button type="submit" class="text-xs text-slate-500 dark:text-slate-400 hover:underline">Save</button>
+            </form>
+          </td>
           <td class="text-slate-600 dark:text-slate-400 font-mono text-sm">{{ d.code }}</td>
           <td>
             {% for r in roles %}
               {% if (d.id, r.id) in linked_pairs %}
-              <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 mr-1">{{ r.display_name }}</span>
+              <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 mr-1 mb-1">
+                {{ r.display_name }}
+                <form method="post" action="/subsidiaries/{{ sub.id }}/departments/{{ d.id }}/unlink-role/{{ r.id }}" class="inline">
+                  <button type="submit" class="text-slate-400 hover:text-rose-500" title="Unlink">&times;</button>
+                </form>
+              </span>
               {% endif %}
             {% endfor %}
             <form method="post" action="/subsidiaries/{{ sub.id }}/departments/{{ d.id }}/link-role" class="inline-flex items-center gap-1 mt-1">
@@ -53,10 +79,16 @@
               <button type="submit" class="text-xs text-slate-600 dark:text-slate-400 hover:underline">Link</button>
             </form>
           </td>
+          <td class="text-right">
+            <form method="post" action="/subsidiaries/{{ sub.id }}/departments/{{ d.id }}/delete"
+                  onsubmit="return confirm('Delete department {{ d.display_name }}?');">
+              <button type="submit" class="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 hover:underline text-sm font-medium min-h-[44px] px-2">Delete</button>
+            </form>
+          </td>
         </tr>
         {% endfor %}
         {% if not departments %}
-        <tr><td colspan="3" class="text-center text-slate-400 dark:text-slate-500 py-6">No departments yet.</td></tr>
+        <tr><td colspan="4" class="text-center text-slate-400 dark:text-slate-500 py-6">No departments yet.</td></tr>
         {% endif %}
       </tbody>
     </table>
@@ -90,11 +122,17 @@
   </form>
   <div class="table-shell">
     <table>
-      <thead><tr><th>Role</th><th>Code</th><th>Status</th></tr></thead>
+      <thead><tr><th>Role</th><th>Code</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for r in roles %}
         <tr>
-          <td class="text-slate-900 dark:text-slate-100 font-medium">{{ r.display_name }}{% if r.is_privileged %} <span class="text-xs text-amber-600 dark:text-amber-400">(privileged)</span>{% endif %}</td>
+          <td>
+            <form method="post" action="/subsidiaries/{{ sub.id }}/roles/{{ r.id }}/rename" class="flex items-center gap-1">
+              <input name="display_name" type="text" value="{{ r.display_name }}" class="field-input !py-1 !text-sm !w-36">
+              {% if r.is_privileged %}<span class="text-xs text-amber-600 dark:text-amber-400 shrink-0">(privileged)</span>{% endif %}
+              <button type="submit" class="text-xs text-slate-500 dark:text-slate-400 hover:underline shrink-0">Save</button>
+            </form>
+          </td>
           <td class="text-slate-600 dark:text-slate-400 font-mono text-sm">{{ r.code }}</td>
           <td>
             {% if r.is_active %}
@@ -103,10 +141,16 @@
             <span class="badge badge-slate"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Off</span>
             {% endif %}
           </td>
+          <td class="text-right">
+            <form method="post" action="/subsidiaries/{{ sub.id }}/roles/{{ r.id }}/delete"
+                  onsubmit="return confirm('Delete role {{ r.display_name }}?');">
+              <button type="submit" class="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 hover:underline text-sm font-medium min-h-[44px] px-2">Delete</button>
+            </form>
+          </td>
         </tr>
         {% endfor %}
         {% if not roles %}
-        <tr><td colspan="3" class="text-center text-slate-400 dark:text-slate-500 py-6">No network roles yet.</td></tr>
+        <tr><td colspan="4" class="text-center text-slate-400 dark:text-slate-500 py-6">No network roles yet.</td></tr>
         {% endif %}
       </tbody>
     </table>

@@ -171,6 +171,73 @@ def create_subsidiary(
     return sub
 
 
+def update_subsidiary(
+    actor: db.Admin, subsidiary_id: str, display_name: str, session: Session
+) -> db.Subsidiary:
+    """Renames a subsidiary. `code` is immutable after creation -- nothing
+    in this app embeds it into a cert (the signed O= field is always the
+    UUID, never the code), but legacy aliasing (network_migrations.py's
+    LEGACY_SUBSIDIARY_ALIASES) keys off it, so changing it would silently
+    break that resolution path for no real benefit."""
+    if actor.role != db.AdminRole.super_admin:
+        raise ForbiddenError("Only platform superadmins can rename a subsidiary")
+
+    sub = session.get(db.Subsidiary, subsidiary_id)
+    if not sub:
+        raise ResourceNotFoundError("Subsidiary not found")
+
+    cleaned = display_name.strip()
+    if not cleaned:
+        raise PolicyValidationError("Display name cannot be blank")
+
+    old_name = sub.display_name
+    sub.display_name = cleaned
+    session.flush()
+    db.audit(
+        session, actor=actor.username, action="subsidiary.rename",
+        target=sub.code, detail=f"Renamed '{old_name}' to '{cleaned}'",
+    )
+    return sub
+
+
+def delete_subsidiary(actor: db.Admin, subsidiary_id: str, session: Session) -> None:
+    """Hard-deletes a subsidiary. Refuses if anything still references it
+    -- departments, network roles, certificates, devices, site-role
+    bindings, or site authorizations -- so this can never silently orphan
+    real data; the caller has to clear those first (delete_department /
+    delete_network_role, revoke the certs, etc.)."""
+    if actor.role != db.AdminRole.super_admin:
+        raise ForbiddenError("Only platform superadmins can delete a subsidiary")
+
+    sub = session.get(db.Subsidiary, subsidiary_id)
+    if not sub:
+        raise ResourceNotFoundError("Subsidiary not found")
+
+    blockers = []
+    if session.scalar(select(db.Department).where(db.Department.subsidiary_id == subsidiary_id)):
+        blockers.append("departments")
+    if session.scalar(select(db.NetworkRole).where(db.NetworkRole.subsidiary_id == subsidiary_id)):
+        blockers.append("network roles")
+    if session.scalar(select(db.Certificate).where(db.Certificate.subsidiary_id == subsidiary_id)):
+        blockers.append("certificates")
+    if session.scalar(select(db.Device).where(db.Device.subsidiary_id == subsidiary_id)):
+        blockers.append("devices")
+    if session.scalar(select(db.SiteRoleBinding).where(db.SiteRoleBinding.subsidiary_id == subsidiary_id)):
+        blockers.append("site VLAN bindings")
+    if session.scalar(select(db.SiteSubsidiary).where(db.SiteSubsidiary.subsidiary_id == subsidiary_id)):
+        blockers.append("site authorizations")
+    if blockers:
+        raise ConflictError(f"Cannot delete '{sub.display_name}': still has {', '.join(blockers)}")
+
+    code, name = sub.code, sub.display_name
+    session.delete(sub)
+    session.flush()
+    db.audit(
+        session, actor=actor.username, action="subsidiary.delete",
+        target=code, detail=f"Deleted empty subsidiary '{name}'",
+    )
+
+
 def create_department(
     actor: db.Admin, subsidiary_id: str, code: str, display_name: str, session: Session
 ) -> db.Department:
@@ -210,6 +277,58 @@ def create_department(
         subsidiary=sub.display_name,
     )
     return dept
+
+
+def update_department(
+    actor: db.Admin, department_id: str, display_name: str, session: Session
+) -> db.Department:
+    dept = session.get(db.Department, department_id)
+    if not dept:
+        raise ResourceNotFoundError("Department not found")
+    assert_can_manage_subsidiary(actor, dept.subsidiary_id, session)
+
+    cleaned = display_name.strip()
+    if not cleaned:
+        raise PolicyValidationError("Display name cannot be blank")
+
+    old_name = dept.display_name
+    dept.display_name = cleaned
+    session.flush()
+    db.audit(
+        session, actor=actor.username, action="department.rename",
+        target=dept.code, detail=f"Renamed '{old_name}' to '{cleaned}'",
+        subsidiary=dept.subsidiary.display_name if dept.subsidiary else None,
+    )
+    return dept
+
+
+def delete_department(actor: db.Admin, department_id: str, session: Session) -> None:
+    """Deletes a department. Refuses if any certificate or device is tied
+    to it; its DepartmentRole links are plain join rows and are deleted
+    along with it -- that's just "this department no longer offers that
+    role," not a loss of real data."""
+    dept = session.get(db.Department, department_id)
+    if not dept:
+        raise ResourceNotFoundError("Department not found")
+    assert_can_manage_subsidiary(actor, dept.subsidiary_id, session)
+
+    blockers = []
+    if session.scalar(select(db.Certificate).where(db.Certificate.department_id == department_id)):
+        blockers.append("certificates")
+    if session.scalar(select(db.Device).where(db.Device.department_id == department_id)):
+        blockers.append("devices")
+    if blockers:
+        raise ConflictError(f"Cannot delete '{dept.display_name}': still has {', '.join(blockers)}")
+
+    code, name, sub_name = dept.code, dept.display_name, dept.subsidiary.display_name if dept.subsidiary else None
+    for link in session.scalars(select(db.DepartmentRole).where(db.DepartmentRole.department_id == department_id)).all():
+        session.delete(link)
+    session.delete(dept)
+    session.flush()
+    db.audit(
+        session, actor=actor.username, action="department.delete",
+        target=code, detail=f"Deleted department '{name}'", subsidiary=sub_name,
+    )
 
 
 def create_network_role(
@@ -261,6 +380,62 @@ def create_network_role(
     return role
 
 
+def update_network_role(
+    actor: db.Admin, role_id: str, display_name: str, description: str | None, session: Session
+) -> db.NetworkRole:
+    role = session.get(db.NetworkRole, role_id)
+    if not role:
+        raise ResourceNotFoundError("Network role not found")
+    assert_can_manage_subsidiary(actor, role.subsidiary_id, session)
+
+    cleaned = display_name.strip()
+    if not cleaned:
+        raise PolicyValidationError("Display name cannot be blank")
+
+    old_name = role.display_name
+    role.display_name = cleaned
+    role.description = description.strip() if description else None
+    session.flush()
+    db.audit(
+        session, actor=actor.username, action="network_role.rename",
+        target=role.code, detail=f"Renamed '{old_name}' to '{cleaned}'",
+        subsidiary=role.subsidiary.display_name if role.subsidiary else None,
+    )
+    return role
+
+
+def delete_network_role(actor: db.Admin, role_id: str, session: Session) -> None:
+    """Deletes a network role. Refuses if any certificate, device, or
+    site VLAN binding still references it -- a role in active use at a
+    site is real production authorization logic, not something to
+    silently remove out from under it. Its DepartmentRole links are
+    deleted along with it, same reasoning as delete_department."""
+    role = session.get(db.NetworkRole, role_id)
+    if not role:
+        raise ResourceNotFoundError("Network role not found")
+    assert_can_manage_subsidiary(actor, role.subsidiary_id, session)
+
+    blockers = []
+    if session.scalar(select(db.Certificate).where(db.Certificate.network_role_id == role_id)):
+        blockers.append("certificates")
+    if session.scalar(select(db.Device).where(db.Device.network_role_id == role_id)):
+        blockers.append("devices")
+    if session.scalar(select(db.SiteRoleBinding).where(db.SiteRoleBinding.network_role_id == role_id)):
+        blockers.append("site VLAN bindings")
+    if blockers:
+        raise ConflictError(f"Cannot delete '{role.display_name}': still has {', '.join(blockers)}")
+
+    code, name, sub_name = role.code, role.display_name, role.subsidiary.display_name if role.subsidiary else None
+    for link in session.scalars(select(db.DepartmentRole).where(db.DepartmentRole.network_role_id == role_id)).all():
+        session.delete(link)
+    session.delete(role)
+    session.flush()
+    db.audit(
+        session, actor=actor.username, action="network_role.delete",
+        target=code, detail=f"Deleted network role '{name}'", subsidiary=sub_name,
+    )
+
+
 def link_department_role(
     actor: db.Admin, department_id: str, role_id: str, session: Session
 ) -> db.DepartmentRole:
@@ -298,6 +473,34 @@ def link_department_role(
         subsidiary=dept.subsidiary.display_name if dept.subsidiary else None,
     )
     return dep_role
+
+
+def unlink_department_role(
+    actor: db.Admin, department_id: str, role_id: str, session: Session
+) -> None:
+    dept = session.get(db.Department, department_id)
+    role = session.get(db.NetworkRole, role_id)
+    if not dept or not role:
+        raise ResourceNotFoundError("Department or network role not found")
+    assert_can_manage_subsidiary(actor, dept.subsidiary_id, session)
+
+    link = session.scalar(
+        select(db.DepartmentRole).where(
+            db.DepartmentRole.department_id == department_id,
+            db.DepartmentRole.network_role_id == role_id,
+        )
+    )
+    if not link:
+        return
+
+    session.delete(link)
+    session.flush()
+    db.audit(
+        session, actor=actor.username, action="department_role.unlink",
+        target=f"{dept.code}:{role.code}",
+        detail=f"Unlinked department {dept.display_name} from role {role.display_name}",
+        subsidiary=dept.subsidiary.display_name if dept.subsidiary else None,
+    )
 
 
 def grant_role(

@@ -27,13 +27,21 @@ from app.network_policy import (
     configure_site_role_binding,
     create_department,
     create_network_role,
+    create_subsidiary,
     deauthorize_site_subsidiary,
+    delete_department,
+    delete_network_role,
+    delete_subsidiary,
     grant_role,
     link_department_role,
     resolve_binding,
     set_network_role_tenant_state,
     set_site_binding_platform_state,
     set_site_binding_tenant_state,
+    unlink_department_role,
+    update_department,
+    update_network_role,
+    update_subsidiary,
     validate_assignment,
 )
 
@@ -317,3 +325,72 @@ def test_site_subsidiary_authorization(policy_db):
 
         with pytest.raises(ResourceNotFoundError):
             authorize_site_subsidiary(platform_super, "nonexistent-site", sub.id, session)
+
+
+def test_subsidiary_rename_and_delete(policy_db):
+    with Session(policy_db) as session:
+        platform_super = _make_admin(session, "p_super", db.AdminRole.super_admin)
+        sub_super = _make_admin(session, "s_super", db.AdminRole.subsidiary_super_admin, "topline")
+
+        new_sub = create_subsidiary(platform_super, "acme", "Acme Corp", session)
+
+        with pytest.raises(ForbiddenError):
+            update_subsidiary(sub_super, new_sub.id, "Acme Corp Renamed", session)
+
+        renamed = update_subsidiary(platform_super, new_sub.id, "Acme Corp Renamed", session)
+        assert renamed.display_name == "Acme Corp Renamed"
+
+        with pytest.raises(PolicyValidationError, match="blank"):
+            update_subsidiary(platform_super, new_sub.id, "   ", session)
+
+        dept = create_department(platform_super, new_sub.id, "ops", "Operations", session)
+
+        # Cannot delete a subsidiary that still has departments
+        with pytest.raises(ConflictError, match="departments"):
+            delete_subsidiary(platform_super, new_sub.id, session)
+
+        delete_department(platform_super, dept.id, session)
+        delete_subsidiary(platform_super, new_sub.id, session)
+        assert session.get(db.Subsidiary, new_sub.id) is None
+
+
+def test_department_rename_delete_and_role_unlink(policy_db):
+    with Session(policy_db) as session:
+        platform_super = _make_admin(session, "p_super", db.AdminRole.super_admin)
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+
+        dept = create_department(platform_super, sub.id, "hr", "Human Resources", session)
+        role = create_network_role(platform_super, sub.id, "hrstaff", "HR Staff", None, False, session)
+        link_department_role(platform_super, dept.id, role.id, session)
+
+        renamed = update_department(platform_super, dept.id, "HR Department", session)
+        assert renamed.display_name == "HR Department"
+
+        unlink_department_role(platform_super, dept.id, role.id, session)
+        assert session.scalar(
+            select(db.DepartmentRole).where(
+                db.DepartmentRole.department_id == dept.id, db.DepartmentRole.network_role_id == role.id
+            )
+        ) is None
+
+        delete_department(platform_super, dept.id, session)
+        assert session.get(db.Department, dept.id) is None
+
+
+def test_network_role_rename_and_delete_blocked_by_binding(policy_db):
+    with Session(policy_db) as session:
+        platform_super = _make_admin(session, "p_super", db.AdminRole.super_admin)
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+        site = db.Site(name="Branch3", radius_cn="radius-branch3.internal", auth_token_hash="hash")
+        session.add(site)
+        session.flush()
+
+        role = create_network_role(platform_super, sub.id, "guard", "Security Guard", None, False, session)
+        renamed = update_network_role(platform_super, role.id, "Security Guards", "updated desc", session)
+        assert renamed.display_name == "Security Guards"
+        assert renamed.description == "updated desc"
+
+        configure_site_role_binding(platform_super, site.id, sub.id, role.id, vlan_id=30, fallback_vlan_id=99, session=session)
+
+        with pytest.raises(ConflictError, match="site VLAN bindings"):
+            delete_network_role(platform_super, role.id, session)

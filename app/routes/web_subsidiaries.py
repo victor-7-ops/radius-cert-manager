@@ -219,4 +219,103 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             _handle_policy_error(e)
         return RedirectResponse(h.flash(f"/subsidiaries/{subsidiary_id}", "Site VLAN binding configured.", "success"), status_code=303)
 
+    @router.post("/subsidiaries/{subsidiary_id}/rename")
+    def subsidiary_rename(
+        request: Request, subsidiary_id: str, display_name: str = Form(...),
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
+        session = deps.get_db_session()
+        try:
+            np.update_subsidiary(admin, subsidiary_id, display_name, session)
+            session.commit()
+        except np.NetworkPolicyError as e:
+            session.rollback()
+            _handle_policy_error(e)
+        return RedirectResponse(h.flash(f"/subsidiaries/{subsidiary_id}", "Renamed.", "success"), status_code=303)
+
+    @router.post("/subsidiaries/{subsidiary_id}/delete")
+    def subsidiary_delete(
+        request: Request, subsidiary_id: str,
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
+        session = deps.get_db_session()
+        try:
+            np.delete_subsidiary(admin, subsidiary_id, session)
+            session.commit()
+        except np.NetworkPolicyError as e:
+            session.rollback()
+            _handle_policy_error(e)
+        return RedirectResponse(h.flash("/subsidiaries", "Subsidiary deleted.", "success"), status_code=303)
+
+    @router.post("/subsidiaries/{subsidiary_id}/departments/{department_id}/rename")
+    def department_rename(
+        request: Request, subsidiary_id: str, department_id: str, display_name: str = Form(...),
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
+        session = deps.get_db_session()
+        try:
+            np.update_department(admin, department_id, display_name, session)
+            session.commit()
+        except np.NetworkPolicyError as e:
+            session.rollback()
+            _handle_policy_error(e)
+        return RedirectResponse(h.flash(f"/subsidiaries/{subsidiary_id}", "Department renamed.", "success"), status_code=303)
+
+    @router.post("/subsidiaries/{subsidiary_id}/departments/{department_id}/delete")
+    def department_delete(
+        request: Request, subsidiary_id: str, department_id: str,
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
+        session = deps.get_db_session()
+        try:
+            np.delete_department(admin, department_id, session)
+            session.commit()
+        except np.NetworkPolicyError as e:
+            session.rollback()
+            _handle_policy_error(e)
+        return RedirectResponse(h.flash(f"/subsidiaries/{subsidiary_id}", "Department deleted.", "success"), status_code=303)
+
+    @router.post("/subsidiaries/{subsidiary_id}/departments/{department_id}/unlink-role/{role_id}")
+    def department_unlink_role(
+        request: Request, subsidiary_id: str, department_id: str, role_id: str,
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
+        session = deps.get_db_session()
+        try:
+            np.unlink_department_role(admin, department_id, role_id, session)
+            session.commit()
+        except np.NetworkPolicyError as e:
+            session.rollback()
+            _handle_policy_error(e)
+        return RedirectResponse(h.flash(f"/subsidiaries/{subsidiary_id}", "Role unlinked.", "success"), status_code=303)
+
+    @router.post("/subsidiaries/{subsidiary_id}/roles/{role_id}/rename")
+    def role_rename(
+        request: Request, subsidiary_id: str, role_id: str,
+        display_name: str = Form(...), description: str = Form(""),
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
+        session = deps.get_db_session()
+        try:
+            np.update_network_role(admin, role_id, display_name, description.strip() or None, session)
+            session.commit()
+        except np.NetworkPolicyError as e:
+            session.rollback()
+            _handle_policy_error(e)
+        return RedirectResponse(h.flash(f"/subsidiaries/{subsidiary_id}", "Network role renamed.", "success"), status_code=303)
+
+    @router.post("/subsidiaries/{subsidiary_id}/roles/{role_id}/delete")
+    def role_delete(
+        request: Request, subsidiary_id: str, role_id: str,
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
+        session = deps.get_db_session()
+        try:
+            np.delete_network_role(admin, role_id, session)
+            session.commit()
+        except np.NetworkPolicyError as e:
+            session.rollback()
+            _handle_policy_error(e)
+        return RedirectResponse(h.flash(f"/subsidiaries/{subsidiary_id}", "Network role deleted.", "success"), status_code=303)
+
     return router

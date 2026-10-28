@@ -17,10 +17,16 @@ logger = logging.getLogger(__name__)
 
 # Canonical baseline subsidiaries derived from verified specifications (HANDBOOK.md §2).
 # 'Others' is intentionally excluded as an authorized tenant (HANDBOOK.md §2).
+#
+# This list is a one-time seed, not a hardcoded ceiling: the real admin UI
+# (/subsidiaries, app/routes/web_subsidiaries.py) can create, rename, and
+# delete subsidiaries freely now — delete the ones you don't need rather
+# than removing them from here, which would also strip dozens of other
+# tests' fixture data that assumes these rows exist.
 INITIAL_SUBSIDIARIES: list[dict[str, str]] = [
     {"code": "lezzgo_boracay", "display_name": "Lezzgo Boracay"},
     {"code": "lezzgo_cebu", "display_name": "Lezzgo Cebu"},
-    {"code": "topline", "display_name": "Topline Business Development Corporation"},
+    {"code": "topline", "display_name": "Topline (Main Office)"},
     {"code": "light_fuels", "display_name": "Light Fuels Corporation"},
     {"code": "commercial_fuel_trade", "display_name": "Commercial Fuel Trade"},
     {"code": "bay_mall", "display_name": "Bay Mall"},
