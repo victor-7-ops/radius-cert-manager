@@ -71,7 +71,7 @@ def generate_windows_wifi_xml(
                                         </CertificateStore>
                                     </CredentialsSource>
                                     <ServerValidation>
-                                        <DisableUserPromptForServerValidation>false</DisableUserPromptForServerValidation>
+                                        <DisableUserPromptForServerValidation>true</DisableUserPromptForServerValidation>
                                         <ServerNames>{server_names}</ServerNames>
                                         <TrustedRootCA>{ca_thumbprint}</TrustedRootCA>
                                     </ServerValidation>
