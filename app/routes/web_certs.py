@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select
 
-from app import auth, bulk_service, cert_service, crl_health, db, rate_limit
+from app import auth, bulk_service, cert_service, crl_health, db, network_policy, rate_limit
 from app.routes import web_helpers as h
 from app.validation import CN_RE, normalize_employee_key, normalize_mac
 
@@ -193,7 +193,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         device = session.get(db.Device, device_id) if device_id else None
         form_data = {"subsidiary": admin.subsidiary_scope} if admin.subsidiary_scope else {}
         if device:
-            h.require_subsidiary_scope(admin, device.subsidiary_id)
+            network_policy.assert_can_manage_subsidiary(admin, device.subsidiary_id, session)
             form_data.update({
                 "cn": device.asset_tag or device.display_name.lower().replace(" ", "-"),
                 "employee_name": device.employee.display_name if device.employee else "",
@@ -237,7 +237,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         session = deps.get_db_session()
         device = session.get(db.Device, device_id) if device_id else None
         if device:
-            h.require_subsidiary_scope(admin, device.subsidiary_id)
+            network_policy.assert_can_manage_subsidiary(admin, device.subsidiary_id, session)
 
         if admin.subsidiary_scope:
             # Scoped admin: the subsidiary isn't a free-text choice, it's
