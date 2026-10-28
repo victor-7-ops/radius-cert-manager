@@ -30,8 +30,12 @@ case "${SSH_ORIGINAL_COMMAND:-}" in
     scp*)
         # Step 1: stage only. `scp -t` is scp's own wire protocol for
         # "receive a file" — invoking it here is how we accept the bytes
-        # without granting a shell.
-        scp -t "$CRL_STAGING" < /dev/stdin > /dev/null
+        # without granting a shell. Its stdout carries the protocol's ACK
+        # bytes back to the client over this same SSH channel -- stdin and
+        # stdout are already wired to that channel by sshd, so leave both
+        # alone; redirecting stdout to /dev/null silently eats the ACKs
+        # and the client hangs forever waiting for one that never comes.
+        scp -t "$CRL_STAGING"
         ;;
 
     "")
