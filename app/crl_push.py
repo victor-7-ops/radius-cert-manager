@@ -43,6 +43,9 @@ def push_crl(
 
     scp_cmd = [
         "scp",
+        "-O",  # force legacy SCP protocol -- OpenSSH 9+ defaults to SFTP,
+               # but the forced-command script on the other end speaks
+               # scp's own wire protocol (`scp -t`), not SFTP.
         "-i",
         str(ssh_key),
         *host_key_opts,
