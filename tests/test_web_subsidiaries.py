@@ -114,6 +114,64 @@ def test_subsidiary_detail_department_role_binding_flow(app_settings, throwaway_
     assert site_sub.is_active is False
 
 
+def test_subsidiary_rename_and_delete_flow(app_settings, throwaway_pki, monkeypatch):
+    client = _client(app_settings, throwaway_pki, monkeypatch)
+
+    client.post("/subsidiaries", data={"code": "acme", "display_name": "Acme Corp"})
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "acme"))
+    assert sub is not None
+
+    resp = client.post(f"/subsidiaries/{sub.id}/rename", data={"display_name": "Acme Renamed"}, follow_redirects=False)
+    assert resp.status_code == 303
+    session.refresh(sub)
+    assert sub.display_name == "Acme Renamed"
+
+    resp = client.get(f"/subsidiaries/{sub.id}")
+    assert "Acme Renamed" in resp.text
+
+    resp = client.post(f"/subsidiaries/{sub.id}/delete", follow_redirects=False)
+    assert resp.status_code == 303
+    fresh = db.make_session_factory(engine)()
+    assert fresh.get(db.Subsidiary, sub.id) is None
+
+
+def test_department_and_role_delete_blocked_then_allowed(app_settings, throwaway_pki, monkeypatch):
+    client = _client(app_settings, throwaway_pki, monkeypatch)
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+
+    client.post(f"/subsidiaries/{sub.id}/departments", data={"code": "legal", "display_name": "Legal"})
+    dept = session.scalar(select(db.Department).where(db.Department.subsidiary_id == sub.id, db.Department.code == "legal"))
+    client.post(f"/subsidiaries/{sub.id}/roles", data={"code": "legalnet", "display_name": "Legal Network"})
+    role = session.scalar(select(db.NetworkRole).where(db.NetworkRole.subsidiary_id == sub.id, db.NetworkRole.code == "legalnet"))
+
+    client.post(f"/subsidiaries/{sub.id}/departments/{dept.id}/link-role", data={"role_id": role.id})
+
+    resp = client.post(f"/subsidiaries/{sub.id}/departments/{dept.id}/unlink-role/{role.id}", follow_redirects=False)
+    assert resp.status_code == 303
+    assert session.scalar(
+        select(db.DepartmentRole).where(db.DepartmentRole.department_id == dept.id, db.DepartmentRole.network_role_id == role.id)
+    ) is None
+
+    resp = client.post(f"/subsidiaries/{sub.id}/roles/{role.id}/rename", data={"display_name": "Legal Net 2"}, follow_redirects=False)
+    assert resp.status_code == 303
+    session.refresh(role)
+    assert role.display_name == "Legal Net 2"
+
+    resp = client.post(f"/subsidiaries/{sub.id}/departments/{dept.id}/delete", follow_redirects=False)
+    assert resp.status_code == 303
+    fresh = db.make_session_factory(engine)()
+    assert fresh.get(db.Department, dept.id) is None
+
+    resp = client.post(f"/subsidiaries/{sub.id}/roles/{role.id}/delete", follow_redirects=False)
+    assert resp.status_code == 303
+    fresh2 = db.make_session_factory(engine)()
+    assert fresh2.get(db.NetworkRole, role.id) is None
+
+
 def test_regular_admin_cannot_access_subsidiaries_ui(app_settings, throwaway_pki, monkeypatch):
     client = _client(app_settings, throwaway_pki, monkeypatch, role=db.AdminRole.admin, username="regular-admin")
     assert client.get("/subsidiaries").status_code == 403
