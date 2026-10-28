@@ -119,5 +119,11 @@ def run_network_migrations(engine) -> None:
     # Ensure additive certificate columns exist on existing databases
     db._migrate_columns(engine, "certificates", _NETWORK_CERTIFICATE_MIGRATIONS)
     
-    # Seed baseline subsidiaries idempotently
-    seed_baseline_subsidiaries(engine)
+    # One-time seed, not idempotent-by-code: seed_baseline_subsidiaries on
+    # its own re-inserts any code missing from the table, which includes
+    # one an admin deliberately deleted through the real UI
+    # (app/routes/web_subsidiaries.py) -- every app restart (every
+    # deploy) was silently resurrecting it. db.run_once gates this to the
+    # very first boot ever, recorded in the migration_flags table, so a
+    # real delete stays deleted.
+    db.run_once(engine, "baseline_subsidiaries_seed", lambda: seed_baseline_subsidiaries(engine))

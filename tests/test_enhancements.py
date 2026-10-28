@@ -163,7 +163,10 @@ def test_csv_export_respects_status_filter(app_settings, throwaway_pki, monkeypa
     assert export_resp.text.startswith("cn,serial,status")
 
 
-def test_bulk_template_csv_download(app_settings, throwaway_pki, monkeypatch):
+def test_bulk_network_template_csv_downloads(app_settings, throwaway_pki, monkeypatch):
+    # app/routes/bulk.py's own template route (free-text, no subsidiary_id/
+    # network_role_id) was removed -- real bulk onboarding is
+    # /bulk/employees + /bulk/devices now (app/routes/bulk_network.py).
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
     _write_throwaway_pki(app_settings, throwaway_pki)
     admin = _seed_admin(app_settings, "template-admin", db.AdminRole.admin)
@@ -172,11 +175,15 @@ def test_bulk_template_csv_download(app_settings, throwaway_pki, monkeypatch):
     client = TestClient(app)
     _login(client, app_settings, admin)
 
-    resp = client.get("/certs/bulk/template.csv")
+    resp = client.get("/bulk/employees/template.csv")
     assert resp.status_code == 200
     assert "text/csv" in resp.headers["content-type"]
-    assert resp.text.startswith("cn,employee_name,device_type,device_mac,device_serial,subsidiary")
-    assert db.SUBSIDIARIES[0] in resp.text
+    assert resp.text.startswith("subsidiary_code,department_code,display_name,employee_number")
+
+    resp = client.get("/bulk/devices/template.csv")
+    assert resp.status_code == 200
+    assert "text/csv" in resp.headers["content-type"]
+    assert resp.text.startswith("subsidiary_code,employee_number,role_code")
 
 
 def test_auth_ping_returns_204_when_authenticated(app_settings, throwaway_pki, monkeypatch):

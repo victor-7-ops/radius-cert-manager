@@ -5,24 +5,33 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from app import auth, bulk_service, crl_push, db, pki
+from app import auth, bulk_network_service, crl_push, db, pki
 from app.main import create_app
 from tests.conftest import login_as
 
 
-def test_bulk_classify_rejects_unknown_subsidiary(app_settings):
+def test_bulk_employees_classify_rejects_unknown_subsidiary_code(app_settings):
+    # app/bulk_service.py's own classify() (free-text subsidiary names)
+    # was removed with the old bulk-issue path. Real bulk onboarding
+    # resolves subsidiary_code against the actual Subsidiary table
+    # (app/bulk_network_service.py).
     engine = db.make_engine(str(app_settings.db_path))
     db.init_db(engine)
     session = db.make_session_factory(engine)()
 
     rows = [
-        bulk_service.BatchInputRow(identifier="device-1.example", subsidiary="Not A Real Company"),
-        bulk_service.BatchInputRow(identifier="device-2.example", subsidiary=db.SUBSIDIARIES[0]),
+        bulk_network_service.EmployeeInputRow(
+            subsidiary_code="not_a_real_company", department_code="ops", display_name="Someone",
+        ),
+        bulk_network_service.EmployeeInputRow(
+            subsidiary_code="topline", department_code="nosuchdept", display_name="Someone Else",
+        ),
     ]
-    classified = bulk_service.classify(session, rows)
+    classified = bulk_network_service.classify_employees(session, rows)
     assert classified[0].classification == "malformed"
-    assert classified[0].reason == "unknown subsidiary"
-    assert classified[1].classification == "valid"
+    assert "unknown subsidiary_code" in classified[0].reason
+    assert classified[1].classification == "malformed"
+    assert "unknown department_code" in classified[1].reason
 
 
 def _write_throwaway_pki(app_settings, throwaway_pki):

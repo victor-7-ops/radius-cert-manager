@@ -1,193 +1,28 @@
-"""Bulk issue routes — handoff §6.5 / §6b.
+"""Bulk reissue result viewing — handoff §6.5 / §6b.
 
-Preview (classify, no signing) -> confirm (issue_batch, synchronous —
-batches are capped at 100 and signing is fast, so there is no real async
-job here; the batch is "done" by the time /api/batches/{id} is first
-polled) -> one-time ZIP download, 410 on replay.
+The actual "bulk issue new identities" flow (CSV paste/upload, preview,
+confirm) was removed: it only ever produced certs with no
+subsidiary_id/network_role_id, so they could never match a VLAN
+binding at RADIUS auth time. Real bulk onboarding now lives at
+/bulk/employees + /bulk/devices (app/routes/bulk_network.py).
+
+What's left here is still live: "Reissue selected" on the Certificates
+list (app/routes/web_certs.py's cert_bulk_action, action=renew) calls
+bulk_service.renew_batch for a batch of EXISTING certs and redirects
+here to show the result and offer the ZIP download -- same result
+page/API whichever path produced the batch.
 """
 
 from __future__ import annotations
 
-import uuid
-
-from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import RedirectResponse, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.templating import Jinja2Templates
 
-from app import bulk_service, crl_health, db
+from app import crl_health, db
 
 
 def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     router = APIRouter(tags=["bulk"])
-
-    def _require_unscoped(admin: db.Admin) -> None:
-        # Bulk issue takes a subsidiary per row (CSV column or pasted
-        # list), which a subsidiary-scoped admin could use to issue
-        # outside their own company — simplest safe rule is to keep bulk
-        # issue as an unscoped-admin tool entirely.
-        if admin.subsidiary_scope:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "bulk issue isn't available to a subsidiary-scoped admin")
-
-    @router.get("/certs/bulk")
-    def bulk_form(request: Request, admin: db.Admin = Depends(deps.require_admin)):
-        _require_unscoped(admin)
-        session = deps.get_db_session()
-        return templates.TemplateResponse(
-            request, "bulk.html", {"admin": admin, **crl_health.banner_context(session)}
-        )
-
-    @router.get("/certs/bulk/template.csv")
-    def bulk_template(admin: db.Admin = Depends(deps.require_admin)):
-        # Registered before /certs/bulk/{batch_id} so "template.csv"
-        # never gets swallowed as a batch_id path param.
-        sample = (
-            "cn,employee_name,device_type,device_mac,device_serial,subsidiary,device_model\r\n"
-            f"alex-laptop,Jordan Ellis,{db.DEVICE_TYPES[0]},aa:bb:cc:dd:ee:ff,C02XG2JMQ6L9,{db.SUBSIDIARIES[0]},HP EliteBook 840\r\n"
-            "jordan-phone,,,,,,\r\n"
-        )
-        return Response(
-            content=sample,
-            media_type="text/csv",
-            headers={"Content-Disposition": 'attachment; filename="bulk-issue-template.csv"'},
-        )
-
-    @router.post("/certs/bulk/preview")
-    async def bulk_preview(
-        request: Request,
-        identifiers_text: str = Form(""),
-        csv_file: UploadFile | None = None,
-        admin: db.Admin = Depends(deps.require_write),
-    ):
-        _require_unscoped(admin)
-        session = deps.get_db_session()
-        input_rows = bulk_service.parse_identifiers(identifiers_text)
-        if csv_file is not None and csv_file.filename:
-            input_rows = bulk_service.parse_csv(await csv_file.read())
-
-        try:
-            rows = bulk_service.classify(session, input_rows)
-        except bulk_service.BatchTooLargeError as e:
-            return templates.TemplateResponse(
-                request,
-                "bulk.html",
-                {"admin": admin, "error": str(e), **crl_health.banner_context(session)},
-                status_code=400,
-            )
-
-        batch_token = str(uuid.uuid4())
-        # The FULL row list is stored (not just the valid ones) — a
-        # malformed/duplicate row can still be fixed in place from the
-        # preview screen (see bulk_fix_row below) without starting the
-        # whole paste/upload over. /confirm re-classifies and filters to
-        # valid at that point, so this is the single source of truth
-        # throughout the review.
-        deps.store_pending_preview(batch_token, input_rows)
-
-        return templates.TemplateResponse(
-            request,
-            "bulk_preview.html",
-            {
-                "admin": admin,
-                "rows": rows,
-                "batch_token": batch_token,
-                "valid_count": sum(1 for r in rows if r.classification == "valid"),
-                "total_count": len(rows),
-                **crl_health.banner_context(session),
-            },
-        )
-
-    @router.post("/certs/bulk/{batch_token}/fix-row")
-    def bulk_fix_row(
-        request: Request,
-        batch_token: str,
-        row_index: int = Form(...),
-        identifier: str = Form(...),
-        employee_name: str = Form(""),
-        device_type: str = Form(""),
-        device_model: str = Form(""),
-        device_mac: str = Form(""),
-        device_serial: str = Form(""),
-        subsidiary: str = Form(""),
-        admin: db.Admin = Depends(deps.require_write),
-    ):
-        _require_unscoped(admin)
-        input_rows = deps.peek_pending_preview(batch_token)
-        if input_rows is None:
-            raise HTTPException(status.HTTP_410_GONE, "preview expired or already confirmed")
-        if not (0 <= row_index < len(input_rows)):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid row")
-
-        input_rows[row_index] = bulk_service.BatchInputRow(
-            identifier=identifier.strip(),
-            employee_name=employee_name.strip() or None,
-            device_type=device_type.strip() or None,
-            device_model=device_model.strip() or None,
-            device_mac=device_mac.strip() or None,
-            device_serial=device_serial.strip() or None,
-            subsidiary=subsidiary.strip() or None,
-        )
-
-        session = deps.get_db_session()
-        rows = bulk_service.classify(session, input_rows)
-        return templates.TemplateResponse(
-            request,
-            "bulk_preview_row_response.html",
-            {
-                "row": rows[row_index],
-                "row_index": row_index,
-                "batch_token": batch_token,
-                "valid_count": sum(1 for r in rows if r.classification == "valid"),
-                "total_count": len(rows),
-            },
-        )
-
-    @router.post("/certs/bulk/confirm")
-    def bulk_confirm(
-        request: Request,
-        batch_token: str = Form(...),
-        export_password: str = Form(...),
-        admin: db.Admin = Depends(deps.require_write),
-    ):
-        _require_unscoped(admin)
-        all_rows = deps.take_pending_preview(batch_token)
-        if all_rows is None:
-            raise HTTPException(status.HTTP_410_GONE, "preview expired or already confirmed")
-
-        session = deps.get_db_session()
-        # Re-classify at confirm time rather than trusting whatever was
-        # valid at preview time — a row fixed via bulk_fix_row only ever
-        # updated the stored input, not a separately-cached valid list,
-        # so this is the one place that filter actually happens.
-        classified = bulk_service.classify(session, all_rows)
-        valid_rows = [
-            bulk_service.BatchInputRow(
-                identifier=r.identifier,
-                employee_name=r.employee_name,
-                device_type=r.device_type,
-                device_model=r.device_model,
-                device_mac=r.device_mac,
-                device_serial=r.device_serial,
-                subsidiary=r.subsidiary,
-            )
-            for r in classified
-            if r.classification == "valid"
-        ]
-
-        batch_id = str(uuid.uuid4())
-        result, zip_bytes = bulk_service.issue_batch(
-            session,
-            deps.pki_path,
-            deps.inter_cert,
-            deps.inter_key,
-            valid_rows,
-            batch_id=batch_id,
-            export_password=export_password,
-            issued_by=admin.username,
-            days=deps.client_cert_days,
-        )
-        deps.store_pending_batch(batch_id, result, zip_bytes)
-        deps.regenerate_and_push_crl()
-        return RedirectResponse(f"/certs/bulk/{batch_id}", status_code=303)
 
     @router.get("/certs/bulk/{batch_id}")
     def bulk_result(request: Request, batch_id: str, admin: db.Admin = Depends(deps.require_admin)):
