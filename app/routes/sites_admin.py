@@ -44,7 +44,7 @@ def get_router(deps) -> APIRouter:
             # reason (no slashes, no traversal, no surprises on disk).
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid radius_cn format")
         subsidiary = payload.get("subsidiary")
-        if subsidiary is not None and subsidiary not in db.SUBSIDIARIES:
+        if subsidiary is not None and subsidiary not in db.active_subsidiary_names(session):
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid subsidiary")
 
         try:

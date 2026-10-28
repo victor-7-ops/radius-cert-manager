@@ -124,7 +124,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "status_filter": status,
                 "employee_filter": employee,
                 "subsidiary_filter": admin.subsidiary_scope or subsidiary,
-                "subsidiaries": [admin.subsidiary_scope] if admin.subsidiary_scope else db.SUBSIDIARIES,
+                "subsidiaries": [admin.subsidiary_scope] if admin.subsidiary_scope else db.active_subsidiary_names(session),
                 **_crl_banner_context(session),
             },
         )
@@ -211,7 +211,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "admin": admin,
                 "request_id": str(uuid.uuid4()),
                 "device_types": db.DEVICE_TYPES,
-                "subsidiaries": [admin.subsidiary_scope] if admin.subsidiary_scope else db.SUBSIDIARIES,
+                "subsidiaries": [admin.subsidiary_scope] if admin.subsidiary_scope else db.active_subsidiary_names(session),
                 "form": form_data if form_data else None,
                 "device": device,
                 **_crl_banner_context(session),
@@ -248,7 +248,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             "admin": admin,
             "request_id": request_id,
             "device_types": db.DEVICE_TYPES,
-            "subsidiaries": [admin.subsidiary_scope] if admin.subsidiary_scope else db.SUBSIDIARIES,
+            "subsidiaries": [admin.subsidiary_scope] if admin.subsidiary_scope else db.active_subsidiary_names(session),
             "device": device,
             "form": {
                 "cn": cn,
@@ -279,7 +279,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 )
 
         stripped_subsidiary = subsidiary.strip() or None
-        if stripped_subsidiary is not None and stripped_subsidiary not in db.SUBSIDIARIES:
+        if stripped_subsidiary is not None and stripped_subsidiary not in db.active_subsidiary_names(session):
             return templates.TemplateResponse(
                 request, "issue.html", {**form_context, "error": "Invalid subsidiary."}, status_code=400,
             )

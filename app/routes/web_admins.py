@@ -46,7 +46,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/admins/new-form")
     def admin_new_form(request: Request, admin: db.Admin = Depends(deps.require_super_admin)):
-        return templates.TemplateResponse(request, "admin_new_form.html", {"subsidiaries": db.SUBSIDIARIES})
+        session = deps.get_db_session()
+        return templates.TemplateResponse(request, "admin_new_form.html", {"subsidiaries": db.active_subsidiary_names(session)})
 
     @router.post("/admins")
     def admin_create(
@@ -56,21 +57,20 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         subsidiary_scope: str = Form(""),
         admin: db.Admin = Depends(deps.require_super_admin),
     ):
+        session = deps.get_db_session()
         subsidiary_scope = subsidiary_scope.strip() or None
-        if subsidiary_scope is not None and subsidiary_scope not in db.SUBSIDIARIES:
-            # The form only ever offers db.SUBSIDIARIES as a dropdown — a
-            # typo'd or hand-crafted value here would silently scope this
-            # admin to a company name that (in the normal case) no cert
-            # is ever tagged with, leaving their cert list permanently
-            # empty with no obvious reason why.
+        if subsidiary_scope is not None and subsidiary_scope not in db.active_subsidiary_names(session):
+            # The form only ever offers db.active_subsidiary_names(session)
+            # as a dropdown — a typo'd or hand-crafted value here would
+            # silently scope this admin to a company name that (in the
+            # normal case) no cert is ever tagged with, leaving their
+            # cert list permanently empty with no obvious reason why.
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid subsidiary")
 
         try:
             parsed_role = db.AdminRole(role)
         except ValueError:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid role")
-
-        session = deps.get_db_session()
         temp_password = secrets.token_urlsafe(12)
         new_admin = db.Admin(
             username=username,
