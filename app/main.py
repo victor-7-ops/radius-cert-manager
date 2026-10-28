@@ -36,6 +36,7 @@ from app.routes.web_admins import get_router as get_web_admins_router
 from app.routes.web_certs import get_router as get_web_certs_router
 from app.routes.web_auth import get_router as get_web_auth_router
 from app.routes.bulk import get_router as get_bulk_router
+from app.routes.bulk_network import get_router as get_bulk_network_router
 from app.routes.site import get_router as get_site_router
 from app.routes.sites_admin import get_router as get_sites_admin_router
 from app.routes.web_sites import get_router as get_web_sites_router
@@ -417,6 +418,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(get_health_router(deps))
     app.include_router(get_web_auth_router(deps, templates))
     app.include_router(get_bulk_router(deps, templates))
+    app.include_router(get_bulk_network_router(deps, templates))
     app.include_router(get_site_router(deps))
     app.include_router(get_sites_admin_router(deps))
     app.include_router(get_web_sites_router(deps, templates))

@@ -80,6 +80,10 @@
           <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4Z"/><path fill-rule="evenodd" d="M3 10a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6Zm4 2a1 1 0 0 0 0 2h6a1 1 0 1 0 0-2H7Z" clip-rule="evenodd"/></svg>
           Bulk Issue
         </a>
+        <a href="/bulk/employees" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{ 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' if path.startswith('/bulk/') else 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50' }} transition-colors" onclick="closeMobileMenu()">
+          <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm5 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Zm5 0c-.55 0-1.2.06-1.9.18 1.16.84 1.9 2.02 1.9 3.82v2h6v-2c0-2.66-5.33-4-6-4Z"/></svg>
+          Bulk Onboarding
+        </a>
         {% endif %}
         <a href="/employees" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{ 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' if path.startswith('/employees') or path.startswith('/people') or path.startswith('/devices') else 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50' }} transition-colors" onclick="closeMobileMenu()">
           <svg class="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor"><path d="M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm5 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4Zm5 0c-.55 0-1.2.06-1.9.18 1.16.84 1.9 2.02 1.9 3.82v2h6v-2c0-2.66-5.33-4-6-4Z"/></svg>

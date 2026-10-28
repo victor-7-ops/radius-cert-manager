@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Bulk devices — Certificate Manager{% endblock %}
+{% block content %}
+<div class="mb-6">
+  <h1 class="page-title">Bulk onboarding — step 2: Devices &amp; certificates</h1>
+  <p class="page-subtitle">Registers each device and issues a real, VLAN-eligible certificate. Employees must already exist (step 1).</p>
+</div>
+
+<div class="flex gap-2 mb-6">
+  <a href="/bulk/employees" class="btn-secondary">1. Employees</a>
+  <a href="/bulk/devices" class="btn-primary !cursor-default">2. Devices &amp; certificates</a>
+</div>
+
+<div class="max-w-lg card p-6 anim-rise">
+  {% if error %}
+  <div role="alert" class="mb-4 text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded-lg px-3 py-2.5">
+    {{ error }}
+  </div>
+  {% endif %}
+  <form method="post" action="/bulk/devices/preview" enctype="multipart/form-data" class="space-y-4">
+    <div>
+      <label for="csv_file" class="field-label">Upload a CSV</label>
+      <input id="csv_file" name="csv_file" type="file" accept=".csv"
+             class="w-full min-h-[44px] text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:btn-secondary file:border-0 file:cursor-pointer">
+      <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+        Columns: <code class="font-mono bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded px-1">subsidiary_code, employee_number, role_code, device_type, device_model, mac_address, serial_number</code>
+        — employee_number must match someone created in step 1. role_code must already be linked to that employee's department (under Subsidiaries).
+        <a href="/bulk/devices/template.csv" class="text-brand-600 dark:text-brand-400 hover:underline font-medium">Download a starter CSV</a>.
+      </p>
+    </div>
+    <p class="text-xs text-slate-500 dark:text-slate-400">Up to 200 devices per batch.</p>
+    <button type="submit" class="btn-primary w-full">
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.844-8.791a.75.75 0 0 0-1.188-.918l-3.7 4.79-1.649-1.833a.75.75 0 1 0-1.114 1.004l2.25 2.5a.75.75 0 0 0 1.15-.043l4.25-5.5Z" clip-rule="evenodd"/></svg>
+      Preview batch
+    </button>
+  </form>
+</div>
+{% endblock %}

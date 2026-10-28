@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Bulk devices preview — Certificate Manager{% endblock %}
+{% block content %}
+<h1 class="page-title mb-1">Bulk devices preview</h1>
+<p class="page-subtitle mb-6">
+  Nothing is signed until you confirm. <span class="font-medium text-slate-700 dark:text-slate-200">{{ valid_count }} of {{ total_count }}</span> rows are valid.
+  {% if valid_count < total_count %}Fix the invalid rows in your CSV and re-upload.{% endif %}
+</p>
+
+<div class="table-shell mb-6">
+  <table>
+    <thead>
+      <tr><th>Employee</th><th>Role</th><th>Device</th><th>MAC</th><th>Status</th><th>Reason</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="text-slate-900 dark:text-slate-100">{{ r.employee_name or r.row.employee_number }}</td>
+        <td class="font-mono text-sm">{{ r.row.role_code }}</td>
+        <td class="text-slate-600 dark:text-slate-400 text-sm">{{ r.row.device_type or '—' }} {{ r.row.device_model or '' }}</td>
+        <td class="font-mono text-xs">{{ r.row.mac_address or '—' }}</td>
+        <td>
+          {% if r.classification == "valid" %}
+          <span class="badge badge-green"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Valid</span>
+          {% else %}
+          <span class="badge badge-red"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Malformed</span>
+          {% endif %}
+        </td>
+        <td class="text-slate-500 dark:text-slate-400 text-sm">{{ r.reason or '' }}</td>
+      </tr>
+      {% endfor %}
+      {% if not rows %}
+      <tr><td colspan="6" class="text-center text-slate-400 dark:text-slate-500 py-8">No rows parsed from that CSV.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% if valid_count > 0 %}
+<div class="max-w-md card p-6 anim-rise">
+  <form method="post" action="/bulk/devices/confirm" class="space-y-4"
+        onsubmit="const b=this.querySelector('button'); b.disabled=true; b.innerText='Issuing…';">
+    <input type="hidden" name="batch_token" value="{{ batch_token }}">
+    <div>
+      <label for="export_password" class="field-label">Export password for this batch</label>
+      <input id="export_password" name="export_password" type="text" required minlength="12" class="field-input font-mono">
+      <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">One password protects every .p12 in this batch. Shown once, on the results page.</p>
+    </div>
+    <button type="submit" class="btn-primary w-full">
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
+      Register &amp; issue {{ valid_count }} certificate{{ "s" if valid_count != 1 else "" }}
+    </button>
+  </form>
+</div>
+{% else %}
+<p class="text-sm text-slate-500 dark:text-slate-400">No valid rows to issue. Fix your CSV and re-upload.</p>
+{% endif %}
+{% endblock %}
