@@ -79,6 +79,32 @@ def test_create_list_rotate_deactivate_reactivate(app_settings, throwaway_pki, m
     assert site.is_active is True
 
 
+def test_vlan_segmentation_toggle(app_settings, throwaway_pki, monkeypatch):
+    client = _client(app_settings, throwaway_pki, monkeypatch)
+
+    client.post("/sites", data={"name": "Branch", "radius_cn": "radius-branch-x"})
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    from sqlalchemy import select
+    site = session.scalar(select(db.Site).where(db.Site.radius_cn == "radius-branch-x"))
+    assert site.vlan_segmentation_enabled is True  # default on
+
+    resp = client.get("/sites")
+    assert "On" in resp.text
+
+    resp = client.post(f"/sites/{site.id}/vlan-segmentation", data={"enabled": "false"}, follow_redirects=False)
+    assert resp.status_code == 303
+    session.refresh(site)
+    assert site.vlan_segmentation_enabled is False
+
+    resp = client.get("/sites")
+    assert "auth-only" in resp.text
+
+    client.post(f"/sites/{site.id}/vlan-segmentation", data={"enabled": "true"})
+    session.refresh(site)
+    assert site.vlan_segmentation_enabled is True
+
+
 def test_invalid_radius_cn_rejected(app_settings, throwaway_pki, monkeypatch):
     client = _client(app_settings, throwaway_pki, monkeypatch)
     resp = client.post("/sites", data={"name": "x", "radius_cn": "../../etc/passwd"})

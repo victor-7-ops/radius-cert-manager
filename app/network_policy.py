@@ -578,6 +578,98 @@ def resolve_binding(
     )
 
 
+def authorize_site_subsidiary(
+    actor: db.Admin,
+    site_id: str,
+    subsidiary_id: str,
+    session: Session,
+) -> db.SiteSubsidiary:
+    """Adds (or reactivates) a subsidiary to a site's explicit allowlist.
+
+    compile_site_policy's allowlist is a hard gate: a subsidiary with no
+    active SiteSubsidiary row at a site gets every one of its bindings
+    silently dropped from that site's compiled policy.json, regardless of
+    what SiteRoleBinding rows exist — this is the thing that actually
+    turns a role/VLAN binding "on" for a given site. Platform superadmin
+    only, same as VLAN infrastructure (SUBSIDIARY-SUPERADMIN.md §17).
+    """
+    if actor.role != db.AdminRole.super_admin:
+        raise ForbiddenError("Only platform superadmins can authorize a subsidiary at a site")
+
+    site = session.get(db.Site, site_id)
+    if not site:
+        raise ResourceNotFoundError("Site not found")
+
+    sub = session.get(db.Subsidiary, subsidiary_id)
+    if not sub:
+        raise ResourceNotFoundError("Subsidiary not found")
+
+    link = session.scalar(
+        select(db.SiteSubsidiary).where(
+            db.SiteSubsidiary.site_id == site_id,
+            db.SiteSubsidiary.subsidiary_id == subsidiary_id,
+        )
+    )
+    if link:
+        link.is_active = True
+    else:
+        link = db.SiteSubsidiary(site_id=site_id, subsidiary_id=subsidiary_id, is_active=True)
+        session.add(link)
+
+    session.flush()
+    db.audit(
+        session,
+        actor=actor.username,
+        action="site_subsidiary.authorize",
+        target=f"{site.name}:{sub.code}",
+        detail=f"Authorized {sub.display_name} at site {site.name}",
+        subsidiary=sub.display_name,
+        site_id=site.id,
+    )
+    return link
+
+
+def deauthorize_site_subsidiary(
+    actor: db.Admin,
+    site_id: str,
+    subsidiary_id: str,
+    session: Session,
+) -> db.SiteSubsidiary:
+    """Removes a subsidiary from a site's allowlist (soft -- is_active=False).
+
+    Every binding for this subsidiary at this site immediately stops
+    compiling into policy.json on the next publish, same fail-closed
+    behavior as an empty allowlist from the start.
+    """
+    if actor.role != db.AdminRole.super_admin:
+        raise ForbiddenError("Only platform superadmins can deauthorize a subsidiary at a site")
+
+    link = session.scalar(
+        select(db.SiteSubsidiary).where(
+            db.SiteSubsidiary.site_id == site_id,
+            db.SiteSubsidiary.subsidiary_id == subsidiary_id,
+        )
+    )
+    if not link:
+        raise ResourceNotFoundError("Site-subsidiary authorization not found")
+
+    link.is_active = False
+    session.flush()
+
+    site = session.get(db.Site, site_id)
+    sub = session.get(db.Subsidiary, subsidiary_id)
+    db.audit(
+        session,
+        actor=actor.username,
+        action="site_subsidiary.deauthorize",
+        target=f"{site.name if site else site_id}:{sub.code if sub else subsidiary_id}",
+        detail=f"Deauthorized {sub.display_name if sub else subsidiary_id} at site {site.name if site else site_id}",
+        subsidiary=sub.display_name if sub else None,
+        site_id=site_id,
+    )
+    return link
+
+
 def configure_site_role_binding(
     actor: db.Admin,
     site_id: str,

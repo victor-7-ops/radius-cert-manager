@@ -15,6 +15,22 @@ This adapter implements the authoritative 802.1X EAP-TLS decision tree for FreeR
 
 This file itself (`authorize_policy.py`) is also synchronized by `site_agent.py`, the same pull-only, Ed25519-signed way as `policy.json` — see [deploy/agent/README.md](../agent/README.md#deploying-an-adapter-code-change). A code fix ships by redeploying the hub; sites pick it up on their next poll, no manual per-site `scp`.
 
+## Sites without VLAN-capable infrastructure
+
+Not every site has a managed/L3 switch — some are only router + FreeRADIUS
++ AP, with no way to honor an 802.1Q trunk. For those, a Super Admin can
+toggle **VLAN segmentation off** for the site (Sites page in the admin UI,
+or `site_service.set_vlan_segmentation`). This is a site-level property,
+not a per-binding one — it flows into the signed `policy.json` as
+`vlan_segmentation_enabled` and is read entirely locally by this adapter,
+same fail-closed design as everything else here.
+
+With it off, the full authorization decision tree below still runs
+exactly as written — platform block, role on/off, fallback, reject — only
+the VLAN number itself is stripped from an otherwise-accepted decision, so
+`Access-Accept` still happens with no `Tunnel-*` attributes at all. Takes
+effect on the site's next policy pull, not immediately.
+
 ## Authoritative Decision Matrix
 
 | Role Switch (Tenant) | Site Switch (Tenant) | Platform State | Result | VLAN Assigned |

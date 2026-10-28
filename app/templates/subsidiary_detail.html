@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% import "_spinner.html" as spin %}
+{% block title %}{{ sub.display_name }} — Certificate Manager{% endblock %}
+{% block content %}
+<a href="/subsidiaries" class="inline-flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 mb-4 transition-colors">
+  <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd"/></svg>
+  Subsidiaries
+</a>
+
+<div class="mb-6">
+  <h1 class="page-title font-mono">{{ sub.display_name }}</h1>
+  <p class="page-subtitle">Code: <span class="font-mono">{{ sub.code }}</span></p>
+</div>
+
+<!-- Departments -->
+<section class="card p-5 mb-6">
+  <h2 class="font-semibold text-slate-900 dark:text-slate-100 mb-3">Departments</h2>
+  <form method="post" action="/subsidiaries/{{ sub.id }}/departments" class="flex flex-wrap items-end gap-3 mb-4">
+    <div>
+      <label class="field-label">Code</label>
+      <input name="code" type="text" required placeholder="ops" class="field-input font-mono">
+    </div>
+    <div class="flex-1 min-w-[200px]">
+      <label class="field-label">Display name</label>
+      <input name="display_name" type="text" required placeholder="Operations" class="field-input">
+    </div>
+    <button type="submit" class="btn-secondary">
+      {{ spin.spinner() }}<span class="htmx-hide-on-request">Add department</span>
+    </button>
+  </form>
+  <div class="table-shell">
+    <table>
+      <thead><tr><th>Department</th><th>Code</th><th>Linked roles</th></tr></thead>
+      <tbody>
+        {% for d in departments %}
+        <tr>
+          <td class="text-slate-900 dark:text-slate-100 font-medium">{{ d.display_name }}</td>
+          <td class="text-slate-600 dark:text-slate-400 font-mono text-sm">{{ d.code }}</td>
+          <td>
+            {% for r in roles %}
+              {% if (d.id, r.id) in linked_pairs %}
+              <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 mr-1">{{ r.display_name }}</span>
+              {% endif %}
+            {% endfor %}
+            <form method="post" action="/subsidiaries/{{ sub.id }}/departments/{{ d.id }}/link-role" class="inline-flex items-center gap-1 mt-1">
+              <select name="role_id" class="field-input !py-1 !text-xs !w-auto">
+                {% for r in roles %}
+                  {% if (d.id, r.id) not in linked_pairs %}
+                  <option value="{{ r.id }}">{{ r.display_name }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+              <button type="submit" class="text-xs text-slate-600 dark:text-slate-400 hover:underline">Link</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not departments %}
+        <tr><td colspan="3" class="text-center text-slate-400 dark:text-slate-500 py-6">No departments yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Network roles -->
+<section class="card p-5 mb-6">
+  <h2 class="font-semibold text-slate-900 dark:text-slate-100 mb-3">Network roles</h2>
+  <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">A role is what gets a VLAN at each site below — not tied to a person, tied to what access level a cert holder gets.</p>
+  <form method="post" action="/subsidiaries/{{ sub.id }}/roles" class="flex flex-wrap items-end gap-3 mb-4">
+    <div>
+      <label class="field-label">Code</label>
+      <input name="code" type="text" required placeholder="staff" class="field-input font-mono">
+    </div>
+    <div class="flex-1 min-w-[200px]">
+      <label class="field-label">Display name</label>
+      <input name="display_name" type="text" required placeholder="Staff Network" class="field-input">
+    </div>
+    <div class="flex-1 min-w-[200px]">
+      <label class="field-label">Description (optional)</label>
+      <input name="description" type="text" class="field-input">
+    </div>
+    <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mb-2.5">
+      <input type="checkbox" name="is_privileged" value="true" class="rounded">
+      Privileged
+    </label>
+    <button type="submit" class="btn-secondary">
+      {{ spin.spinner() }}<span class="htmx-hide-on-request">Add role</span>
+    </button>
+  </form>
+  <div class="table-shell">
+    <table>
+      <thead><tr><th>Role</th><th>Code</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for r in roles %}
+        <tr>
+          <td class="text-slate-900 dark:text-slate-100 font-medium">{{ r.display_name }}{% if r.is_privileged %} <span class="text-xs text-amber-600 dark:text-amber-400">(privileged)</span>{% endif %}</td>
+          <td class="text-slate-600 dark:text-slate-400 font-mono text-sm">{{ r.code }}</td>
+          <td>
+            {% if r.is_active %}
+            <span class="badge badge-green"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> On</span>
+            {% else %}
+            <span class="badge badge-slate"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Off</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not roles %}
+        <tr><td colspan="3" class="text-center text-slate-400 dark:text-slate-500 py-6">No network roles yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Sites authorized for this subsidiary -->
+<section class="card p-5 mb-6">
+  <h2 class="font-semibold text-slate-900 dark:text-slate-100 mb-3">Sites authorized for this subsidiary</h2>
+  <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">A site compiles no bindings for a subsidiary that isn't explicitly authorized here, even if a VLAN binding exists below — this is the allowlist gate.</p>
+  <div class="table-shell">
+    <table>
+      <thead><tr><th>Site</th><th>RADIUS CN</th><th>Authorized</th><th></th></tr></thead>
+      <tbody>
+        {% for site in all_sites %}
+        <tr>
+          <td class="text-slate-900 dark:text-slate-100 font-medium">{{ site.name }}</td>
+          <td class="text-slate-600 dark:text-slate-400 font-mono text-sm">{{ site.radius_cn }}</td>
+          <td>
+            {% if site.id in authorized_site_ids %}
+            <span class="badge badge-green"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Authorized</span>
+            {% else %}
+            <span class="badge badge-slate"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Not authorized</span>
+            {% endif %}
+          </td>
+          <td class="text-right">
+            {% if site.id in authorized_site_ids %}
+            <form method="post" action="/subsidiaries/{{ sub.id }}/sites/{{ site.id }}/deauthorize" class="inline">
+              <button type="submit" class="text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 hover:underline text-sm font-medium min-h-[44px] px-2">Deauthorize</button>
+            </form>
+            {% else %}
+            <form method="post" action="/subsidiaries/{{ sub.id }}/sites/{{ site.id }}/authorize" class="inline">
+              <button type="submit" class="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline text-sm font-medium min-h-[44px] px-2">Authorize</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not all_sites %}
+        <tr><td colspan="4" class="text-center text-slate-400 dark:text-slate-500 py-6">No sites exist yet — create one under Sites first.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- VLAN bindings per site -->
+<section class="card p-5 mb-6">
+  <h2 class="font-semibold text-slate-900 dark:text-slate-100 mb-3">Site VLAN bindings</h2>
+  <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">Which VLAN a role gets at a given site. The site also needs "Authorized" above and VLAN segmentation enabled on the Sites page — an authenticate-only site ignores these numbers entirely.</p>
+  {% if roles and all_sites %}
+  <form method="post" action="/subsidiaries/{{ sub.id }}/bindings" class="flex flex-wrap items-end gap-3 mb-4">
+    <div>
+      <label class="field-label">Site</label>
+      <select name="site_id" class="field-input">
+        {% for site in all_sites %}
+        <option value="{{ site.id }}">{{ site.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="field-label">Role</label>
+      <select name="role_id" class="field-input">
+        {% for r in roles %}
+        <option value="{{ r.id }}">{{ r.display_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="field-label">Primary VLAN</label>
+      <input name="vlan_id" type="number" min="1" max="4094" required class="field-input !w-24">
+    </div>
+    <div>
+      <label class="field-label">Fallback VLAN (optional)</label>
+      <input name="fallback_vlan_id" type="number" min="1" max="4094" class="field-input !w-24">
+    </div>
+    <button type="submit" class="btn-secondary">
+      {{ spin.spinner() }}<span class="htmx-hide-on-request">Set binding</span>
+    </button>
+  </form>
+  {% else %}
+  <p class="text-sm text-slate-400 dark:text-slate-500 mb-4">Add at least one network role and one site before configuring a binding.</p>
+  {% endif %}
+  <div class="table-shell">
+    <table>
+      <thead><tr><th>Site</th><th>Role</th><th>Primary VLAN</th><th>Fallback VLAN</th><th>State</th></tr></thead>
+      <tbody>
+        {% for br in binding_rows %}
+        <tr>
+          <td class="text-slate-900 dark:text-slate-100 font-medium">{{ br.site.name if br.site else '—' }}</td>
+          <td class="text-slate-600 dark:text-slate-400">{{ br.role.display_name if br.role else '—' }}</td>
+          <td class="font-mono text-sm">{{ br.binding.vlan_id }}</td>
+          <td class="font-mono text-sm">{{ br.binding.fallback_vlan_id or '—' }}</td>
+          <td>
+            {% if br.binding.platform_enabled and br.binding.tenant_enabled %}
+            <span class="badge badge-green"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Primary</span>
+            {% elif br.binding.platform_enabled %}
+            <span class="badge badge-amber"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> Fallback</span>
+            {% else %}
+            <span class="badge badge-red"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span> Platform blocked</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not binding_rows %}
+        <tr><td colspan="5" class="text-center text-slate-400 dark:text-slate-500 py-6">No VLAN bindings configured yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

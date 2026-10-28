@@ -129,6 +129,48 @@ def test_decision_fallback_vlan_tenant_role_off(sample_uuids, valid_policy):
     assert dec.vlan_type == "fallback"
 
 
+def test_decision_vlan_segmentation_disabled_strips_primary_vlan(sample_uuids, valid_policy):
+    u = sample_uuids
+    valid_policy["vlan_segmentation_enabled"] = False
+    subj = f"/CN=Device-1/O={u['sub_a']}/OU={u['role_staff']}"
+    dec = ap.evaluate_authorization(subj, valid_policy, expected_site_id=u["site_id"])
+    assert dec.outcome == "accept"
+    assert dec.vlan_id is None
+    assert dec.vlan_type is None
+
+
+def test_decision_vlan_segmentation_disabled_strips_fallback_vlan(sample_uuids, valid_policy):
+    u = sample_uuids
+    valid_policy["vlan_segmentation_enabled"] = False
+    subj = f"/CN=Device-2/O={u['sub_a']}/OU={u['role_exec']}"
+    dec = ap.evaluate_authorization(subj, valid_policy, expected_site_id=u["site_id"])
+    assert dec.outcome == "accept"
+    assert dec.vlan_id is None
+    assert dec.vlan_type is None
+
+
+def test_decision_vlan_segmentation_disabled_still_rejects_platform_block(sample_uuids, valid_policy):
+    # Segmentation is only ever about VLAN output, never about the
+    # authorization decision itself -- a platform block must still reject.
+    u = sample_uuids
+    valid_policy["vlan_segmentation_enabled"] = False
+    subj = f"/CN=Device-3/O={u['sub_b']}/OU={u['role_staff']}"
+    dec = ap.evaluate_authorization(subj, valid_policy, expected_site_id=u["site_id"])
+    assert dec.outcome == "reject"
+    assert dec.vlan_id is None
+
+
+def test_decision_vlan_segmentation_missing_defaults_to_enabled(sample_uuids, valid_policy):
+    # Older cached policy.json predating this field must behave exactly
+    # as it always did -- missing means segmentation stays on.
+    assert "vlan_segmentation_enabled" not in valid_policy
+    u = sample_uuids
+    subj = f"/CN=Device-1/O={u['sub_a']}/OU={u['role_staff']}"
+    dec = ap.evaluate_authorization(subj, valid_policy, expected_site_id=u["site_id"])
+    assert dec.outcome == "accept"
+    assert dec.vlan_id == 100
+
+
 def test_decision_platform_block_rejects_without_fallback(sample_uuids, valid_policy):
     u = sample_uuids
     subj = f"/CN=Device-3/O={u['sub_b']}/OU={u['role_staff']}"

@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% import "_spinner.html" as spin %}
+{% block title %}Subsidiaries — Certificate Manager{% endblock %}
+{% block content %}
+<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+  <div>
+    <h1 class="page-title">Subsidiaries</h1>
+    <p class="page-subtitle">Super Admin only — tenants, their departments, network roles, and which sites they're authorized at.</p>
+  </div>
+</div>
+
+<section class="card p-5 mb-6">
+  <h2 class="font-semibold text-slate-900 dark:text-slate-100 mb-3">New subsidiary</h2>
+  <form method="post" action="/subsidiaries" class="flex flex-wrap items-end gap-3">
+    <div>
+      <label for="code" class="field-label">Code</label>
+      <input id="code" name="code" type="text" required placeholder="topline" class="field-input font-mono">
+    </div>
+    <div class="flex-1 min-w-[220px]">
+      <label for="display_name" class="field-label">Display name</label>
+      <input id="display_name" name="display_name" type="text" required placeholder="Topline Business Development Corporation" class="field-input">
+    </div>
+    <button type="submit" class="btn-primary">
+      {{ spin.spinner() }}
+      <svg class="w-4 h-4 htmx-hide-on-request" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 0 1 1 1v5h5a1 1 0 1 1 0 2h-5v5a1 1 0 1 1-2 0v-5H4a1 1 0 1 1 0-2h5V4a1 1 0 0 1 1-1Z" clip-rule="evenodd"/></svg>
+      Create
+    </button>
+  </form>
+</section>
+
+<div class="table-shell">
+  <table>
+    <thead>
+      <tr>
+        <th>Subsidiary</th>
+        <th>Code</th>
+        <th>Departments</th>
+        <th>Network roles</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="anim-rise hover:bg-slate-50/75 dark:hover:bg-slate-800/40 transition-colors" style="animation-delay: {{ loop.index0 * 30 }}ms;">
+        <td>
+          <a href="/subsidiaries/{{ r.sub.id }}" class="text-slate-900 dark:text-slate-100 font-medium hover:underline">{{ r.sub.display_name }}</a>
+        </td>
+        <td class="text-slate-600 dark:text-slate-400 font-mono text-sm">{{ r.sub.code }}</td>
+        <td class="text-slate-600 dark:text-slate-400 text-sm">{{ r.department_count }}</td>
+        <td class="text-slate-600 dark:text-slate-400 text-sm">{{ r.role_count }}</td>
+        <td>
+          {% if r.sub.is_active %}
+          <span class="badge badge-green"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Active</span>
+          {% else %}
+          <span class="badge badge-slate"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Inactive</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not rows %}
+      <tr><td colspan="5" class="text-center text-slate-400 dark:text-slate-500 py-8">No subsidiaries yet.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

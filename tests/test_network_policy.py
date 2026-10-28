@@ -23,9 +23,11 @@ from app.network_policy import (
     PolicyValidationError,
     ResourceNotFoundError,
     assert_can_manage_subsidiary,
+    authorize_site_subsidiary,
     configure_site_role_binding,
     create_department,
     create_network_role,
+    deauthorize_site_subsidiary,
     grant_role,
     link_department_role,
     resolve_binding,
@@ -281,3 +283,37 @@ def test_vlan_infrastructure_configuration_permissions(policy_db):
         # Reject invalid VLAN number out of 1-4094
         with pytest.raises(PolicyValidationError, match="between 1 and 4094"):
             configure_site_role_binding(platform_super, site.id, sub.id, role.id, vlan_id=5000, fallback_vlan_id=99, session=session)
+
+
+def test_site_subsidiary_authorization(policy_db):
+    with Session(policy_db) as session:
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+        site = db.Site(name="Branch", radius_cn="radius-branch2.internal", auth_token_hash="hash")
+        session.add(site)
+        session.flush()
+
+        platform_super = _make_admin(session, "p_super", db.AdminRole.super_admin)
+        sub_super = _make_admin(session, "s_super", db.AdminRole.subsidiary_super_admin, "topline")
+
+        # Subsidiary superadmin cannot authorize a site -- same platform-only
+        # restriction as VLAN infrastructure (both control what a site's
+        # compiled policy.json can contain, not subsidiary-internal state).
+        with pytest.raises(ForbiddenError, match="Only platform superadmins"):
+            authorize_site_subsidiary(sub_super, site.id, sub.id, session)
+
+        link = authorize_site_subsidiary(platform_super, site.id, sub.id, session)
+        assert link.is_active is True
+
+        # Idempotent: authorizing again reactivates rather than duplicating
+        link_again = authorize_site_subsidiary(platform_super, site.id, sub.id, session)
+        assert link_again.id == link.id
+
+        deauthorize_site_subsidiary(platform_super, site.id, sub.id, session)
+        session.refresh(link)
+        assert link.is_active is False
+
+        with pytest.raises(ForbiddenError, match="Only platform superadmins"):
+            deauthorize_site_subsidiary(sub_super, site.id, sub.id, session)
+
+        with pytest.raises(ResourceNotFoundError):
+            authorize_site_subsidiary(platform_super, "nonexistent-site", sub.id, session)
