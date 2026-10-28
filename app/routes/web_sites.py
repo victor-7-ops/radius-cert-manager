@@ -47,7 +47,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/sites/new-form")
     def site_new_form(request: Request, admin: db.Admin = Depends(deps.require_super_admin)):
-        return templates.TemplateResponse(request, "site_new_form.html", {"subsidiaries": db.SUBSIDIARIES})
+        session = deps.get_db_session()
+        return templates.TemplateResponse(request, "site_new_form.html", {"subsidiaries": db.active_subsidiary_names(session)})
 
     @router.post("/sites")
     def site_create(
@@ -61,24 +62,24 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         notes: str = Form(""),
         admin: db.Admin = Depends(deps.require_super_admin),
     ):
+        session = deps.get_db_session()
         if not CN_RE.match(radius_cn):
             # Same charset restriction as app/routes/sites_admin.py — this
             # ends up unvalidated in a filesystem path at server-cert
             # issuance/renewal time otherwise.
             return templates.TemplateResponse(
                 request, "site_new_form.html",
-                {"subsidiaries": db.SUBSIDIARIES, "error": "Invalid radius_cn format."},
+                {"subsidiaries": db.active_subsidiary_names(session), "error": "Invalid radius_cn format."},
                 status_code=400,
             )
         stripped_subsidiary = subsidiary.strip() or None
-        if stripped_subsidiary is not None and stripped_subsidiary not in db.SUBSIDIARIES:
+        if stripped_subsidiary is not None and stripped_subsidiary not in db.active_subsidiary_names(session):
             return templates.TemplateResponse(
                 request, "site_new_form.html",
-                {"subsidiaries": db.SUBSIDIARIES, "error": "Invalid subsidiary."},
+                {"subsidiaries": db.active_subsidiary_names(session), "error": "Invalid subsidiary."},
                 status_code=400,
             )
 
-        session = deps.get_db_session()
         try:
             result = site_service.create_site(
                 session, name=name, radius_cn=radius_cn, actor=admin.username,
@@ -90,7 +91,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         except site_service.SiteCNConflictError as e:
             return templates.TemplateResponse(
                 request, "site_new_form.html",
-                {"subsidiaries": db.SUBSIDIARIES, "error": str(e)},
+                {"subsidiaries": db.active_subsidiary_names(session), "error": str(e)},
                 status_code=409,
             )
 

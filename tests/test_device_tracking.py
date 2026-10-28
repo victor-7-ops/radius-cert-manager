@@ -240,7 +240,9 @@ def test_issue_form_offers_subsidiary_choices(app_settings, throwaway_pki, monke
 
     resp = client.get("/certs/issue")
     assert resp.status_code == 200
-    for name in db.SUBSIDIARIES:
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    for name in db.active_subsidiary_names(session):
         assert name in resp.text
 
 

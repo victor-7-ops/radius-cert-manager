@@ -642,9 +642,15 @@ _CERTIFICATE_COLUMN_MIGRATIONS = [
 
 DEVICE_TYPES = ["Laptop", "Phone", "Tablet", "Desktop", "Other"]
 
-# Company/subsidiary a cert's device belongs to — free text is allowed
-# too (issue_certificate doesn't validate against this list), this is
-# just what the issue form and bulk CSV offer as quick picks.
+# Deprecated: this used to be the only source of subsidiary names for the
+# legacy free-text issue form, site creation, and bulk CSV import. Prefer
+# active_subsidiary_names(session) below, which reads the real
+# Subsidiary table (app/routes/web_subsidiaries.py) -- a deleted
+# subsidiary disappears from every dropdown immediately instead of
+# lingering here forever. Kept only as the final fallback in
+# active_subsidiary_names when the table is empty, and because
+# SUBSIDIARY_COLORS below still keys off these exact display strings for
+# the handful of certs/sites that predate the real table.
 SUBSIDIARIES = [
     "Lezzgo Boracay",
     "Lezzgo Cebu",
@@ -655,6 +661,21 @@ SUBSIDIARIES = [
     "BMEAD",
     "Others",
 ]
+
+
+def active_subsidiary_names(session) -> list[str]:
+    """Live dropdown source for the legacy free-text subsidiary fields
+    (Certificate.subsidiary, Site.subsidiary, Admin.subsidiary_scope,
+    bulk CSV import) -- the real Subsidiary table, not a hardcoded list.
+    Falls back to the old hardcoded list only if the table is somehow
+    empty (fresh DB mid-migration), so a dropdown is never blank."""
+    names = [
+        s.display_name
+        for s in session.scalars(
+            select(Subsidiary).where(Subsidiary.is_active.is_(True)).order_by(Subsidiary.display_name)
+        ).all()
+    ]
+    return names or list(SUBSIDIARIES)
 
 # Fixed (not hashed) colorway per subsidiary, so the same company always
 # reads the same color across the dashboard chart, list chips, and detail
