@@ -37,6 +37,10 @@
         Windows Wi-Fi (.xml)
       </a>
     </div>
+    <a href="/certs/{{ serial }}/onboard-bundle" id="download-windows-bundle-link" class="btn-secondary w-full text-center justify-center flex items-center gap-1.5" title="One-click installer for Windows (.cmd) and Linux (.sh), plus the raw .p12/XML/CA cert — no password to type">
+      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h2.879a2.25 2.25 0 0 1 1.591.659l1.121 1.121A.75.75 0 0 0 10.37 4h5.38A2.25 2.25 0 0 1 18 6.25v8.5A2.25 2.25 0 0 1 15.75 17H4.25A2.25 2.25 0 0 1 2 14.75v-10.5Z" clip-rule="evenodd"/></svg>
+      Download everything (.zip, Windows + Linux)
+    </a>
     <div id="bundle-consumed-notice" class="hidden text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-lg p-2.5">
       The client identity bundle has been downloaded. Under our single-use security policy, private keys cannot be re-downloaded.
     </div>
@@ -126,12 +130,20 @@
           mc.removeAttribute('href');
           mc.title = 'Bundle consumed by .p12 download';
         }
-      } else if (type === 'mc') {
+      } else if (type === 'mc' || type === 'zip') {
         const p12 = document.getElementById('download-link');
         if (p12) {
           p12.classList.add('opacity-40', 'pointer-events-none', 'cursor-not-allowed');
           p12.removeAttribute('href');
-          p12.title = 'Bundle consumed by Apple profile download';
+          p12.title = 'Bundle consumed';
+        }
+      }
+      if (type === 'zip') {
+        const mc = document.getElementById('download-mobileconfig-link');
+        if (mc) {
+          mc.classList.add('opacity-40', 'pointer-events-none', 'cursor-not-allowed');
+          mc.removeAttribute('href');
+          mc.title = 'Bundle consumed by zip download';
         }
       }
     }
@@ -139,6 +151,8 @@
     if (dlLink) dlLink.addEventListener('click', () => markBundleDownloaded('p12'));
     const mcLink = document.getElementById('download-mobileconfig-link');
     if (mcLink) mcLink.addEventListener('click', () => markBundleDownloaded('mc'));
+    const zipLink = document.getElementById('download-windows-bundle-link');
+    if (zipLink) zipLink.addEventListener('click', () => markBundleDownloaded('zip'));
     window.addEventListener('beforeunload', (e) => {
       if (!leavingIntentionally && !savedConfirm.checked) {
         e.preventDefault();

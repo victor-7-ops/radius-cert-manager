@@ -26,10 +26,13 @@ Record revision number, expires_at, and last successful refresh timestamp.
 
 ## 1. Normal refresh cycle (T+4h, T+8h, T+12h...)
 
-Timer is `OnCalendar` every 4h with up to 10min jitter. At each tick, confirm:
-- `journalctl -u certmanager-policy-refresh.service --since "-4h"` shows a run with no error, and either `304 Not Modified` (unchanged) or a new revision installed.
-- Hub's `site_policy_acks` table gets a new row (`success=1`) within a minute of the agent run — confirms ack recording actually round-trips, not just that the agent thinks it worked.
-- `/opt/certmanager-agent/policy.json`'s `expires_at` moved forward (24h lease renewed) — confirms the lease isn't silently going stale while refresh still "succeeds".
+Timer is `OnCalendar` every 4h with up to 10min jitter. No CM4 shell access
+exists (only the scoped crlpush forced-command key) — everything here is
+observed from the hub side only:
+- `docker logs --timestamps certmanager --since <window> | grep network-policy` — each natural tick shows up here as a `GET /api/site/network-policy` line, `304 Not Modified` if the policy hasn't changed, `200` if it has.
+- **A `304` tick writes no `site_policy_acks` row** (`fetch_and_install_policy` in `deploy/agent/site_agent.py` only calls `_send_policy_ack` on a 200/installed or an error path — confirmed by reading the code, not assumed). Don't treat "no new ack row" as "no tick happened" — check the access log line instead.
+- `db.Site.last_seen_at` moving forward is a general liveness signal (any hub call updates it), not proof of this specific timer firing — corroborate with the access log.
+- Only a real policy change (200, new revision) or an error produces a `site_policy_acks` row — that's the real "ack recording round-trips" signal, tested properly in step 2 below.
 
 No manual trigger. Just let the timer fire naturally across this window.
 

@@ -30,6 +30,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
 
     _crl_banner_context = crl_health.banner_context
 
+    def _slugify(name: str) -> str:
+        import re
+
+        return re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-") or "device"
+
     def _cert_filter_stmt(q, status, employee, subsidiary, admin=None):
         """Shared by the list page and the CSV export so the two can
         never silently drift apart on what a filter means."""
@@ -550,6 +555,103 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             content=xml_content,
             media_type="application/x-wifi-config",
             headers={"Content-Disposition": f'attachment; filename="{wifi_ssid}-Profile.xml"'},
+        )
+
+    @router.get("/certs/{serial}/onboard-bundle")
+    def download_onboard_bundle(serial: str, admin: db.Admin = Depends(deps.require_write)):
+        """Everything needed to onboard a device in one zip, one-click
+        installers for Windows and Linux included (macOS/iOS already get
+        a true one-click flow via .mobileconfig, no zip needed there)."""
+        if rate_limit.is_rate_limited(f"bundle:{admin.id}", max_requests=30, window_seconds=60):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts — wait a minute and try again.")
+        session = deps.get_db_session()
+        cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+        if cert is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        if admin.subsidiary_scope:
+            h.require_cert_scope(admin, cert)
+        bundle = deps.take_pending_bundle(serial)
+        if bundle is None:
+            raise HTTPException(status.HTTP_410_GONE, "bundle already consumed or not found")
+
+        from app import pki, windows_profile
+        import io
+        import zipfile
+
+        wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
+        xml_content = windows_profile.generate_windows_wifi_xml(ssid=wifi_ssid, ca_cert=deps.inter_cert)
+        ca_pem = pki.cert_to_pem(deps.inter_cert)
+
+        folder_name = _slugify(cert.employee_name or cert.cn)
+        p12_name = f"{cert.cn}.p12"
+        xml_name = f"{wifi_ssid}-Profile.xml"
+        ca_name = "ca.pem"
+
+        # Password is plaintext in both scripts by design (user explicitly
+        # chose this tradeoff over typing it manually, after being told
+        # protection then rests on how the zip itself is distributed); it
+        # never leaves this zip.
+
+        # certutil -user writes to the *current user's* cert store, so this
+        # needs no admin elevation/UAC prompt.
+        install_cmd = (
+            "@echo off\r\n"
+            "cd /d \"%~dp0\"\r\n"
+            f'certutil -f -user -p "{bundle.password}" -importPFX My "{p12_name}"\r\n'
+            "if errorlevel 1 (\r\n"
+            "  echo Certificate import failed. Contact IT.\r\n"
+            "  pause\r\n"
+            "  exit /b 1\r\n"
+            ")\r\n"
+            f'netsh wlan add profile filename="{xml_name}" user=current\r\n'
+            "echo Done. Connecting to Wi-Fi...\r\n"
+            f'netsh wlan connect name="{wifi_ssid}"\r\n'
+            "pause\r\n"
+        )
+
+        # nmcli (NetworkManager, the default on Ubuntu/Fedora/Debian
+        # desktops) takes the .p12 directly for both client-cert and
+        # private-key -- no separate PEM extraction needed.
+        install_sh = (
+            "#!/bin/sh\n"
+            "set -e\n"
+            'cd "$(dirname "$0")"\n'
+            "if ! command -v nmcli >/dev/null; then\n"
+            '  echo "nmcli (NetworkManager) not found -- ask IT for manual setup."\n'
+            "  exit 1\n"
+            "fi\n"
+            f'nmcli connection delete "{wifi_ssid}" 2>/dev/null || true\n'
+            f'nmcli connection add type wifi con-name "{wifi_ssid}" ssid "{wifi_ssid}" \\\n'
+            "  wifi-sec.key-mgmt wpa-eap 802-1x.eap tls \\\n"
+            f'  802-1x.identity "{cert.cn}" \\\n'
+            f'  802-1x.ca-cert "$(pwd)/{ca_name}" \\\n'
+            f'  802-1x.client-cert "$(pwd)/{p12_name}" \\\n'
+            f'  802-1x.private-key "$(pwd)/{p12_name}" \\\n'
+            f'  802-1x.private-key-password "{bundle.password}"\n'
+            f'nmcli connection up "{wifi_ssid}"\n'
+            'echo "Connected."\n'
+        )
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"{folder_name}/{p12_name}", bundle.data)
+            zf.writestr(f"{folder_name}/{xml_name}", xml_content)
+            zf.writestr(f"{folder_name}/{ca_name}", ca_pem)
+            zf.writestr(f"{folder_name}/Install.cmd", install_cmd)
+            info = zipfile.ZipInfo(f"{folder_name}/install.sh")
+            info.external_attr = 0o755 << 16  # executable bit, for unzip -X / Linux
+            zf.writestr(info, install_sh)
+            zf.writestr(
+                f"{folder_name}/README.txt",
+                "Windows: double-click Install.cmd.\n"
+                "Linux: run ./install.sh (chmod +x install.sh first if needed).\n"
+                f"Both install the certificate and connect to {wifi_ssid} automatically.\n"
+                "macOS/iOS: use the Apple Profile (.mobileconfig) download instead of this zip.\n",
+            )
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{folder_name}.zip"'},
         )
 
     @router.get("/certs/{serial}")
