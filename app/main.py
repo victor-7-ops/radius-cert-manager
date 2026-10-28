@@ -16,7 +16,7 @@ from pathlib import Path
 
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -387,6 +387,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         {"detail": "Cross-origin request rejected"}, status_code=status.HTTP_403_FORBIDDEN
                     )
         return await call_next(request)
+
+    @app.middleware("http")
+    async def _htmx_redirect(request: Request, call_next):
+        # Every write route (suspend/unsuspend/revoke/reissue, same
+        # pattern under Employees/Devices) returns a plain 303
+        # RedirectResponse with flash-message query params. htmx's own
+        # fetch follows that redirect itself and swaps the *resulting
+        # page's* HTML into whatever element triggered the request —
+        # with no hx-target set, that's the button, so the entire next
+        # page (header, sidebar, everything) gets nested inside it
+        # instead of the browser navigating there. htmx's documented
+        # fix is an HX-Redirect response header instead of a body
+        # redirect, which it treats as "do a real navigation" rather
+        # than "swap this content in" — translate server-side so no
+        # individual route has to special-case HX-Request.
+        response = await call_next(request)
+        if (
+            request.headers.get("HX-Request") == "true"
+            and response.status_code in (301, 302, 303, 307, 308)
+            and "location" in response.headers
+        ):
+            return Response(status_code=200, headers={"HX-Redirect": response.headers["location"]})
+        return response
 
     app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
     app.include_router(get_certs_router(deps))
