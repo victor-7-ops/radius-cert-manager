@@ -36,13 +36,21 @@ html.dark { --shell-border: #334155; --shell-panel: #172235; --shell-muted: #b4c
 .dark .sidebar-panel a[aria-current=page] { background: #253953; color: #e2edff; }
 .navigation-backdrop { display: none; }
 @media (min-width: 1024px) {
-  .app-shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: auto 1fr auto; min-height: 100vh; height: auto; }
-  .app-shell > [role=alert], .app-header { grid-column: 1 / -1; }
+  /* 4 rows, not 3: the CRL banner ([role=alert]) is conditional, and
+     without its own explicit row, grid auto-placement pushes .app-header
+     into the tall 1fr content row whenever the banner renders -- leaving
+     a large blank gap above the real content (header sized ~72px inside
+     a cell stretched to fill most of the viewport). Explicit grid-row on
+     every top-level child makes placement independent of whether the
+     banner is present. */
+  .app-shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: auto auto 1fr auto; min-height: 100vh; height: auto; }
+  .app-shell > [role=alert] { grid-column: 1 / -1; grid-row: 1; }
+  .app-header { grid-column: 1 / -1; grid-row: 2; }
   .app-shell .menu-trigger { display: none; }
-  .app-navigation { grid-column: 1; grid-row: span 2; align-self: stretch; border-right: 1px solid var(--shell-border); background: var(--shell-panel); }
+  .app-navigation { grid-column: 1; grid-row: 3 / span 2; align-self: stretch; border-right: 1px solid var(--shell-border); background: var(--shell-panel); }
   .sidebar-panel { position: sticky; top: 72px; max-height: calc(100vh - 72px); overflow-y: auto; }
-  .app-shell .app-main { grid-column: 2; margin: 0 auto; padding: 32px 36px; max-width: 1440px; }
-  .app-shell .site-footer { grid-column: 2; width: calc(100% - 72px); margin: 0 auto; }
+  .app-shell .app-main { grid-column: 2; grid-row: 3; margin: 0 auto; padding: 32px 36px; max-width: 1440px; }
+  .app-shell .site-footer { grid-column: 2; grid-row: 4; width: calc(100% - 72px); margin: 0 auto; }
 }
 @media (max-width: 1023px) {
   .app-header { padding: 12px 16px; }
