@@ -8,7 +8,7 @@ import uuid
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app import auth, bulk_service, cert_service, crl_push, db, pki
+from app import auth, cert_service, crl_push, db, pki
 from app.main import create_app
 from app.validation import normalize_employee_key
 from tests.conftest import login_as
@@ -176,21 +176,3 @@ def test_issue_form_confirm_duplicate_bypasses_spelling_warning(app_settings, th
     engine = db.make_engine(str(app_settings.db_path))
     session = db.make_session_factory(engine)()
     assert session.scalar(select(db.Certificate).where(db.Certificate.cn == "device-2.example")) is not None
-
-
-def test_bulk_classify_flags_spelling_mismatch_but_stays_valid(app_settings, throwaway_pki, monkeypatch):
-    _write_throwaway_pki(app_settings, throwaway_pki)
-    engine = db.make_engine(str(app_settings.db_path))
-    db.init_db(engine)
-    session = db.make_session_factory(engine)()
-    cert_service.issue_certificate(
-        session, app_settings.pki_path, throwaway_pki["inter_cert"], throwaway_pki["inter_key"],
-        cn="existing-device", note=None, request_id=str(uuid.uuid4()), export_password=None,
-        issued_by="alice", days=365, device=cert_service.DeviceInfo(employee_name="Juan Dela Cruz"),
-    )
-
-    rows = bulk_service.classify(session, [
-        bulk_service.BatchInputRow(identifier="new-device", employee_name="juan dela cruz"),
-    ])
-    assert rows[0].classification == "valid"
-    assert rows[0].employee_spelling_matches == ["Juan Dela Cruz"]

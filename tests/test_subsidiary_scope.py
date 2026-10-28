@@ -139,17 +139,40 @@ def test_scoped_admin_bulk_action_skips_out_of_scope_serial(app_settings, throwa
     assert session.query(db.Certificate).filter_by(cn="cebu-bulk-target").one().status == db.CertStatus.active
 
 
-def test_scoped_admin_blocked_from_bulk_issue(app_settings, throwaway_pki, monkeypatch):
+def test_scoped_admin_blocked_from_cross_subsidiary_bulk_onboarding(app_settings, throwaway_pki, monkeypatch):
+    # The old blanket "/certs/bulk is unscoped-admins-only" gate was part
+    # of the free-text bulk-issue path that was removed (it had no real
+    # per-row subsidiary check, just an all-or-nothing route guard). Real
+    # bulk onboarding (/bulk/employees) scopes per CSV row instead --
+    # network_policy.create_department/create_employee already enforce
+    # assert_can_manage_subsidiary, so a subsidiary-scoped admin trying
+    # to onboard into a DIFFERENT subsidiary fails there, per-row, with a
+    # clear reason rather than a blanket 403 on the whole feature.
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
     _write_throwaway_pki(app_settings, throwaway_pki)
-    scoped = _seed_admin(app_settings, "boracay-restricted", db.AdminRole.super_admin, subsidiary_scope="Lezzgo Boracay")
+    scoped = _seed_admin(app_settings, "boracay-restricted", db.AdminRole.subsidiary_super_admin, subsidiary_scope="lezzgo_boracay")
 
     app = create_app(app_settings)
     client = TestClient(app)
     _login(client, app_settings, scoped)
 
-    assert client.get("/certs/bulk").status_code == 403
-    assert client.post("/certs/bulk/preview", data={"identifiers_text": "a\nb"}).status_code == 403
+    assert client.get("/bulk/employees").status_code == 200
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    from sqlalchemy import select as _select
+    other_sub = session.scalar(_select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+    dept = db.Department(subsidiary_id=other_sub.id, code="ops", display_name="Operations")
+    session.add(dept)
+    session.commit()
+
+    csv_text = "subsidiary_code,department_code,display_name,employee_number\ntopline,ops,Someone Else,EMP-X\n"
+    resp = client.post("/bulk/employees/preview", files={"csv_file": ("e.csv", csv_text, "text/csv")})
+    assert resp.status_code == 200
+    import re
+    token = re.search(r'name="batch_token" value="([^"]+)"', resp.text).group(1)
+    resp = client.post("/bulk/employees/confirm", data={"batch_token": token})
+    assert "1 failed" in resp.text
 
 
 def test_scoped_admin_sees_only_own_subsidiary_activity(app_settings, throwaway_pki, monkeypatch):
@@ -223,5 +246,5 @@ def test_unscoped_admin_is_unaffected(app_settings, throwaway_pki, monkeypatch):
     client.post("/certs/issue", data={"cn": "unscoped-device", "request_id": str(uuid.uuid4()), "subsidiary": "Bay Mall"})
     resp = client.get("/certs")
     assert "unscoped-device" in resp.text
-    assert client.get("/certs/bulk").status_code == 200
+    assert client.get("/bulk/employees").status_code == 200
     assert client.get("/activity").status_code == 200
