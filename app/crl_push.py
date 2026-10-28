@@ -33,12 +33,19 @@ def push_crl(
     """scp the CRL, trigger the forced-command reload, then read it back
     and compare hashes. `run` is injectable so tests can mock the SSH
     calls without ever connecting (handoff §12)."""
+    # The service's $HOME isn't writable (non-root container user owns
+    # neither /app nor /root), so the default ~/.ssh/known_hosts can't be
+    # created -- StrictHostKeyChecking=yes with nowhere to write the
+    # pinned key just fails outright. Keep known_hosts next to the key
+    # itself, on the same persisted volume.
+    known_hosts = ssh_key.with_name("known_hosts")
+    host_key_opts = ["-o", "StrictHostKeyChecking=yes", "-o", f"UserKnownHostsFile={known_hosts}"]
+
     scp_cmd = [
         "scp",
         "-i",
         str(ssh_key),
-        "-o",
-        "StrictHostKeyChecking=yes",
+        *host_key_opts,
         str(crl_path),
         f"{ssh_user}@{radius_host}:crl.pem",
     ]
@@ -52,8 +59,7 @@ def push_crl(
         "ssh",
         "-i",
         str(ssh_key),
-        "-o",
-        "StrictHostKeyChecking=yes",
+        *host_key_opts,
         f"{ssh_user}@{radius_host}",
     ]
     reload = run(ssh_cmd, capture_output=True, timeout=30)
@@ -64,8 +70,7 @@ def push_crl(
         "ssh",
         "-i",
         str(ssh_key),
-        "-o",
-        "StrictHostKeyChecking=yes",
+        *host_key_opts,
         f"{ssh_user}@{radius_host}",
         "sha256sum-crl",
     ]
