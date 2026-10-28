@@ -194,6 +194,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         form_data = {"subsidiary": admin.subsidiary_scope} if admin.subsidiary_scope else {}
         if device:
             network_policy.assert_can_manage_subsidiary(admin, device.subsidiary_id, session)
+            sub = session.get(db.Subsidiary, device.subsidiary_id)
             form_data.update({
                 "cn": device.asset_tag or device.display_name.lower().replace(" ", "-"),
                 "employee_name": device.employee.display_name if device.employee else "",
@@ -201,7 +202,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "device_model": device.device_model or "",
                 "device_mac": device.mac_address or "",
                 "device_serial": device.serial_number or device.asset_tag or "",
-                "subsidiary": device.subsidiary.display_name if device.subsidiary else "",
+                "subsidiary": sub.display_name if sub else "",
             })
 
         return templates.TemplateResponse(
