@@ -42,6 +42,7 @@ Source and regression tests now close findings 1, 2, 3, 4, 5, 8, and 9: certific
 5b. Switch/VLAN trunk hardware still not in place — see closed item 5 above. VLAN 10/fallback 99 assignment is proven at the RADIUS layer but currently disabled end-to-end (reverted to VLAN 1) pending a managed or L3 switch between the RAP72 and the router.
 7. The hub itself is on self-signed TLS, LAN-only (`https://192.168.13.73:8443`) — no DNS/port-forward set up yet for `certmanager.topline.ph`.
 8. Root CA private key: backed up (encrypted, handed off), but the live data volume is on Array B, which SERVER_STATE.md documents as RAID0 — zero hardware redundancy. The encrypted backup is the only protection against a drive failure.
+9. `WIFI_SSID` in the hub's `.env` is currently `radius-ap`, a test-rig value matching today's AP name — not final. When the real AP is renamed/configured for production, update that line and `docker compose up -d` (no rebuild needed) to match, or every generated Windows/Linux onboarding profile will target the wrong SSID (discovered live on 28 October 2026: a device couldn't connect because the installed Wi-Fi profile's SSID didn't match the AP's actual broadcast name).
 
 ## Next required checks
 
