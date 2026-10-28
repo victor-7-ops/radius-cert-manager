@@ -187,6 +187,20 @@ def test_compile_sign_verify_envelope(site_test_setup):
     assert len(verified["bindings"]) == 2
 
 
+def test_compile_policy_includes_vlan_segmentation_flag(site_test_setup):
+    s = site_test_setup
+    payload = site_policy.compile_site_policy(s["site"], s["session"], revision=1)
+    assert payload["vlan_segmentation_enabled"] is True
+
+    s["site"].vlan_segmentation_enabled = False
+    s["session"].flush()
+    payload_off = site_policy.compile_site_policy(s["site"], s["session"], revision=2)
+    assert payload_off["vlan_segmentation_enabled"] is False
+    # Bindings themselves are untouched -- the adapter, not the compiler,
+    # is what strips the VLAN number from an accepted decision.
+    assert len(payload_off["bindings"]) == 2
+
+
 def test_verify_envelope_rejections(site_test_setup):
     s = site_test_setup
     payload = site_policy.compile_site_policy(s["site"], s["session"], revision=5)

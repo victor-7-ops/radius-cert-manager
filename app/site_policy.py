@@ -236,6 +236,7 @@ def compile_site_policy(
         "revision": revision,
         "issued_at": now_dt.isoformat(),
         "expires_at": expires_dt.isoformat(),
+        "vlan_segmentation_enabled": site.vlan_segmentation_enabled,
         "bindings": compiled_bindings,
     }
     return payload

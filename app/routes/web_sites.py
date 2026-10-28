@@ -129,4 +129,16 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         site_service.reactivate(session, site, actor=admin.username)
         return RedirectResponse(h.flash("/sites", f"{site.name} reactivated.", "success"), status_code=303)
 
+    @router.post("/sites/{site_id}/vlan-segmentation")
+    def site_set_vlan_segmentation(
+        request: Request, site_id: str, enabled: str = Form(""),
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
+        session = deps.get_db_session()
+        site = _load_site_or_404(session, site_id)
+        is_enabled = enabled == "true"
+        site_service.set_vlan_segmentation(session, site, is_enabled, actor=admin.username)
+        state = "enabled" if is_enabled else "disabled (authenticate-only)"
+        return RedirectResponse(h.flash("/sites", f"VLAN segmentation {state} for {site.name}.", "success"), status_code=303)
+
     return router

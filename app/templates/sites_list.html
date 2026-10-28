@@ -22,6 +22,7 @@
         <th>Name</th>
         <th>RADIUS CN</th>
         <th>Subsidiary</th>
+        <th>VLAN segmentation</th>
         <th>Status</th>
         <th></th>
       </tr>
@@ -37,6 +38,21 @@
           <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style="background: {{ site.subsidiary | subsidiary_color }}22; color: {{ site.subsidiary | subsidiary_color }};">{{ site.subsidiary }}</span>
           {% else %}
           <span class="text-slate-400 dark:text-slate-500 text-sm">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if site.vlan_segmentation_enabled %}
+          <button hx-post="/sites/{{ site.id }}/vlan-segmentation" hx-vals='{"enabled": "false"}'
+                  hx-confirm="Disable VLAN segmentation at {{ site.name }}? It'll fall back to authenticate-only (no router/switch VLAN support) on its next policy pull — use this for sites with no managed switch."
+                  class="badge badge-green hover:opacity-80 transition-opacity" title="Click to disable (authenticate-only)">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> On
+          </button>
+          {% else %}
+          <button hx-post="/sites/{{ site.id }}/vlan-segmentation" hx-vals='{"enabled": "true"}'
+                  hx-confirm="Enable VLAN segmentation at {{ site.name }}? Only do this once a managed/L3 switch is wired in to honor the 802.1Q trunk."
+                  class="badge badge-slate hover:opacity-80 transition-opacity" title="Authenticate-only — click to enable (needs a switch)">
+            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Off (auth-only)
+          </button>
           {% endif %}
         </td>
         <td>
@@ -72,7 +88,7 @@
       </tr>
       {% endfor %}
       {% if not rows %}
-      <tr><td colspan="5" class="text-center text-slate-400 dark:text-slate-500 py-8">No sites yet.</td></tr>
+      <tr><td colspan="6" class="text-center text-slate-400 dark:text-slate-500 py-8">No sites yet.</td></tr>
       {% endif %}
     </tbody>
   </table>

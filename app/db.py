@@ -531,6 +531,14 @@ class Site(Base):
         DateTime(timezone=True), default=_now
     )
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Property of the site's physical network, not of any one
+    # subsidiary/role binding: some sites are only router + FreeRADIUS +
+    # AP, with no managed/L3 switch to honor an 802.1Q trunk. Default True
+    # so existing sites keep behaving as they do today; flip off per-site
+    # for authenticate-only deployments (deploy/radius/authorize_policy.py
+    # skips VLAN assignment entirely when this is False, regardless of
+    # what vlan_id a matched SiteRoleBinding carries).
+    vlan_segmentation_enabled: Mapped[bool] = mapped_column(default=True)
 
     last_alerted_status: Mapped[str | None] = mapped_column(String, nullable=True)
     # Edge-triggered dedup for app/fleet_watch.py (HANDOFF-FLEET.md §5.1
@@ -676,6 +684,7 @@ _ADMIN_COLUMN_MIGRATIONS = [
 
 _SITE_COLUMN_MIGRATIONS = [
     ("last_alerted_status", "VARCHAR"),
+    ("vlan_segmentation_enabled", "BOOLEAN DEFAULT 1"),
 ]
 
 _AUDIT_LOG_COLUMN_MIGRATIONS = [

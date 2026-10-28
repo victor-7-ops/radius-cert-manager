@@ -84,3 +84,21 @@ def reactivate(session: Session, site: db.Site, actor: str) -> None:
         subsidiary=site.subsidiary, site_id=site.id,
     )
     session.commit()
+
+
+def set_vlan_segmentation(session: Session, site: db.Site, enabled: bool, actor: str) -> None:
+    """Toggles whether this site's RADIUS adapter assigns VLANs at all.
+
+    Off for sites that are only router + FreeRADIUS + AP, with no managed/
+    L3 switch to honor an 802.1Q trunk -- authentication still happens
+    (Access-Accept/Reject), just without any Tunnel-* VLAN attributes.
+    Takes effect on the site's next policy pull, not immediately (the
+    adapter only ever reads its locally cached, signed policy.json).
+    """
+    site.vlan_segmentation_enabled = enabled
+    db.audit(
+        session, actor=actor,
+        action="site_vlan_segmentation_enable" if enabled else "site_vlan_segmentation_disable",
+        target=site.radius_cn, subsidiary=site.subsidiary, site_id=site.id,
+    )
+    session.commit()

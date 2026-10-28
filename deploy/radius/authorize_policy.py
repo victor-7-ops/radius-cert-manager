@@ -194,6 +194,17 @@ def evaluate_authorization(
             network_role_id=role_id,
         )
 
+    # vlan_segmentation_enabled is a site-level property (not per-binding):
+    # some sites are only router + FreeRADIUS + AP, with no managed/L3
+    # switch to honor an 802.1Q trunk. When False, the authorization
+    # decision tree below is evaluated exactly as normal -- platform
+    # block, role on/off, fallback -- only the VLAN number itself is
+    # stripped from an otherwise-accepted decision, so authentication
+    # keeps working without ever emitting a Tunnel-* attribute the site's
+    # own network can't honor. Defaults True: missing from an older
+    # cached policy.json means "behave exactly as before this existed."
+    vlan_segmentation_enabled = policy_data.get("vlan_segmentation_enabled", True)
+
     # 3. Lookup binding for (subsidiary_id, network_role_id)
     bindings = policy_data.get("bindings", [])
     matching_binding = None
@@ -242,9 +253,9 @@ def evaluate_authorization(
             )
         return RadiusDecision(
             outcome="accept",
-            vlan_id=primary_vlan,
-            vlan_type="primary",
-            reason="Authorized: normal network role is ON",
+            vlan_id=primary_vlan if vlan_segmentation_enabled else None,
+            vlan_type="primary" if vlan_segmentation_enabled else None,
+            reason="Authorized: normal network role is ON" + ("" if vlan_segmentation_enabled else " (VLAN segmentation disabled at this site -- authenticate-only)"),
             subsidiary_id=sub_id,
             network_role_id=role_id,
         )
@@ -253,9 +264,9 @@ def evaluate_authorization(
     if fallback_vlan is not None and (1 <= fallback_vlan <= 4094) and fallback_vlan != primary_vlan:
         return RadiusDecision(
             outcome="accept",
-            vlan_id=fallback_vlan,
-            vlan_type="fallback",
-            reason="Role switch is OFF: assigned explicitly configured fallback VLAN",
+            vlan_id=fallback_vlan if vlan_segmentation_enabled else None,
+            vlan_type="fallback" if vlan_segmentation_enabled else None,
+            reason="Role switch is OFF: assigned explicitly configured fallback VLAN" + ("" if vlan_segmentation_enabled else " (VLAN segmentation disabled at this site -- authenticate-only)"),
             subsidiary_id=sub_id,
             network_role_id=role_id,
         )
