@@ -23,6 +23,7 @@
         <th>RADIUS CN</th>
         <th>Subsidiary</th>
         <th>VLAN segmentation</th>
+        <th>Wi-Fi SSID</th>
         <th>Status</th>
         <th></th>
       </tr>
@@ -54,6 +55,15 @@
             <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Off (auth-only)
           </button>
           {% endif %}
+        </td>
+        <td>
+          <form hx-post="/sites/{{ site.id }}/wifi-ssid" hx-swap="none" class="flex items-center gap-1">
+            <input type="text" name="ssid" value="{{ site.wifi_ssid or '' }}" placeholder="(global default)"
+                   class="w-32 text-xs font-mono px-1.5 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">
+            <button type="submit" class="text-slate-500 hover:text-slate-900 dark:hover:text-slate-200" title="Save SSID">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/></svg>
+            </button>
+          </form>
         </td>
         <td>
           {% if r.status == "OK" %}

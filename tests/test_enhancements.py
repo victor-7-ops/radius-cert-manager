@@ -467,6 +467,118 @@ def test_delivery_page_is_reloadable_until_bundle_actually_downloaded(app_settin
     assert third.status_code == 404
 
 
+def test_onboard_bundle_pins_root_ca_and_ships_full_chain(app_settings, throwaway_pki, monkeypatch):
+    """Regression for the live bug (29 Oct 2026): the Windows Wi-Fi
+    profile's TrustedRootCA must point at the actual Root CA, not the
+    intermediate -- Windows rejected with "the root certificate used
+    for this network is invalid" when it was pinned to the
+    intermediate, even though the intermediate cert itself was
+    correctly installed. The zip must also carry both CA certs and
+    import both on Windows (certutil -addstore CA / Root)."""
+    import hashlib
+    import io
+    import zipfile
+
+    from cryptography.hazmat.primitives import serialization
+
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    # Two-tier PKI: write ca-chain.pem so app.main picks up deps.root_cert
+    # (see app/main.py: ca_chain_path = settings.pki_path / "ca-chain.pem").
+    (app_settings.pki_path / "ca-chain.pem").write_bytes(
+        pki.cert_to_pem(throwaway_pki["root_cert"])
+    )
+    admin = _seed_admin(app_settings, "chain-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+    client.post("/certs/issue", data={"cn": "chain-device", "request_id": str(uuid.uuid4())})
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    cert = session.query(db.Certificate).filter_by(cn="chain-device").one()
+
+    resp = client.get(f"/certs/{cert.serial}/windows-profile")
+    assert resp.status_code == 200
+    root_der = throwaway_pki["root_cert"].public_bytes(serialization.Encoding.DER)
+    root_thumbprint = hashlib.sha1(root_der).hexdigest().lower()
+    inter_der = throwaway_pki["inter_cert"].public_bytes(serialization.Encoding.DER)
+    inter_thumbprint = hashlib.sha1(inter_der).hexdigest().lower()
+    xml_hex = resp.text.replace(" ", "").lower()
+    assert root_thumbprint in xml_hex
+    assert inter_thumbprint not in xml_hex  # must pin the root, not the intermediate
+
+    resp2 = client.get(f"/certs/{cert.serial}/onboard-bundle")
+    assert resp2.status_code == 200
+    zf = zipfile.ZipFile(io.BytesIO(resp2.content))
+    names = zf.namelist()
+    assert any(n.endswith("ca-root.pem") for n in names)
+    assert any(n.endswith("ca-intermediate.pem") for n in names)
+    assert any(n.endswith("ca-chain.pem") for n in names)
+    install_cmd = next(n for n in names if n.endswith("Install.cmd"))
+    install_cmd_text = zf.read(install_cmd).decode()
+    assert "-addstore CA " in install_cmd_text
+    assert "-addstore Root " in install_cmd_text
+
+
+def test_onboard_bundle_covers_every_authorized_site_ssid(app_settings, throwaway_pki, monkeypatch):
+    """"Automatically install to any AP available" (production, multiple
+    sites each with their own SSID): the zip/installers must cover every
+    site the device's subsidiary is authorized at, not just one global
+    SSID -- one Wi-Fi profile per site, each auto-connect, so whichever
+    site the device is physically near just works."""
+    import io
+    import zipfile
+
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "multisite-admin", db.AdminRole.admin)
+
+    engine = db.make_engine(str(app_settings.db_path))
+    db.init_db(engine)
+    session = db.make_session_factory(engine)()
+    sub = db.Subsidiary(code="multisite-co", display_name="Multisite Co")
+    session.add(sub)
+    session.flush()
+    site_a = db.Site(
+        name="Site A", radius_cn="site-a.example.local",
+        auth_token_hash=auth.hash_password("token-a"), wifi_ssid="SiteA-WiFi",
+    )
+    site_b = db.Site(
+        name="Site B", radius_cn="site-b.example.local",
+        auth_token_hash=auth.hash_password("token-b"), wifi_ssid="SiteB-WiFi",
+    )
+    session.add_all([site_a, site_b])
+    session.flush()
+    session.add_all([
+        db.SiteSubsidiary(site_id=site_a.id, subsidiary_id=sub.id, is_active=True),
+        db.SiteSubsidiary(site_id=site_b.id, subsidiary_id=sub.id, is_active=True),
+    ])
+    session.commit()
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+    client.post("/certs/issue", data={"cn": "multisite-device", "request_id": str(uuid.uuid4())})
+
+    session2 = db.make_session_factory(engine)()
+    cert = session2.query(db.Certificate).filter_by(cn="multisite-device").one()
+    cert.subsidiary_id = sub.id
+    session2.commit()
+
+    resp = client.get(f"/certs/{cert.serial}/onboard-bundle")
+    assert resp.status_code == 200
+    zf = zipfile.ZipFile(io.BytesIO(resp.content))
+    names = zf.namelist()
+    assert any(n.endswith("SiteA-WiFi.xml") for n in names)
+    assert any(n.endswith("SiteB-WiFi.xml") for n in names)
+    install_cmd = zf.read(next(n for n in names if n.endswith("Install.cmd"))).decode()
+    assert "SiteA-WiFi.xml" in install_cmd
+    assert "SiteB-WiFi.xml" in install_cmd
+    install_sh = zf.read(next(n for n in names if n.endswith("install.sh"))).decode()
+    assert "SiteA-WiFi" in install_sh
+    assert "SiteB-WiFi" in install_sh
+
+
 def test_smart_install_serves_mobileconfig_on_apple_user_agent(app_settings, throwaway_pki, monkeypatch):
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
     _write_throwaway_pki(app_settings, throwaway_pki)

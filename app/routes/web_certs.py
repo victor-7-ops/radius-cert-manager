@@ -35,6 +35,26 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
 
         return re.sub(r"[^A-Za-z0-9]+", "-", name).strip("-") or "device"
 
+    def _ssids_for_cert(session, cert: db.Certificate) -> list[str]:
+        """Every distinct AP name this device could actually need to
+        connect to: one per site its subsidiary is authorized at
+        (db.SiteSubsidiary), falling back to the global default for a
+        site with no SSID of its own set. A device whose subsidiary
+        isn't tied to any site yet just gets the global default --
+        "automatically install to any AP available" means every site it
+        can reach, not a guess at which one it'll be near."""
+        default_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
+        if not cert.subsidiary_id:
+            return [default_ssid]
+        site_ids = session.scalars(
+            select(db.SiteSubsidiary.site_id).where(db.SiteSubsidiary.subsidiary_id == cert.subsidiary_id)
+        ).all()
+        if not site_ids:
+            return [default_ssid]
+        sites = session.scalars(select(db.Site).where(db.Site.id.in_(site_ids), db.Site.is_active.is_(True))).all()
+        ssids = {site.wifi_ssid or default_ssid for site in sites}
+        return sorted(ssids) or [default_ssid]
+
     def _cert_filter_stmt(q, status, employee, subsidiary, admin=None):
         """Shared by the list page and the CSV export so the two can
         never silently drift apart on what a filter means."""
@@ -483,6 +503,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             serial=serial,
             pkcs12_data=bundle.data,
             ca_cert=deps.inter_cert,
+            root_cert=deps.root_cert,
             wifi_ssid=wifi_ssid,
             export_password=bundle.password,
             organization=cert.subsidiary,
@@ -532,6 +553,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             serial=serial,
             pkcs12_data=bundle.data,
             ca_cert=deps.inter_cert,
+            root_cert=deps.root_cert,
             wifi_ssid=wifi_ssid,
             export_password=bundle.password,
             organization=cert.subsidiary,
@@ -557,7 +579,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
         xml_content = windows_profile.generate_windows_wifi_xml(
             ssid=wifi_ssid,
-            ca_cert=deps.inter_cert,
+            ca_cert=deps.root_cert or deps.inter_cert,
         )
         return Response(
             content=xml_content,
@@ -565,95 +587,132 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             headers={"Content-Disposition": f'attachment; filename="{wifi_ssid}-Profile.xml"'},
         )
 
-    def _build_onboard_zip(cert: db.Certificate, bundle) -> tuple[bytes, str]:
+    def _build_onboard_zip(cert: db.Certificate, bundle, session) -> tuple[bytes, str]:
         """Everything needed to onboard a device in one zip: one-click
         installers for Windows and Linux, plus the .mobileconfig for
         macOS/iOS (which can also install standalone, true one-click,
-        without needing the zip at all)."""
+        without needing the zip at all). Covers every AP the device's
+        subsidiary is authorized at (db.SiteSubsidiary), not just one --
+        all profiles are added with auto-connect, so whichever site the
+        device is physically near just works, no picking required."""
         from app import mobileconfig, pki, windows_profile
         import io
         import zipfile
 
-        wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
-        xml_content = windows_profile.generate_windows_wifi_xml(ssid=wifi_ssid, ca_cert=deps.inter_cert)
+        ssids = _ssids_for_cert(session, cert)
+        # TrustedRootCA must point at the actual Root CA -- pinning the
+        # intermediate there (as earlier code did) made Windows refuse
+        # with "the root certificate used for this network is invalid"
+        # even with the right cert installed, since the field specifically
+        # means "require this root to anchor the chain" (confirmed live,
+        # 29 Oct 2026, via the client's own WLAN-AutoConfig/Operational
+        # event 12013: EAP Root cause "the root certificate used for this
+        # network is invalid").
+        root_or_inter = deps.root_cert or deps.inter_cert
         ca_pem = pki.cert_to_pem(deps.inter_cert)
+        root_pem = pki.cert_to_pem(deps.root_cert) if deps.root_cert is not None else None
         mc_bytes = mobileconfig.generate_mobileconfig(
             cn=cert.cn,
             serial=cert.serial,
             pkcs12_data=bundle.data,
             ca_cert=deps.inter_cert,
-            wifi_ssid=wifi_ssid,
+            root_cert=deps.root_cert,
+            wifi_ssid=ssids,
             export_password=bundle.password,
             organization=cert.subsidiary,
         )
 
         folder_name = _slugify(cert.employee_name or cert.cn)
         p12_name = f"{cert.cn}.p12"
-        xml_name = f"{wifi_ssid}-Profile.xml"
-        ca_name = "ca.pem"
+        ca_name = "ca-intermediate.pem"
+        root_name = "ca-root.pem"
+        chain_name = "ca-chain.pem"
+        # nmcli/wpa_supplicant wants the full chain in one ca-cert file --
+        # the intermediate alone isn't enough to build trust up to the
+        # root (same underlying issue as the Windows bug above).
+        chain_pem = ca_pem + (root_pem or b"")
 
         # Password is plaintext in both scripts by design (user explicitly
         # chose this tradeoff over typing it manually, after being told
         # protection then rests on how the zip itself is distributed); it
         # never leaves this zip.
 
-        # certutil -user writes to the *current user's* cert store, so this
-        # needs no admin elevation/UAC prompt.
-        install_cmd = (
-            "@echo off\r\n"
-            "cd /d \"%~dp0\"\r\n"
-            f'certutil -f -user -p "{bundle.password}" -importPFX My "{p12_name}"\r\n'
-            "if errorlevel 1 (\r\n"
-            "  echo Certificate import failed. Contact IT.\r\n"
-            "  pause\r\n"
-            "  exit /b 1\r\n"
-            ")\r\n"
-            f'netsh wlan add profile filename="{xml_name}" user=current\r\n'
-            "echo Done. Connecting to Wi-Fi...\r\n"
-            f'netsh wlan connect name="{wifi_ssid}"\r\n'
-            "pause\r\n"
-        )
+        # certutil -user writes to the *current user's* cert store, so none
+        # of this needs admin elevation/UAC. The CA certs must land in the
+        # *physical* Root/CA stores, not just be referenced by thumbprint
+        # in the XML -- the XML only tells Windows which CA to require,
+        # it never installs trust on its own (the actual bug above). Kept
+        # compact: one line per action, pause only on real failure. Every
+        # profile is connectionMode=auto, so Windows connects on its own
+        # to whichever site is actually in range -- no explicit connect.
+        install_cmd_lines = [
+            "@echo off",
+            'cd /d "%~dp0"',
+            f'certutil -f -user -addstore CA "{ca_name}" >nul',
+        ]
+        if root_pem is not None:
+            install_cmd_lines.append(f'certutil -f -user -addstore Root "{root_name}" >nul')
+        install_cmd_lines.append(f'certutil -f -user -p "{bundle.password}" -importPFX My "{p12_name}" >nul')
+        install_cmd_lines.append("if errorlevel 1 (echo Certificate import failed. Contact IT. & pause & exit /b 1)")
+        xml_names = []
+        for ssid in ssids:
+            xml_name = f"{ssid}.xml"
+            xml_names.append(xml_name)
+            install_cmd_lines.append(f'netsh wlan add profile filename="{xml_name}" user=current >nul')
+        install_cmd_lines.append("echo Done.")
+        install_cmd = "\r\n".join(install_cmd_lines) + "\r\n"
 
         # nmcli (NetworkManager, the default on Ubuntu/Fedora/Debian
         # desktops) takes the .p12 directly for both client-cert and
-        # private-key -- no separate PEM extraction needed.
-        install_sh = (
-            "#!/bin/sh\n"
-            "set -e\n"
-            'cd "$(dirname "$0")"\n'
-            "if ! command -v nmcli >/dev/null; then\n"
-            '  echo "nmcli (NetworkManager) not found -- ask IT for manual setup."\n'
-            "  exit 1\n"
-            "fi\n"
-            f'nmcli connection delete "{wifi_ssid}" 2>/dev/null || true\n'
-            f'nmcli connection add type wifi con-name "{wifi_ssid}" ssid "{wifi_ssid}" \\\n'
-            "  wifi-sec.key-mgmt wpa-eap 802-1x.eap tls \\\n"
-            f'  802-1x.identity "{cert.cn}" \\\n'
-            f'  802-1x.ca-cert "$(pwd)/{ca_name}" \\\n'
-            f'  802-1x.client-cert "$(pwd)/{p12_name}" \\\n'
-            f'  802-1x.private-key "$(pwd)/{p12_name}" \\\n'
-            f'  802-1x.private-key-password "{bundle.password}"\n'
-            f'nmcli connection up "{wifi_ssid}"\n'
-            'echo "Connected."\n'
-        )
+        # private-key -- no separate PEM extraction needed. One
+        # autoconnect profile per SSID; NetworkManager connects on its
+        # own to whichever is in range.
+        install_sh_lines = [
+            "#!/bin/sh",
+            "set -e",
+            'cd "$(dirname "$0")"',
+            "if ! command -v nmcli >/dev/null; then",
+            '  echo "nmcli (NetworkManager) not found -- ask IT for manual setup."',
+            "  exit 1",
+            "fi",
+        ]
+        for ssid in ssids:
+            install_sh_lines += [
+                f'nmcli connection delete "{ssid}" 2>/dev/null || true',
+                f'nmcli connection add type wifi con-name "{ssid}" ssid "{ssid}" autoconnect yes \\',
+                "  wifi-sec.key-mgmt wpa-eap 802-1x.eap tls \\",
+                f'  802-1x.identity "{cert.cn}" \\',
+                f'  802-1x.ca-cert "$(pwd)/{chain_name}" \\',
+                f'  802-1x.client-cert "$(pwd)/{p12_name}" \\',
+                f'  802-1x.private-key "$(pwd)/{p12_name}" \\',
+                f'  802-1x.private-key-password "{bundle.password}"',
+            ]
+        install_sh_lines.append('echo "Done."')
+        install_sh = "\n".join(install_sh_lines) + "\n"
 
         mc_name = f"{cert.cn}.mobileconfig"
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(f"{folder_name}/{p12_name}", bundle.data)
-            zf.writestr(f"{folder_name}/{xml_name}", xml_content)
+            for ssid, xml_name in zip(ssids, xml_names):
+                xml_content = windows_profile.generate_windows_wifi_xml(ssid=ssid, ca_cert=root_or_inter)
+                zf.writestr(f"{folder_name}/{xml_name}", xml_content)
             zf.writestr(f"{folder_name}/{ca_name}", ca_pem)
+            if root_pem is not None:
+                zf.writestr(f"{folder_name}/{root_name}", root_pem)
+            zf.writestr(f"{folder_name}/{chain_name}", chain_pem)
             zf.writestr(f"{folder_name}/{mc_name}", mc_bytes)
             zf.writestr(f"{folder_name}/Install.cmd", install_cmd)
             info = zipfile.ZipInfo(f"{folder_name}/install.sh")
             info.external_attr = 0o755 << 16  # executable bit, for unzip -X / Linux
             zf.writestr(info, install_sh)
+            sites_label = ", ".join(ssids)
             zf.writestr(
                 f"{folder_name}/README.txt",
                 "Windows: double-click Install.cmd.\n"
                 "Linux: run ./install.sh (chmod +x install.sh first if needed).\n"
                 f"macOS/iOS: open {mc_name}, tap Install in Settings.\n"
-                f"All three install the certificate and connect to {wifi_ssid} automatically.\n",
+                f"All three install the certificate chain and auto-connect at: {sites_label}\n",
             )
         return buf.getvalue(), folder_name
 
@@ -670,7 +729,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         bundle = deps.take_pending_bundle(serial)
         if bundle is None:
             raise HTTPException(status.HTTP_410_GONE, "bundle already consumed or not found")
-        zip_bytes, folder_name = _build_onboard_zip(cert, bundle)
+        zip_bytes, folder_name = _build_onboard_zip(cert, bundle, session)
         return Response(
             content=zip_bytes,
             media_type="application/zip",
@@ -702,13 +761,13 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         if is_apple:
             from app import mobileconfig
 
-            wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
             cfg_bytes = mobileconfig.generate_mobileconfig(
                 cn=cert.cn,
                 serial=serial,
                 pkcs12_data=bundle.data,
                 ca_cert=deps.inter_cert,
-                wifi_ssid=wifi_ssid,
+                root_cert=deps.root_cert,
+                wifi_ssid=_ssids_for_cert(session, cert),
                 export_password=bundle.password,
                 organization=cert.subsidiary,
             )
@@ -718,7 +777,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 headers={"Content-Disposition": f'attachment; filename="{cert.cn}.mobileconfig"'},
             )
 
-        zip_bytes, folder_name = _build_onboard_zip(cert, bundle)
+        zip_bytes, folder_name = _build_onboard_zip(cert, bundle, session)
         return Response(
             content=zip_bytes,
             media_type="application/zip",

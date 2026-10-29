@@ -540,6 +540,12 @@ class Site(Base):
     # what vlan_id a matched SiteRoleBinding carries).
     vlan_segmentation_enabled: Mapped[bool] = mapped_column(default=True)
 
+    # The AP(s) at this physical site may broadcast under a name that
+    # differs from other sites (multi-site production, not the single
+    # test rig this started on -- see STAGING-READINESS.md). NULL falls
+    # back to the global Settings.wifi_ssid default.
+    wifi_ssid: Mapped[str | None] = mapped_column(String, nullable=True)
+
     last_alerted_status: Mapped[str | None] = mapped_column(String, nullable=True)
     # Edge-triggered dedup for app/fleet_watch.py (HANDOFF-FLEET.md §5.1
     # TRAP): a SILENT site must fire exactly one alert, not one per
@@ -706,6 +712,7 @@ _ADMIN_COLUMN_MIGRATIONS = [
 _SITE_COLUMN_MIGRATIONS = [
     ("last_alerted_status", "VARCHAR"),
     ("vlan_segmentation_enabled", "BOOLEAN DEFAULT 1"),
+    ("wifi_ssid", "VARCHAR"),
 ]
 
 _AUDIT_LOG_COLUMN_MIGRATIONS = [
