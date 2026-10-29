@@ -597,6 +597,37 @@ def test_delete_employee_route_requires_platform_super_admin(app_settings, throw
     assert r.status_code == 403  # 'admin' role, not platform super_admin
 
 
+def test_department_options_route_returns_departments_for_subsidiary(app_settings, throwaway_pki, monkeypatch):
+    """Regression: the Add Employee modal's subsidiary picker used to
+    window.location.href on change, closing the whole modal. It now
+    hx-gets this route instead -- just <option> tags, no page nav."""
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "deptopt-admin", db.AdminRole.admin)
+
+    engine = db.make_engine(str(app_settings.db_path))
+    db.init_db(engine)
+    session = db.make_session_factory(engine)()
+    sub = session.query(db.Subsidiary).filter_by(code="topline").one()
+    dept = db.Department(subsidiary_id=sub.id, code="deptopt", display_name="Dept <Options> Test")
+    session.add(dept)
+    session.commit()
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    resp = client.get("/departments/options", params={"subsidiary_id": sub.id})
+    assert resp.status_code == 200
+    assert "Dept &lt;Options&gt; Test" in resp.text
+    assert dept.id in resp.text
+
+    empty_resp = client.get("/departments/options", params={"subsidiary_id": "nonexistent"})
+    assert empty_resp.status_code == 200
+    assert "Select department" in empty_resp.text
+    assert dept.id not in empty_resp.text
+
+
 def test_delete_employee_route_deletes_clean_record(app_settings, throwaway_pki, monkeypatch):
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
     _write_throwaway_pki(app_settings, throwaway_pki)

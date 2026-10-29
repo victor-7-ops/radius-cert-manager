@@ -103,6 +103,32 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             },
         )
 
+    @router.get("/departments/options")
+    def department_options(
+        subsidiary_id: str = "",
+        admin: db.Admin = Depends(deps.require_admin),
+    ):
+        """Just the <option> tags for a subsidiary's departments -- lets
+        the "Add Employee" modal's subsidiary picker refresh the
+        department list via htmx instead of window.location.href, which
+        was closing the whole modal on every selection."""
+        session: Session = deps.get_db_session()
+        depts: list[db.Department] = []
+        if subsidiary_id:
+            depts = session.scalars(
+                select(db.Department)
+                .where(db.Department.subsidiary_id == subsidiary_id, db.Department.is_active.is_(True))
+                .order_by(db.Department.display_name.asc())
+            ).all()
+        from html import escape as _esc
+
+        options = '<option value="">Select department...</option>' + "".join(
+            f'<option value="{_esc(d.id)}">{_esc(d.display_name)} ({_esc(d.code)})</option>' for d in depts
+        )
+        from fastapi.responses import HTMLResponse
+
+        return HTMLResponse(options)
+
     @router.post("/people/new", dependencies=[Depends(deps.require_write)])
     def create_person(
         request: Request,
