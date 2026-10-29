@@ -105,6 +105,42 @@ def test_vlan_segmentation_toggle(app_settings, throwaway_pki, monkeypatch):
     assert site.vlan_segmentation_enabled is True
 
 
+def test_vlan_segmentation_toggle_republishes_site_policy(app_settings, throwaway_pki, monkeypatch):
+    """Regression: toggling VLAN segmentation must publish a fresh
+    SitePolicyRevision immediately, not sit un-delivered until the
+    current lease naturally expires (confirmed live, 29 Oct 2026 -- a
+    VLAN binding change produced no new revision at all)."""
+    client = _client(app_settings, throwaway_pki, monkeypatch)
+
+    client.post("/sites", data={"name": "Branch", "radius_cn": "radius-branch-y"})
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    from sqlalchemy import select
+    site = session.scalar(select(db.Site).where(db.Site.radius_cn == "radius-branch-y"))
+
+    from app import site_policy
+    assert session.scalar(select(db.SitePolicyRevision).where(db.SitePolicyRevision.site_id == site.id)) is None
+
+    resp = client.post(f"/sites/{site.id}/vlan-segmentation", data={"enabled": "false"}, follow_redirects=False)
+    assert resp.status_code == 303
+
+    rev = session.scalar(
+        select(db.SitePolicyRevision)
+        .where(db.SitePolicyRevision.site_id == site.id)
+        .order_by(db.SitePolicyRevision.revision.desc())
+    )
+    assert rev is not None
+    assert rev.revision == 1
+
+    client.post(f"/sites/{site.id}/vlan-segmentation", data={"enabled": "true"})
+    rev2 = session.scalar(
+        select(db.SitePolicyRevision)
+        .where(db.SitePolicyRevision.site_id == site.id)
+        .order_by(db.SitePolicyRevision.revision.desc())
+    )
+    assert rev2.revision == 2
+
+
 def test_invalid_radius_cn_rejected(app_settings, throwaway_pki, monkeypatch):
     client = _client(app_settings, throwaway_pki, monkeypatch)
     resp = client.post("/sites", data={"name": "x", "radius_cn": "../../etc/passwd"})

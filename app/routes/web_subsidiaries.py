@@ -181,6 +181,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         try:
             np.authorize_site_subsidiary(admin, site_id, subsidiary_id, session)
             session.commit()
+            h.republish_sites_for_subsidiary(session, subsidiary_id, deps.pki_path, admin.username, extra_site_id=site_id)
         except np.NetworkPolicyError as e:
             session.rollback()
             _handle_policy_error(e)
@@ -195,10 +196,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         try:
             np.deauthorize_site_subsidiary(admin, site_id, subsidiary_id, session)
             session.commit()
+            h.republish_sites_for_subsidiary(session, subsidiary_id, deps.pki_path, admin.username, extra_site_id=site_id)
         except np.NetworkPolicyError as e:
             session.rollback()
             _handle_policy_error(e)
-        return RedirectResponse(h.flash(f"/subsidiaries/{subsidiary_id}", "Site deauthorized for this subsidiary — its bindings stop compiling into policy.json on the next publish.", "warn"), status_code=303)
+        return RedirectResponse(h.flash(f"/subsidiaries/{subsidiary_id}", "Site deauthorized for this subsidiary — published immediately, its bindings are out of the site's policy now.", "warn"), status_code=303)
 
     @router.post("/subsidiaries/{subsidiary_id}/bindings")
     def site_binding_configure(
@@ -214,10 +216,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 vlan_id=vlan_id, fallback_vlan_id=fallback, session=session,
             )
             session.commit()
+            h.republish_sites_for_subsidiary(session, subsidiary_id, deps.pki_path, admin.username, extra_site_id=site_id)
         except np.NetworkPolicyError as e:
             session.rollback()
             _handle_policy_error(e)
-        return RedirectResponse(h.flash(f"/subsidiaries/{subsidiary_id}", "Site VLAN binding configured.", "success"), status_code=303)
+        return RedirectResponse(h.flash(f"/subsidiaries/{subsidiary_id}", "Site VLAN binding configured and published immediately.", "success"), status_code=303)
 
     @router.post("/subsidiaries/{subsidiary_id}/rename")
     def subsidiary_rename(
