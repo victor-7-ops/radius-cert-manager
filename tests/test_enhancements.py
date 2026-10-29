@@ -765,6 +765,32 @@ def test_smart_install_serves_zip_on_windows_user_agent(app_settings, throwaway_
     assert any(n.endswith(".p12") for n in names)
 
 
+def test_smart_install_serves_plain_p12_on_android_user_agent(app_settings, throwaway_pki, monkeypatch):
+    """Android has no .mobileconfig equivalent and can't run the Windows/
+    Linux zip's installer scripts -- it should get the plain .p12, same
+    as the manual "Download .p12" button, not the zip."""
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "install-android-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+    client.post("/certs/issue", data={"cn": "install-android-device", "request_id": str(uuid.uuid4())})
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    cert = session.query(db.Certificate).filter_by(cn="install-android-device").one()
+    token = auth.make_bundle_qr_token(app_settings.secret_key, cert.serial)
+
+    anon_client = TestClient(app)
+    resp = anon_client.get(
+        f"/certs/{cert.serial}/install",
+        params={"token": token},
+        headers={"User-Agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/x-pkcs12"
+
+
 def test_issue_warns_on_duplicate_mac_and_can_be_overridden(app_settings, throwaway_pki, monkeypatch):
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
     _write_throwaway_pki(app_settings, throwaway_pki)
