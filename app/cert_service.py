@@ -139,7 +139,22 @@ def _issue_one_locked(
         csr, inter_cert, inter_key, serial, days,
         subsidiary_id=sub_id, network_role_id=role_id,
     )
-    bundle = pki.build_pkcs12(cn, key, cert, [inter_cert], password=export_password)
+    # The .p12 must carry the full CA chain, not just the intermediate --
+    # a client validating the real RADIUS server's cert needs to build
+    # trust all the way to the self-signed root, and Android in
+    # particular has no separate mechanism to pick up a root that isn't
+    # in the bundle itself (unlike Windows/Apple, which get the root
+    # installed separately via the onboarding zip/.mobileconfig).
+    # Confirmed live, 29 Oct 2026: with only the intermediate in the
+    # bundle, Android's EAP-TLS setup had nothing valid to offer as a
+    # distinct "CA certificate" and authentication never even reached
+    # the RADIUS server. root.crt lives alongside intermediate.crt at
+    # the top of pki_path (see app/main.py's own root_cert loading).
+    root_path = pki_path / "root.crt"
+    chain = [inter_cert]
+    if root_path.exists():
+        chain.append(pki.load_cert_pem(root_path))
+    bundle = pki.build_pkcs12(cn, key, cert, chain, password=export_password)
 
     issued_dir = pki_path / "issued"
     issued_dir.mkdir(parents=True, exist_ok=True)
