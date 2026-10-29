@@ -402,8 +402,13 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
 
     @router.get("/certs/{serial}/delivery")
     def delivery(request: Request, serial: str, admin: db.Admin = Depends(deps.require_write)):
-        password = deps.take_pending_password(serial)
-        if password is None:
+        # Reloadable: the password/link stay available as long as the
+        # bundle itself hasn't actually been downloaded yet (see
+        # take_pending_bundle), so an admin can revisit this page --
+        # e.g. after a QR token expires before anyone scanned it --
+        # without needing to reissue the whole certificate.
+        password = deps.peek_pending_password(serial)
+        if password is None or not deps.peek_pending_bundle(serial):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "nothing to deliver")
         session = deps.get_db_session()
         cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))

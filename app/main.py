@@ -80,8 +80,9 @@ class RouteDeps:
     liveness_token: str | None
     store_pending_bundle: callable
     take_pending_bundle: callable
+    peek_pending_bundle: callable
     store_pending_password: callable
-    take_pending_password: callable
+    peek_pending_password: callable
     regenerate_and_push_crl: callable
     check_expiry_alerts: callable
     expiry_alert_days: int
@@ -186,12 +187,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if bundle is not None:
             pending_bundles[serial] = (now, bundle)
 
+    def peek_pending_bundle(serial: str) -> bool:
+        return serial in pending_bundles
+
     def take_pending_bundle(serial: str):
         entry = pending_bundles.pop(serial, None)
+        # The password is only ever truly "delivered" once the bundle
+        # itself is downloaded -- drop it in lockstep so a page view
+        # (which may happen more than once: the admin reloading, a
+        # since-expired QR link, a retry) never burns the one real
+        # delivery on its own.
+        pending_passwords.pop(serial, None)
         return entry[1] if entry is not None else None
 
-    # Export password shown once on the delivery screen (handoff §6.4) —
-    # never persisted, never logged, consumed alongside the bundle.
+    # Export password shown on the delivery screen (handoff §6.4) —
+    # never persisted, never logged. Survives repeat page views (see
+    # take_pending_bundle above); only actually consumed alongside the
+    # bundle once a credential download happens.
     pending_passwords: dict[str, tuple[float, str]] = {}
 
     def store_pending_password(serial: str, password: str) -> None:
@@ -199,8 +211,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         _sweep_stale(pending_passwords, now, _PENDING_TTL_SECONDS)
         pending_passwords[serial] = (now, password)
 
-    def take_pending_password(serial: str):
-        entry = pending_passwords.pop(serial, None)
+    def peek_pending_password(serial: str):
+        entry = pending_passwords.get(serial)
         return entry[1] if entry is not None else None
 
     # Bulk issue (handoff §6.5): a preview token maps to the classified
@@ -325,8 +337,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         liveness_token=settings.liveness_token,
         store_pending_bundle=store_pending_bundle,
         take_pending_bundle=take_pending_bundle,
+        peek_pending_bundle=peek_pending_bundle,
         store_pending_password=store_pending_password,
-        take_pending_password=take_pending_password,
+        peek_pending_password=peek_pending_password,
         regenerate_and_push_crl=regenerate_and_push_crl,
         check_expiry_alerts=check_expiry_alerts,
         expiry_alert_days=settings.expiry_alert_days,

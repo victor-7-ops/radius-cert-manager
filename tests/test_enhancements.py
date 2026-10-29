@@ -440,6 +440,33 @@ def test_delivery_page_qr_download_rejects_bad_token(app_settings, throwaway_pki
     assert resp2.status_code == 403
 
 
+def test_delivery_page_is_reloadable_until_bundle_actually_downloaded(app_settings, throwaway_pki, monkeypatch):
+    """A QR/link token (10min) can outlive the admin's own page view --
+    reloading /delivery must keep working (fresh token, same password)
+    as long as nobody has actually downloaded the credential yet."""
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "reload-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={"cn": "reload-device", "request_id": str(uuid.uuid4())})
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    cert = session.query(db.Certificate).filter_by(cn="reload-device").one()
+
+    first = client.get(f"/certs/{cert.serial}/delivery")
+    assert first.status_code == 200
+    second = client.get(f"/certs/{cert.serial}/delivery")
+    assert second.status_code == 200  # same password shown, not a 404
+
+    # Once the bundle is actually downloaded, the page is gone for good.
+    client.get(f"/certs/{cert.serial}/bundle")
+    third = client.get(f"/certs/{cert.serial}/delivery")
+    assert third.status_code == 404
+
+
 def test_smart_install_serves_mobileconfig_on_apple_user_agent(app_settings, throwaway_pki, monkeypatch):
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
     _write_throwaway_pki(app_settings, throwaway_pki)
