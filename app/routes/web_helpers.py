@@ -14,7 +14,46 @@ import qrcode
 import qrcode.image.svg
 from fastapi import HTTPException, status
 
+from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from app import db
+
+
+def republish_sites_for_subsidiary(
+    session: Session, subsidiary_id: str, pki_path: Path, actor_username: str, extra_site_id: str | None = None,
+) -> None:
+    """Immediately signs and publishes a fresh SitePolicyRevision for
+    every site this subsidiary is authorized at (plus extra_site_id, for
+    a mutation that names a site directly, e.g. a VLAN binding edit).
+
+    Without this, a real admin change (VLAN binding, role toggle, site
+    authorization, department/role rename or delete) just sits in the DB
+    until the site's *current* policy lease naturally expires --
+    publish_site_policy only auto-republishes on an expired/missing
+    lease (app/routes/site.py's get_network_policy), never on its own.
+    Confirmed live, 29 Oct 2026: changing a VLAN binding produced no new
+    revision at all. Call this right after every such mutation commits.
+    """
+    from app import site_policy
+
+    site_ids = set(
+        session.scalars(
+            select(db.SiteSubsidiary.site_id).where(db.SiteSubsidiary.subsidiary_id == subsidiary_id)
+        ).all()
+    )
+    if extra_site_id:
+        site_ids.add(extra_site_id)
+    if not site_ids:
+        return
+    priv_key, _ = site_policy.get_or_create_policy_signing_key(pki_path)
+    for site_id in site_ids:
+        site_policy.publish_site_policy(
+            site_id=site_id, actor_username=actor_username, session=session, private_key=priv_key,
+        )
+    session.commit()
 
 
 def flash(url: str, message: str, kind: str = "success") -> str:

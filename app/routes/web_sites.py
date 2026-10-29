@@ -139,8 +139,19 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         site = _load_site_or_404(session, site_id)
         is_enabled = enabled == "true"
         site_service.set_vlan_segmentation(session, site, is_enabled, actor=admin.username)
+        # Site-level property, not tied to one subsidiary -- republish
+        # this site directly rather than going through the subsidiary
+        # helper (same "don't wait up to 24h for the next natural
+        # expiry" reasoning as every other policy-affecting mutation).
+        from app import site_policy
+
+        priv_key, _ = site_policy.get_or_create_policy_signing_key(deps.pki_path)
+        site_policy.publish_site_policy(
+            site_id=site_id, actor_username=admin.username, session=session, private_key=priv_key,
+        )
+        session.commit()
         state = "enabled" if is_enabled else "disabled (authenticate-only)"
-        return RedirectResponse(h.flash("/sites", f"VLAN segmentation {state} for {site.name}.", "success"), status_code=303)
+        return RedirectResponse(h.flash("/sites", f"VLAN segmentation {state} for {site.name} — published immediately.", "success"), status_code=303)
 
     @router.post("/sites/{site_id}/wifi-ssid")
     def site_set_wifi_ssid(
