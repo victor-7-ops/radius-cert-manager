@@ -57,6 +57,30 @@ def test_issue_certificate_sets_employee_key(tmp_path, throwaway_pki):
     assert result.certificate.employee_name == "Juan  Dela   Cruz"  # display value untouched
 
 
+def test_issue_certificate_p12_includes_root_ca_when_present(tmp_path, throwaway_pki):
+    """Regression for the real live bug (29 Oct 2026): the .p12 only ever
+    bundled the intermediate CA, never the root. Android had nothing
+    valid to pick as a distinct CA certificate and the EAP-TLS attempt
+    never even reached the RADIUS server. cert_service now loads
+    root.crt from pki_path (same layout app/main.py already uses) and
+    includes it in the bundle's CA chain when present."""
+    from app import pki
+
+    (tmp_path / "root.crt").write_bytes(pki.cert_to_pem(throwaway_pki["root_cert"]))
+    engine = db.make_engine(str(tmp_path / "test2.db"))
+    db.init_db(engine)
+    session = db.make_session_factory(engine)()
+    result = cert_service.issue_certificate(
+        session, tmp_path, throwaway_pki["inter_cert"], throwaway_pki["inter_key"],
+        cn="laptop-root-chain", note=None, request_id=str(uuid.uuid4()), export_password="testpw123",
+        issued_by="alice", days=365,
+    )
+    _, _, cas = pki.load_pkcs12(result.bundle.data, "testpw123")
+    ca_subjects = {c.subject.rfc4514_string() for c in cas}
+    assert throwaway_pki["root_cert"].subject.rfc4514_string() in ca_subjects
+    assert throwaway_pki["inter_cert"].subject.rfc4514_string() in ca_subjects
+
+
 def test_reissue_recomputes_employee_key_from_carried_over_name(tmp_path, throwaway_pki):
     engine = db.make_engine(str(tmp_path / "test.db"))
     db.init_db(engine)
