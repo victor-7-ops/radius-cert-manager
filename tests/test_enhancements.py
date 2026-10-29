@@ -398,7 +398,7 @@ def test_delivery_page_qr_download_works_once_without_login(app_settings, throwa
 
     issue_resp = client.post("/certs/issue", data={"cn": "qr-device", "request_id": str(uuid.uuid4())})
     assert issue_resp.status_code == 200  # delivery page after redirect-follow
-    assert "Scan on the device instead" in issue_resp.text
+    assert "One link" in issue_resp.text
 
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="qr-device").one()
@@ -438,6 +438,70 @@ def test_delivery_page_qr_download_rejects_bad_token(app_settings, throwaway_pki
     other_token = auth.make_bundle_qr_token(app_settings.secret_key, "some-other-serial")
     resp2 = anon_client.get(f"/certs/{cert.serial}/bundle/qr", params={"token": other_token})
     assert resp2.status_code == 403
+
+
+def test_smart_install_serves_mobileconfig_on_apple_user_agent(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "install-mac-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+    client.post("/certs/issue", data={"cn": "install-mac-device", "request_id": str(uuid.uuid4())})
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    cert = session.query(db.Certificate).filter_by(cn="install-mac-device").one()
+    token = auth.make_bundle_qr_token(app_settings.secret_key, cert.serial)
+
+    anon_client = TestClient(app)
+    resp = anon_client.get(
+        f"/certs/{cert.serial}/install",
+        params={"token": token},
+        headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/x-apple-as-config"
+
+    # single-use, same as the other QR flows
+    resp2 = anon_client.get(
+        f"/certs/{cert.serial}/install",
+        params={"token": token},
+        headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"},
+    )
+    assert resp2.status_code == 410
+
+
+def test_smart_install_serves_zip_on_windows_user_agent(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "install-win-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+    client.post("/certs/issue", data={"cn": "install-win-device", "request_id": str(uuid.uuid4())})
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    cert = session.query(db.Certificate).filter_by(cn="install-win-device").one()
+    token = auth.make_bundle_qr_token(app_settings.secret_key, cert.serial)
+
+    anon_client = TestClient(app)
+    resp = anon_client.get(
+        f"/certs/{cert.serial}/install",
+        params={"token": token},
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+
+    import zipfile
+    import io
+
+    zf = zipfile.ZipFile(io.BytesIO(resp.content))
+    names = zf.namelist()
+    assert any(n.endswith("Install.cmd") for n in names)
+    assert any(n.endswith("install.sh") for n in names)
+    assert any(n.endswith(".mobileconfig") for n in names)
+    assert any(n.endswith(".p12") for n in names)
 
 
 def test_issue_warns_on_duplicate_mac_and_can_be_overridden(app_settings, throwaway_pki, monkeypatch):
