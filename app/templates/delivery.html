@@ -26,21 +26,22 @@
     {% if qr_install_svg %}
     <div class="rounded-lg border border-brand-200 dark:border-brand-900/50 bg-brand-50 dark:bg-brand-950/30 p-4 space-y-3">
       <div class="text-sm font-semibold text-slate-900 dark:text-slate-100">One link — works on Windows, Mac, iOS, and Linux</div>
-      <div class="flex flex-col sm:flex-row items-center gap-4">
-        <div class="w-32 h-32 shrink-0 [&_svg]:w-full [&_svg]:h-full p-2 bg-white rounded-lg shadow-inner">{{ qr_install_svg | safe }}</div>
-        <div class="flex-1 space-y-2 w-full">
-          <p class="text-xs text-slate-600 dark:text-slate-400">
-            Scan with the device's own camera, or open the device's own browser and visit:
-          </p>
-          <div class="flex items-center gap-2">
-            <code class="flex-1 text-[11px] font-mono bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 truncate">{{ install_url }}</code>
-          </div>
-          <p class="text-xs text-slate-500 dark:text-slate-400">
-            Auto-detects the device's OS — downloads and installs the right thing with no picking.
-            Works once, expires in {{ qr_expires_minutes }} minutes.
-          </p>
-        </div>
+      <div class="flex flex-col items-center gap-3 text-center">
+        <div class="w-36 h-36 shrink-0 [&_svg]:w-full [&_svg]:h-full p-2 bg-white rounded-lg shadow-inner">{{ qr_install_svg | safe }}</div>
+        <p class="text-xs text-slate-600 dark:text-slate-400">
+          Scan with the device's own camera, or open the device's own browser and visit:
+        </p>
       </div>
+      <div class="flex items-start gap-2">
+        <code id="install-url" class="flex-1 min-w-0 text-[11px] font-mono bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 break-all">{{ install_url }}</code>
+        <button id="copy-install-url-btn" type="button" class="btn-secondary shrink-0 !px-2.5 !py-1.5" title="Copy link">
+          <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3.5A1.5 1.5 0 0 1 8.5 2h3.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 17 6.622V12.5a1.5 1.5 0 0 1-1.5 1.5h-1v-3.379a3 3 0 0 0-.879-2.121L10.5 5.379A3 3 0 0 0 8.379 4.5H7v-1Z"/><path d="M4.5 6A1.5 1.5 0 0 0 3 7.5v9A1.5 1.5 0 0 0 4.5 18h7a1.5 1.5 0 0 0 1.5-1.5v-5.879a1.5 1.5 0 0 0-.44-1.06L9.44 6.439A1.5 1.5 0 0 0 8.378 6H4.5Z"/></svg>
+        </button>
+      </div>
+      <p class="text-xs text-slate-500 dark:text-slate-400 text-center">
+        Auto-detects the device's OS — downloads and installs the right thing with no picking.
+        Works once, expires in {{ qr_expires_minutes }} minutes.
+      </p>
     </div>
     {% endif %}
 
@@ -176,6 +177,17 @@
         }
       }, 1000);
     });
+
+    const copyUrlBtn = document.getElementById('copy-install-url-btn');
+    if (copyUrlBtn) {
+      copyUrlBtn.addEventListener('click', async () => {
+        const url = document.getElementById('install-url').textContent;
+        try {
+          await navigator.clipboard.writeText(url);
+          copyUrlBtn.title = 'Copied!';
+        } catch (e) { /* clipboard may be blocked; the text is already selectable */ }
+      });
+    }
   })();
 </script>
 {% endblock %}
