@@ -39,6 +39,11 @@
         Offboard Employee
       </a>
       {% endif %}
+      {% if is_platform_super_admin %}
+      <a href="/people/{{ employee.id }}/delete" class="btn-ghost text-sm text-rose-700 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-950/50" title="Permanently delete this employee record">
+        Delete
+      </a>
+      {% endif %}
     </div>
   </div>
 

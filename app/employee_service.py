@@ -394,3 +394,63 @@ def offboard_employee(
         raise
 
     return op
+
+
+def delete_employee(
+    actor: db.Admin,
+    employee_id: str,
+    session: Session,
+    confirm_name: str,
+    force: bool = False,
+) -> None:
+    """Permanently removes an employee record. Only platform/subsidiary
+    super admins may do this (enforced by the route dependency, not
+    here) -- unlike offboarding, this has no audit trail for the
+    employee afterward.
+
+    Without force: refuses if the employee has any certificate or
+    device history (even revoked certs), same protective rule this app
+    already applies to deleting a department/role with data. With
+    force: also deletes every certificate, device, and offboarding
+    operation row tied to this employee -- irreversible, no audit
+    trail survives for them specifically (the deletion action itself
+    is still audited below). Matching .p12 files already on disk under
+    pki_path/issued aren't touched; the certs are already revoked/
+    inert either way.
+    """
+    emp = get_employee(actor, employee_id, session)
+    assert_can_manage_subsidiary(actor, emp.subsidiary_id, session)
+
+    if confirm_name.strip() != emp.display_name.strip():
+        raise PolicyValidationError(f"Typed name '{confirm_name}' did not match '{emp.display_name}'.")
+
+    certs = session.scalars(select(db.Certificate).where(db.Certificate.employee_id == emp.id)).all()
+    devices = session.scalars(select(db.Device).where(db.Device.employee_id == emp.id)).all()
+    if not force and (certs or devices):
+        raise PolicyValidationError(
+            f"{emp.display_name} has {len(certs)} certificate(s) and {len(devices)} device(s) on record. "
+            "Deleting would lose that history -- use force delete if that's intended."
+        )
+
+    ops = session.scalars(
+        select(db.OffboardingOperation).where(db.OffboardingOperation.employee_id == emp.id)
+    ).all()
+
+    sub = session.get(db.Subsidiary, emp.subsidiary_id)
+    db.audit(
+        session,
+        actor=actor.username,
+        action="employee.delete",
+        target=emp.display_name,
+        detail=f"force={force}, deleted {len(certs)} certificate(s), {len(devices)} device(s), {len(ops)} offboarding op(s)",
+        subsidiary=sub.display_name if sub else None,
+    )
+
+    for cert in certs:
+        session.delete(cert)
+    for device in devices:
+        session.delete(device)
+    for op in ops:
+        session.delete(op)
+    session.delete(emp)
+    session.commit()

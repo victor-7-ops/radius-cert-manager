@@ -177,6 +177,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             {
                 "admin": admin,
                 "can_manage": can_manage,
+                "is_platform_super_admin": admin.role == db.AdminRole.super_admin,
                 "employee": emp,
                 "subsidiary": sub,
                 "department": dept,
@@ -337,6 +338,81 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             return RedirectResponse(
                 h.flash(f"/people/{employee_id}", f"Offboarding error: {e}", "danger"),
                 status_code=303,
+            )
+
+    @router.get("/people/{employee_id}/delete")
+    def person_delete_confirm(
+        request: Request,
+        employee_id: str,
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
+        session: Session = deps.get_db_session()
+        try:
+            emp = employee_service.get_employee(admin, employee_id, session)
+        except Exception:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
+
+        sub = session.get(db.Subsidiary, emp.subsidiary_id)
+        devices = session.scalars(select(db.Device).where(db.Device.employee_id == emp.id)).all()
+        certs = session.scalars(select(db.Certificate).where(db.Certificate.employee_id == emp.id)).all()
+
+        return templates.TemplateResponse(
+            request,
+            "person_delete_confirm.html",
+            {
+                "admin": admin,
+                "employee": emp,
+                "subsidiary": sub,
+                "devices": devices,
+                "certs": certs,
+                **_crl_banner_context(session),
+            },
+        )
+
+    @router.post("/people/{employee_id}/delete", dependencies=[Depends(deps.require_super_admin)])
+    def person_delete_submit(
+        request: Request,
+        employee_id: str,
+        confirm_name: str = Form(...),
+        force: str = Form(""),
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
+        session: Session = deps.get_db_session()
+        try:
+            emp = employee_service.get_employee(admin, employee_id, session)
+        except Exception:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
+
+        display_name = emp.display_name
+        try:
+            employee_service.delete_employee(
+                actor=admin,
+                employee_id=employee_id,
+                session=session,
+                confirm_name=confirm_name,
+                force=force == "true",
+            )
+            return RedirectResponse(
+                h.flash("/employees", f"Employee '{display_name}' permanently deleted.", "danger"),
+                status_code=303,
+            )
+        except Exception as e:
+            sub = session.get(db.Subsidiary, emp.subsidiary_id)
+            devices = session.scalars(select(db.Device).where(db.Device.employee_id == emp.id)).all()
+            certs = session.scalars(select(db.Certificate).where(db.Certificate.employee_id == emp.id)).all()
+            return templates.TemplateResponse(
+                request,
+                "person_delete_confirm.html",
+                {
+                    "admin": admin,
+                    "employee": emp,
+                    "subsidiary": sub,
+                    "devices": devices,
+                    "certs": certs,
+                    "error": str(e),
+                    **_crl_banner_context(session),
+                },
+                status_code=400,
             )
 
     @router.get("/devices/{device_id}")
