@@ -186,7 +186,9 @@
       {% if is_platform_superadmin %}
       <div>
         <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="employees_list-subsidiary_id-6">Subsidiary *</label>
-        <select name="subsidiary_id" required class="field-input text-sm" onchange="window.location.href='/employees?subsidiary_id=' + this.value" id="employees_list-subsidiary_id-6">
+        <select name="subsidiary_id" required class="field-input text-sm"
+                hx-get="/departments/options" hx-trigger="change" hx-target="#employees_list-department_id-7" hx-swap="innerHTML"
+                id="employees_list-subsidiary_id-6">
           <option value="">Select subsidiary...</option>
           {% for sub in subsidiaries %}
           <option value="{{ sub.id }}" {{ 'selected' if selected_subsidiary_id == sub.id else '' }}>{{ sub.display_name }}</option>
