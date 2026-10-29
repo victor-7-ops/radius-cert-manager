@@ -588,6 +588,88 @@ def test_tenant_scoping_and_cross_tenant_denials(test_db_session: Session, basel
         )
 
 
+def test_delete_employee_refuses_without_force_when_certs_exist(test_db_session: Session, baseline_setup: dict):
+    session = test_db_session
+    setup = baseline_setup
+    emp = employee_service.create_employee(
+        actor=setup["admin_sub_a"], subsidiary_id=setup["sub_a"].id,
+        display_name="Has History", department_id=setup["dept_a"].id,
+        employee_number="HIST-1", session=session,
+    )
+    session.commit()
+    dev = device_service.register_device(
+        actor=setup["admin_sub_a"], employee_id=emp.id,
+        display_name="Laptop", department_id=setup["dept_a"].id,
+        network_role_id=setup["role_a1"].id, session=session,
+    )
+    session.commit()
+
+    with pytest.raises(PolicyValidationError, match="0 certificate\\(s\\) and 1 device"):
+        employee_service.delete_employee(
+            actor=setup["admin_sub_a"], employee_id=emp.id, session=session,
+            confirm_name=emp.display_name, force=False,
+        )
+    # device alone (no certs) still trips the refusal
+    session.rollback()
+
+
+def test_delete_employee_force_removes_everything(test_db_session: Session, baseline_setup: dict):
+    session = test_db_session
+    setup = baseline_setup
+    emp = employee_service.create_employee(
+        actor=setup["admin_sub_a"], subsidiary_id=setup["sub_a"].id,
+        display_name="Force Delete Me", department_id=setup["dept_a"].id,
+        employee_number="FORCE-1", session=session,
+    )
+    session.commit()
+    dev = device_service.register_device(
+        actor=setup["admin_sub_a"], employee_id=emp.id,
+        display_name="Laptop", department_id=setup["dept_a"].id,
+        network_role_id=setup["role_a1"].id, session=session,
+    )
+    session.commit()
+
+    # attach a bare Certificate row referencing this employee/device, no
+    # real PKI material needed -- delete_employee only touches DB rows
+    import uuid
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = db.Certificate(
+        id=str(uuid.uuid4()), cn="force-delete-laptop", serial="999999",
+        issued_at=now, expires_at=now + datetime.timedelta(days=365),
+        status=db.CertStatus.revoked, issued_by="test", request_id=str(uuid.uuid4()),
+        employee_id=emp.id, device_id=dev.id,
+    )
+    session.add(cert)
+    session.commit()
+
+    employee_service.delete_employee(
+        actor=setup["admin_sub_a"], employee_id=emp.id, session=session,
+        confirm_name=emp.display_name, force=True,
+    )
+
+    assert session.get(db.Employee, emp.id) is None
+    assert session.get(db.Device, dev.id) is None
+    assert session.get(db.Certificate, cert.id) is None
+
+
+def test_delete_employee_requires_exact_name_match(test_db_session: Session, baseline_setup: dict):
+    session = test_db_session
+    setup = baseline_setup
+    emp = employee_service.create_employee(
+        actor=setup["admin_sub_a"], subsidiary_id=setup["sub_a"].id,
+        display_name="Typo Check", department_id=setup["dept_a"].id,
+        employee_number="TYPO-1", session=session,
+    )
+    session.commit()
+
+    with pytest.raises(PolicyValidationError, match="did not match"):
+        employee_service.delete_employee(
+            actor=setup["admin_sub_a"], employee_id=emp.id, session=session,
+            confirm_name="wrong name", force=True,
+        )
+    assert session.get(db.Employee, emp.id) is not None
+
+
 def json_loads(data: str):
     import json
     return json.loads(data)

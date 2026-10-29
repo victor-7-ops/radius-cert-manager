@@ -579,6 +579,57 @@ def test_onboard_bundle_covers_every_authorized_site_ssid(app_settings, throwawa
     assert "SiteB-WiFi" in install_sh
 
 
+def test_delete_employee_route_requires_platform_super_admin(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    plat_admin = _seed_admin(app_settings, "del-plat-admin", db.AdminRole.admin)
+    # 'admin' role (not super_admin) must be refused -- route requires
+    # deps.require_super_admin strictly, same as the legacy offboard route.
+
+    engine = db.make_engine(str(app_settings.db_path))
+    db.init_db(engine)
+    session = db.make_session_factory(engine)()
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, plat_admin)
+    r = client.get(f"/people/00000000-0000-0000-0000-000000000000/delete")
+    assert r.status_code == 403  # 'admin' role, not platform super_admin
+
+
+def test_delete_employee_route_deletes_clean_record(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    super_admin = _seed_admin(app_settings, "del-super-admin", db.AdminRole.super_admin)
+
+    engine = db.make_engine(str(app_settings.db_path))
+    db.init_db(engine)
+    session = db.make_session_factory(engine)()
+    sub = session.query(db.Subsidiary).filter_by(code="topline").one()
+    dept = db.Department(subsidiary_id=sub.id, code="del-test2", display_name="Delete Test Dept 2")
+    session.add(dept)
+    session.commit()
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, super_admin)
+    client.post(
+        "/people/new",
+        data={"display_name": "Clean Record", "subsidiary_id": sub.id, "department_id": dept.id},
+    )
+    emp = session.query(db.Employee).filter_by(display_name="Clean Record").one()
+
+    confirm_resp = client.get(f"/people/{emp.id}/delete")
+    assert confirm_resp.status_code == 200
+
+    resp = client.post(f"/people/{emp.id}/delete", data={"confirm_name": "Clean Record"})
+    assert resp.status_code == 200
+    assert resp.url.path == "/employees"
+
+    session2 = db.make_session_factory(engine)()
+    assert session2.get(db.Employee, emp.id) is None
+
+
 def test_smart_install_serves_mobileconfig_on_apple_user_agent(app_settings, throwaway_pki, monkeypatch):
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
     _write_throwaway_pki(app_settings, throwaway_pki)
