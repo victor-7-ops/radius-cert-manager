@@ -127,6 +127,7 @@ def get_router(deps) -> APIRouter:
             serial=serial,
             pkcs12_data=bundle.data,
             ca_cert=deps.inter_cert,
+            root_cert=deps.root_cert,
             wifi_ssid=wifi_ssid,
             export_password=bundle.password,
             organization=cert.subsidiary,
@@ -151,7 +152,7 @@ def get_router(deps) -> APIRouter:
         wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
         xml_content = windows_profile.generate_windows_wifi_xml(
             ssid=wifi_ssid,
-            ca_cert=deps.inter_cert,
+            ca_cert=deps.root_cert or deps.inter_cert,
         )
         return Response(
             content=xml_content,

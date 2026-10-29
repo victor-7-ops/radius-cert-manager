@@ -102,3 +102,17 @@ def set_vlan_segmentation(session: Session, site: db.Site, enabled: bool, actor:
         target=site.radius_cn, subsidiary=site.subsidiary, site_id=site.id,
     )
     session.commit()
+
+
+def set_wifi_ssid(session: Session, site: db.Site, ssid: str | None, actor: str) -> None:
+    """Sets this site's own AP broadcast name, used when generating Wi-Fi
+    onboarding profiles for devices authorized at this site. None/blank
+    falls back to the global Settings.wifi_ssid default (single-site
+    deployments don't need to set this at all)."""
+    site.wifi_ssid = ssid.strip() if ssid and ssid.strip() else None
+    db.audit(
+        session, actor=actor, action="site_wifi_ssid_update",
+        target=site.radius_cn, subsidiary=site.subsidiary, site_id=site.id,
+        detail=f"wifi_ssid={site.wifi_ssid!r}",
+    )
+    session.commit()

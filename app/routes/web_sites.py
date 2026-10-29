@@ -142,4 +142,15 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         state = "enabled" if is_enabled else "disabled (authenticate-only)"
         return RedirectResponse(h.flash("/sites", f"VLAN segmentation {state} for {site.name}.", "success"), status_code=303)
 
+    @router.post("/sites/{site_id}/wifi-ssid")
+    def site_set_wifi_ssid(
+        request: Request, site_id: str, ssid: str = Form(""),
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
+        session = deps.get_db_session()
+        site = _load_site_or_404(session, site_id)
+        site_service.set_wifi_ssid(session, site, ssid, actor=admin.username)
+        label = site.wifi_ssid or "(using global default)"
+        return RedirectResponse(h.flash("/sites", f"Wi-Fi SSID for {site.name} set to {label}.", "success"), status_code=303)
+
     return router
