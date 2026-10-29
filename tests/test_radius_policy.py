@@ -228,6 +228,33 @@ def test_freeradius_post_auth_hook(tmp_path, sample_uuids, valid_policy, monkeyp
     assert res_reject == ap.RLM_MODULE_REJECT
 
 
+def test_freeradius_post_auth_hook_accepts_authenticate_only_site(tmp_path, sample_uuids, valid_policy, monkeypatch):
+    """Regression for the real live bug (29 Oct 2026, site 6f990dc9): every
+    authentication at a VLAN-segmentation-disabled site (authenticate-only,
+    no managed switch) was silently rejected. post_auth's old condition
+    was `decision.outcome == "accept" and decision.vlan_id is not None` --
+    but evaluate_authorization deliberately returns vlan_id=None on a real
+    accept when segmentation is off, so that combined condition could
+    never be true here. Confirmed via a real FreeRADIUS debug trace: the
+    log literally read "Access-Reject: ... reason=Authorized: normal
+    network role is ON". This test exercises post_auth end-to-end (not
+    just evaluate_authorization) so a regression here fails loudly."""
+    u = sample_uuids
+    valid_policy["vlan_segmentation_enabled"] = False
+    policy_file = tmp_path / "policy.json"
+    import json
+    policy_file.write_text(json.dumps(valid_policy))
+    monkeypatch.setattr(ap, "LOCAL_SITE_ID", u["site_id"])
+    monkeypatch.setattr(ap, "LOCAL_POLICY_PATH", str(policy_file))
+
+    p_accept = (
+        ("TLS-Client-Cert-Subject", f"/CN=Device-1/O={u['sub_a']}/OU={u['role_staff']}"),
+    )
+    result_code, reply_pairs, _ = ap.post_auth(p_accept)
+    assert result_code == ap.RLM_MODULE_OK
+    assert reply_pairs == ()  # no Tunnel-* attributes when there's no VLAN to assign
+
+
 def test_post_auth_rejects_username_fallback_and_duplicate_subjects(tmp_path, sample_uuids, valid_policy, monkeypatch):
     import json
     u = sample_uuids

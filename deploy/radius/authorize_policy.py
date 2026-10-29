@@ -323,15 +323,26 @@ def post_auth(p: tuple) -> tuple:
         logger.error("RADIUS policy authorization error: %s", e)
         return (RLM_MODULE_REJECT, (), ())
 
-    if decision.outcome == "accept" and decision.vlan_id is not None:
+    if decision.outcome == "accept":
+        # vlan_id is None exactly when VLAN segmentation is disabled at
+        # this site (authenticate-only: no managed/L3 switch to honor an
+        # 802.1Q trunk) -- that is still a real accept, just with no
+        # Tunnel-* attributes to emit. Conflating "no VLAN" with "not
+        # accepted" here rejected every single authentication at any
+        # authenticate-only site, no matter how valid the client cert was
+        # -- confirmed live, 29 Oct 2026 (site 6f990dc9, VLAN segmentation
+        # disabled): "Access-Reject: ... reason=Authorized: normal network
+        # role is ON" in the RADIUS debug log.
         reply = (
             ("Tunnel-Type", "VLAN"),
             ("Tunnel-Medium-Type", "IEEE-802"),
             ("Tunnel-Private-Group-Id", str(decision.vlan_id)),
-        )
+        ) if decision.vlan_id is not None else ()
         logger.info(
-            "Access-Accept: site=%s sub=%s role=%s vlan=%d (%s)",
-            site_id, decision.subsidiary_id, decision.network_role_id, decision.vlan_id, decision.vlan_type
+            "Access-Accept: site=%s sub=%s role=%s vlan=%s (%s)",
+            site_id, decision.subsidiary_id, decision.network_role_id,
+            decision.vlan_id if decision.vlan_id is not None else "none (segmentation disabled)",
+            decision.vlan_type,
         )
         return (RLM_MODULE_OK, reply, ())
     else:
