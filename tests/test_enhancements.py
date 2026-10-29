@@ -520,6 +520,46 @@ def test_onboard_bundle_pins_root_ca_and_ships_full_chain(app_settings, throwawa
     assert "-addstore Root " in install_cmd_text
 
 
+def test_root_crt_preferred_over_mislabeled_ca_chain_pem(app_settings, throwaway_pki, monkeypatch):
+    """Regression for the exact live bug (29 Oct 2026, kc-laptop4): the
+    hub's ca-chain.pem actually held the intermediate cert under a
+    misleading name, while the real root sat at root.crt the whole
+    time. load_cert_pem only reads the first cert in a file, so the
+    mislabeled ca-chain.pem silently produced the intermediate's own
+    thumbprint for TrustedRootCA -- the identical "root certificate
+    invalid" failure the 29 Oct fix was supposed to have already
+    closed. app/main.py must prefer root.crt when both exist."""
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    # Deliberately mislabel: ca-chain.pem actually holds the intermediate.
+    (app_settings.pki_path / "ca-chain.pem").write_bytes(pki.cert_to_pem(throwaway_pki["inter_cert"]))
+    # The real root sits at root.crt, same as the live hub layout.
+    (app_settings.pki_path / "root.crt").write_bytes(pki.cert_to_pem(throwaway_pki["root_cert"]))
+    admin = _seed_admin(app_settings, "rootcrt-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+    client.post("/certs/issue", data={"cn": "rootcrt-device", "request_id": str(uuid.uuid4())})
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    cert = session.query(db.Certificate).filter_by(cn="rootcrt-device").one()
+
+    resp = client.get(f"/certs/{cert.serial}/windows-profile")
+    assert resp.status_code == 200
+    import hashlib
+    from cryptography.hazmat.primitives import serialization
+
+    root_thumbprint = hashlib.sha1(
+        throwaway_pki["root_cert"].public_bytes(serialization.Encoding.DER)
+    ).hexdigest().lower()
+    inter_thumbprint = hashlib.sha1(
+        throwaway_pki["inter_cert"].public_bytes(serialization.Encoding.DER)
+    ).hexdigest().lower()
+    xml_hex = resp.text.replace(" ", "").lower()
+    assert root_thumbprint in xml_hex
+    assert inter_thumbprint not in xml_hex
+
+
 def test_onboard_bundle_covers_every_authorized_site_ssid(app_settings, throwaway_pki, monkeypatch):
     """"Automatically install to any AP available" (production, multiple
     sites each with their own SSID): the zip/installers must cover every

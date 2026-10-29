@@ -128,8 +128,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     inter_cert = pki.load_cert_pem(settings.pki_path / "intermediate.crt")
     inter_key = pki.load_key_pem(settings.pki_path / "private" / "intermediate.key")
+    # root.crt is the real self-signed Root CA. ca-chain.pem was kept as a
+    # fallback for older layouts, but on the live hub it was found to
+    # actually hold the intermediate cert under a misleading name (root.crt
+    # existed alongside it) -- load_cert_pem only reads the first cert in
+    # a file, so a wrongly-named/ordered ca-chain.pem silently produces
+    # the intermediate's own thumbprint instead of the root's wherever
+    # root_cert is used (TrustedRootCA pinning, .mobileconfig anchors),
+    # defeating the whole point of having it. Prefer root.crt explicitly.
+    root_crt_path = settings.pki_path / "root.crt"
     ca_chain_path = settings.pki_path / "ca-chain.pem"
-    root_cert = pki.load_cert_pem(ca_chain_path) if ca_chain_path.exists() else None
+    if root_crt_path.exists():
+        root_cert = pki.load_cert_pem(root_crt_path)
+    elif ca_chain_path.exists():
+        root_cert = pki.load_cert_pem(ca_chain_path)
+    else:
+        root_cert = None
 
     # First-run import, then reconciliation (handoff §5.8) — import runs
     # first so pre-existing certs are recorded rather than flagged.
