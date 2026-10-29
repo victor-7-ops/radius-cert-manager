@@ -758,6 +758,20 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
 
         ua = (request.headers.get("user-agent") or "").lower()
         is_apple = any(tok in ua for tok in ("iphone", "ipad", "macintosh", "mac os x"))
+        is_android = "android" in ua
+        if is_android:
+            # Android has no equivalent of Apple's .mobileconfig -- no way
+            # to auto-provision an enterprise Wi-Fi network from a link.
+            # The Windows/Linux zip is useless here (no .cmd/.sh runner),
+            # so just the raw .p12: Android's own "Install a certificate"
+            # flow opens it directly, then Wi-Fi setup is manual (Settings
+            # > Wi-Fi > network > Advanced > EAP method: TLS > pick the
+            # imported cert).
+            return Response(
+                content=bundle.data,
+                media_type="application/x-pkcs12",
+                headers={"Content-Disposition": f'attachment; filename="{cert.cn}.p12"'},
+            )
         if is_apple:
             from app import mobileconfig
 
