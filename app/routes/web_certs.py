@@ -419,6 +419,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         base = str(request.base_url).rstrip("/")
         qr_url = f"{base}/certs/{serial}/bundle/qr?token={qr_token}"
         qr_mc_url = f"{base}/certs/{serial}/mobileconfig/qr?token={qr_token}"
+        install_url = f"{base}/certs/{serial}/install?token={qr_token}"
 
         return templates.TemplateResponse(
             request,
@@ -430,6 +431,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "export_password": password,
                 "qr_svg": h.qr_svg(qr_url),
                 "qr_mobileconfig_svg": h.qr_svg(qr_mc_url),
+                "qr_install_svg": h.qr_svg(install_url),
+                "install_url": install_url,
                 "qr_expires_minutes": auth.BUNDLE_QR_TOKEN_MAX_AGE_SECONDS // 60,
                 **_crl_banner_context(session),
             },
@@ -557,30 +560,27 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             headers={"Content-Disposition": f'attachment; filename="{wifi_ssid}-Profile.xml"'},
         )
 
-    @router.get("/certs/{serial}/onboard-bundle")
-    def download_onboard_bundle(serial: str, admin: db.Admin = Depends(deps.require_write)):
-        """Everything needed to onboard a device in one zip, one-click
-        installers for Windows and Linux included (macOS/iOS already get
-        a true one-click flow via .mobileconfig, no zip needed there)."""
-        if rate_limit.is_rate_limited(f"bundle:{admin.id}", max_requests=30, window_seconds=60):
-            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts — wait a minute and try again.")
-        session = deps.get_db_session()
-        cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
-        if cert is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
-        if admin.subsidiary_scope:
-            h.require_cert_scope(admin, cert)
-        bundle = deps.take_pending_bundle(serial)
-        if bundle is None:
-            raise HTTPException(status.HTTP_410_GONE, "bundle already consumed or not found")
-
-        from app import pki, windows_profile
+    def _build_onboard_zip(cert: db.Certificate, bundle) -> tuple[bytes, str]:
+        """Everything needed to onboard a device in one zip: one-click
+        installers for Windows and Linux, plus the .mobileconfig for
+        macOS/iOS (which can also install standalone, true one-click,
+        without needing the zip at all)."""
+        from app import mobileconfig, pki, windows_profile
         import io
         import zipfile
 
         wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
         xml_content = windows_profile.generate_windows_wifi_xml(ssid=wifi_ssid, ca_cert=deps.inter_cert)
         ca_pem = pki.cert_to_pem(deps.inter_cert)
+        mc_bytes = mobileconfig.generate_mobileconfig(
+            cn=cert.cn,
+            serial=cert.serial,
+            pkcs12_data=bundle.data,
+            ca_cert=deps.inter_cert,
+            wifi_ssid=wifi_ssid,
+            export_password=bundle.password,
+            organization=cert.subsidiary,
+        )
 
         folder_name = _slugify(cert.employee_name or cert.cn)
         p12_name = f"{cert.cn}.p12"
@@ -632,11 +632,13 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             'echo "Connected."\n'
         )
 
+        mc_name = f"{cert.cn}.mobileconfig"
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(f"{folder_name}/{p12_name}", bundle.data)
             zf.writestr(f"{folder_name}/{xml_name}", xml_content)
             zf.writestr(f"{folder_name}/{ca_name}", ca_pem)
+            zf.writestr(f"{folder_name}/{mc_name}", mc_bytes)
             zf.writestr(f"{folder_name}/Install.cmd", install_cmd)
             info = zipfile.ZipInfo(f"{folder_name}/install.sh")
             info.external_attr = 0o755 << 16  # executable bit, for unzip -X / Linux
@@ -645,11 +647,75 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 f"{folder_name}/README.txt",
                 "Windows: double-click Install.cmd.\n"
                 "Linux: run ./install.sh (chmod +x install.sh first if needed).\n"
-                f"Both install the certificate and connect to {wifi_ssid} automatically.\n"
-                "macOS/iOS: use the Apple Profile (.mobileconfig) download instead of this zip.\n",
+                f"macOS/iOS: open {mc_name}, tap Install in Settings.\n"
+                f"All three install the certificate and connect to {wifi_ssid} automatically.\n",
             )
+        return buf.getvalue(), folder_name
+
+    @router.get("/certs/{serial}/onboard-bundle")
+    def download_onboard_bundle(serial: str, admin: db.Admin = Depends(deps.require_write)):
+        if rate_limit.is_rate_limited(f"bundle:{admin.id}", max_requests=30, window_seconds=60):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts — wait a minute and try again.")
+        session = deps.get_db_session()
+        cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+        if cert is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        if admin.subsidiary_scope:
+            h.require_cert_scope(admin, cert)
+        bundle = deps.take_pending_bundle(serial)
+        if bundle is None:
+            raise HTTPException(status.HTTP_410_GONE, "bundle already consumed or not found")
+        zip_bytes, folder_name = _build_onboard_zip(cert, bundle)
         return Response(
-            content=buf.getvalue(),
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{folder_name}.zip"'},
+        )
+
+    @router.get("/certs/{serial}/install")
+    def smart_install(request: Request, serial: str, token: str = ""):
+        """One link/QR for the employee's own device: no admin login, no
+        platform picking. Detects the device's OS from its own request
+        and serves the single right thing -- .mobileconfig (true
+        one-click on Apple) or the all-in-one zip (Windows/Linux/
+        anything else) -- so there is exactly one thing to hand out."""
+        ip = request.client.host if request.client else "unknown"
+        if rate_limit.is_rate_limited(f"bundle-qr:{ip}", max_requests=20, window_seconds=60):
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many attempts — wait a minute and try again.")
+        if auth.verify_bundle_qr_token(deps.secret_key, token) != serial:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "invalid or expired link")
+        session = deps.get_db_session()
+        cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
+        if cert is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        bundle = deps.take_pending_bundle(serial)
+        if bundle is None:
+            raise HTTPException(status.HTTP_410_GONE, "bundle already consumed or not found")
+
+        ua = (request.headers.get("user-agent") or "").lower()
+        is_apple = any(tok in ua for tok in ("iphone", "ipad", "macintosh", "mac os x"))
+        if is_apple:
+            from app import mobileconfig
+
+            wifi_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
+            cfg_bytes = mobileconfig.generate_mobileconfig(
+                cn=cert.cn,
+                serial=serial,
+                pkcs12_data=bundle.data,
+                ca_cert=deps.inter_cert,
+                wifi_ssid=wifi_ssid,
+                export_password=bundle.password,
+                organization=cert.subsidiary,
+            )
+            return Response(
+                content=cfg_bytes,
+                media_type="application/x-apple-as-config",
+                headers={"Content-Disposition": f'attachment; filename="{cert.cn}.mobileconfig"'},
+            )
+
+        zip_bytes, folder_name = _build_onboard_zip(cert, bundle)
+        return Response(
+            content=zip_bytes,
             media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="{folder_name}.zip"'},
         )

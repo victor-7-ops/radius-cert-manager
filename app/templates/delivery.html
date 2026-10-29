@@ -23,56 +23,61 @@
       <div id="clipboard-status" class="mt-2 text-xs text-slate-500 dark:text-slate-400"></div>
     </div>
 
-    <div class="flex flex-col sm:flex-row gap-3">
-      <a href="/certs/{{ serial }}/bundle" id="download-link" class="btn-primary flex-1 text-center justify-center">
-        <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a.75.75 0 0 1 .75.75v10.638l3.96-4.158a.75.75 0 1 1 1.08 1.04l-5.25 5.5a.75.75 0 0 1-1.08 0l-5.25-5.5a.75.75 0 1 1 1.08-1.04l3.96 4.158V3.75A.75.75 0 0 1 10 3ZM3 15.5a.75.75 0 0 1 .75.75v.75c0 .414.336.75.75.75h11a.75.75 0 0 0 .75-.75v-.75a.75.75 0 0 1 1.5 0v.75A2.25 2.25 0 0 1 15.5 19h-11A2.25 2.25 0 0 1 2.25 16.75v-.75A.75.75 0 0 1 3 15.5Z" clip-rule="evenodd"/></svg>
-        Download .p12
-      </a>
-      <a href="/certs/{{ serial }}/mobileconfig" id="download-mobileconfig-link" class="btn-secondary flex-1 text-center justify-center" title="Apple Configuration Profile for iOS, iPadOS, and macOS">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.75 1.04-1.8 0.92-2.85-.9.04-2 .6-2.65 1.35-.58.66-.99 1.74-.86 2.76 1.01.08 2.05-.51 2.59-1.26Z"/></svg>
-        Apple Profile (.mobileconfig)
-      </a>
-      <a href="/certs/{{ serial }}/windows-profile" id="download-windows-link" class="btn-secondary flex-1 text-center justify-center" title="Windows 802.1X Wi-Fi Profile (netsh wlan XML)">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.951-1.821"/></svg>
-        Windows Wi-Fi (.xml)
-      </a>
+    {% if qr_install_svg %}
+    <div class="rounded-lg border border-brand-200 dark:border-brand-900/50 bg-brand-50 dark:bg-brand-950/30 p-4 space-y-3">
+      <div class="text-sm font-semibold text-slate-900 dark:text-slate-100">One link — works on Windows, Mac, iOS, and Linux</div>
+      <div class="flex flex-col sm:flex-row items-center gap-4">
+        <div class="w-32 h-32 shrink-0 [&_svg]:w-full [&_svg]:h-full p-2 bg-white rounded-lg shadow-inner">{{ qr_install_svg | safe }}</div>
+        <div class="flex-1 space-y-2 w-full">
+          <p class="text-xs text-slate-600 dark:text-slate-400">
+            Scan with the device's own camera, or open the device's own browser and visit:
+          </p>
+          <div class="flex items-center gap-2">
+            <code class="flex-1 text-[11px] font-mono bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 truncate">{{ install_url }}</code>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">
+            Auto-detects the device's OS — downloads and installs the right thing with no picking.
+            Works once, expires in {{ qr_expires_minutes }} minutes.
+          </p>
+        </div>
+      </div>
     </div>
-    <a href="/certs/{{ serial }}/onboard-bundle" id="download-windows-bundle-link" class="btn-secondary w-full text-center justify-center flex items-center gap-1.5" title="One-click installer for Windows (.cmd) and Linux (.sh), plus the raw .p12/XML/CA cert — no password to type">
-      <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h2.879a2.25 2.25 0 0 1 1.591.659l1.121 1.121A.75.75 0 0 0 10.37 4h5.38A2.25 2.25 0 0 1 18 6.25v8.5A2.25 2.25 0 0 1 15.75 17H4.25A2.25 2.25 0 0 1 2 14.75v-10.5Z" clip-rule="evenodd"/></svg>
-      Download everything (.zip, Windows + Linux)
-    </a>
-    <div id="bundle-consumed-notice" class="hidden text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-lg p-2.5">
-      The client identity bundle has been downloaded. Under our single-use security policy, private keys cannot be re-downloaded.
-    </div>
-    <div class="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-lg p-2.5 space-y-1">
-      <div><strong>Platform guide:</strong> Use <code>.mobileconfig</code> for Apple (iOS/macOS) devices. Use <code>.p12</code> for Android and Windows. For Windows, import the <code>.p12</code> into the User Store, download the Wi-Fi profile XML, and run:</div>
-      <code class="block font-mono text-[11px] bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 p-1.5 rounded border border-slate-200 dark:border-slate-700 select-all">netsh wlan add profile filename="Corporate-WiFi-Profile.xml" user=current</code>
-    </div>
+    {% endif %}
 
-    {% if qr_svg %}
     <details class="group">
       <summary class="text-sm font-medium text-slate-700 dark:text-slate-200 cursor-pointer select-none flex items-center gap-1.5">
         <svg class="w-4 h-4 shrink-0 transition-transform group-open:rotate-90" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.168 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" clip-rule="evenodd"/></svg>
-        Scan on the device instead
+        Manual / individual downloads instead
       </summary>
-      <div class="mt-3 flex flex-col items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-800">
-        {% if qr_mobileconfig_svg %}
-        <div class="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900/60 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-400">
-          <button type="button" id="tab-qr-p12" class="px-2.5 py-1 rounded bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm" onclick="showQrTab('p12')">Standard / Android (.p12)</button>
-          <button type="button" id="tab-qr-mc" class="px-2.5 py-1 rounded text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100" onclick="showQrTab('mc')">Apple (.mobileconfig)</button>
+      <div class="mt-3 space-y-3">
+        <div class="flex flex-col sm:flex-row gap-3">
+          <a href="/certs/{{ serial }}/bundle" id="download-link" class="btn-primary flex-1 text-center justify-center">
+            <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a.75.75 0 0 1 .75.75v10.638l3.96-4.158a.75.75 0 1 1 1.08 1.04l-5.25 5.5a.75.75 0 0 1-1.08 0l-5.25-5.5a.75.75 0 1 1 1.08-1.04l3.96 4.158V3.75A.75.75 0 0 1 10 3ZM3 15.5a.75.75 0 0 1 .75.75v.75c0 .414.336.75.75.75h11a.75.75 0 0 0 .75-.75v-.75a.75.75 0 0 1 1.5 0v.75A2.25 2.25 0 0 1 15.5 19h-11A2.25 2.25 0 0 1 2.25 16.75v-.75A.75.75 0 0 1 3 15.5Z" clip-rule="evenodd"/></svg>
+            Download .p12
+          </a>
+          <a href="/certs/{{ serial }}/mobileconfig" id="download-mobileconfig-link" class="btn-secondary flex-1 text-center justify-center" title="Apple Configuration Profile for iOS, iPadOS, and macOS">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.62-.75 1.04-1.8 0.92-2.85-.9.04-2 .6-2.65 1.35-.58.66-.99 1.74-.86 2.76 1.01.08 2.05-.51 2.59-1.26Z"/></svg>
+            Apple Profile (.mobileconfig)
+          </a>
+          <a href="/certs/{{ serial }}/windows-profile" id="download-windows-link" class="btn-secondary flex-1 text-center justify-center" title="Windows 802.1X Wi-Fi Profile (netsh wlan XML)">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.951-1.821"/></svg>
+            Windows Wi-Fi (.xml)
+          </a>
         </div>
-        {% endif %}
-        <div id="qr-container-p12" class="w-40 h-40 [&_svg]:w-full [&_svg]:h-full p-2 bg-white rounded-lg shadow-inner">{{ qr_svg | safe }}</div>
-        {% if qr_mobileconfig_svg %}
-        <div id="qr-container-mc" class="hidden w-40 h-40 [&_svg]:w-full [&_svg]:h-full p-2 bg-white rounded-lg shadow-inner">{{ qr_mobileconfig_svg | safe }}</div>
-        {% endif %}
-        <p class="text-xs text-slate-500 dark:text-slate-400 text-center">
-          Scan with the device's camera to download directly — no login needed there.
-          Link expires in {{ qr_expires_minutes }} minutes, and works only once.
-        </p>
+        <a href="/certs/{{ serial }}/onboard-bundle" id="download-windows-bundle-link" class="btn-secondary w-full text-center justify-center flex items-center gap-1.5" title="One-click installer for Windows (.cmd), Linux (.sh), and macOS (.mobileconfig) — no password to type">
+          <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 4.25A2.25 2.25 0 0 1 4.25 2h2.879a2.25 2.25 0 0 1 1.591.659l1.121 1.121A.75.75 0 0 0 10.37 4h5.38A2.25 2.25 0 0 1 18 6.25v8.5A2.25 2.25 0 0 1 15.75 17H4.25A2.25 2.25 0 0 1 2 14.75v-10.5Z" clip-rule="evenodd"/></svg>
+          Download everything (.zip, all platforms)
+        </a>
+        <div class="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 rounded-lg p-2.5 space-y-1">
+          <div><strong>Platform guide:</strong> Use <code>.mobileconfig</code> for Apple (iOS/macOS) devices. Use <code>.p12</code> for Android and Windows. For Windows, import the <code>.p12</code> into the User Store, download the Wi-Fi profile XML, and run:</div>
+          <code class="block font-mono text-[11px] bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 p-1.5 rounded border border-slate-200 dark:border-slate-700 select-all">netsh wlan add profile filename="Corporate-WiFi-Profile.xml" user=current</code>
+        </div>
       </div>
     </details>
-    {% endif %}
+
+    <div id="bundle-consumed-notice" class="hidden text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50 rounded-lg p-2.5">
+      The client identity bundle has been downloaded. Under our single-use security policy, private keys cannot be re-downloaded.
+    </div>
 
     <p class="text-sm text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-lg p-3">
       Install this on the device, then delete the downloaded file. The password protects the
@@ -94,25 +99,6 @@
 </div>
 
 <script>
-  function showQrTab(kind) {
-    const p12 = document.getElementById('qr-container-p12');
-    const mc = document.getElementById('qr-container-mc');
-    const tabP12 = document.getElementById('tab-qr-p12');
-    const tabMc = document.getElementById('tab-qr-mc');
-    if (!p12 || !mc) return;
-    if (kind === 'mc') {
-      p12.classList.add('hidden');
-      mc.classList.remove('hidden');
-      tabMc.className = 'px-2.5 py-1 rounded bg-white text-slate-900 shadow-sm';
-      tabP12.className = 'px-2.5 py-1 rounded text-slate-600 hover:text-slate-900';
-    } else {
-      mc.classList.add('hidden');
-      p12.classList.remove('hidden');
-      tabP12.className = 'px-2.5 py-1 rounded bg-white text-slate-900 shadow-sm';
-      tabMc.className = 'px-2.5 py-1 rounded text-slate-600 hover:text-slate-900';
-    }
-  }
-
   (function () {
     const savedConfirm = document.getElementById('saved-confirm');
     const leaveBtn = document.getElementById('leave-btn');
