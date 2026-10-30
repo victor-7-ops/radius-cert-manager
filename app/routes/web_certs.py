@@ -39,10 +39,13 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         """Every distinct AP name this device could actually need to
         connect to: one per site its subsidiary is authorized at
         (db.SiteSubsidiary), falling back to the global default for a
-        site with no SSID of its own set. A device whose subsidiary
-        isn't tied to any site yet just gets the global default --
-        "automatically install to any AP available" means every site it
-        can reach, not a guess at which one it'll be near."""
+        site with no SSID of its own set. A site's wifi_ssid may itself
+        be a comma-separated list (e.g. one name per floor) -- expand
+        those too, don't treat the whole string as one SSID. A device
+        whose subsidiary isn't tied to any site yet just gets the
+        global default -- "automatically install to any AP available"
+        means every site it can reach, not a guess at which one it'll
+        be near."""
         default_ssid = getattr(deps.settings, "wifi_ssid", "Corporate-WiFi")
         if not cert.subsidiary_id:
             return [default_ssid]
@@ -52,7 +55,10 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         if not site_ids:
             return [default_ssid]
         sites = session.scalars(select(db.Site).where(db.Site.id.in_(site_ids), db.Site.is_active.is_(True))).all()
-        ssids = {site.wifi_ssid or default_ssid for site in sites}
+        ssids: set[str] = set()
+        for site in sites:
+            names = [n.strip() for n in (site.wifi_ssid or "").split(",") if n.strip()]
+            ssids.update(names or [default_ssid])
         return sorted(ssids) or [default_ssid]
 
     def _cert_filter_stmt(q, status, employee, subsidiary, admin=None):
