@@ -62,6 +62,23 @@ Source and regression tests now close findings 1, 2, 3, 4, 5, 8, and 9: certific
 
    **Partially closed (30 Oct 2026):** production deployment will have 8 APs across 2 floors (19F: 2 APs, 22F: 6 APs), not one AP — a single global `WIFI_SSID` can't represent that. `site.wifi_ssid` now accepts a comma-separated list (`app/site_service.py`'s `set_wifi_ssid`), and `_ssids_for_cert` in `app/routes/web_certs.py` expands each site's list when building onboarding profiles, so a device gets every floor's SSID as an auto-connect option. Still blocked on the actual gateway router, core switch, and APs — none of that hardware is installed yet (currently testing/authenticate-only). Once the real floor SSID names are known, set them on the site via Sites → Wi-Fi SSID (comma-separated) instead of editing `.env`.
 
+### Added 4 Nov 2026 — secondary CM4 (failover) built, not yet wired in
+
+A second physical CM4 (`topline-freeradius2`, hub Site UUID
+`1ce8376f-b47d-4aad-bd6d-4e81b05ed03a`) was flashed and fully configured as a
+failover RADIUS authenticator, mirroring `topline-freeradius1`'s exact stack
+(Ubuntu Server 24.04 LTS, FreeRADIUS 3.2.5 + rlm_python3, site-agent). `freeradius.service`
+is active with config verified OK, and `site-agent.timer` completes a clean
+check-in/CRL/policy/radius-adapter cycle. `topline-freeradius1`'s previously-unset
+`subsidiary` field was also backfilled to `Topline (Main Office)` in the same
+session. Full build log, including two real production-trust-chain bugs found
+along the way (stale `HUB_CA_BUNDLE` guidance in `deploy/agent/README.md`
+pointing at the hub's TLS leaf cert instead of the actual CA chain, and a
+missing polkit rule), is in `deploy/SECONDARY-SITE-FREERADIUS2.md`.
+
+Still blocked on the same hardware gap as item 5b/9 below: no switch/AP yet to
+actually point at this box as a secondary RADIUS server IP.
+
 ## Next required checks
 
 Reproduce full-suite results and add the missing security negatives; passing current tests cannot close these findings. Audit issuance/role grants, subsidiary-superadmin UI/API completeness, offboarding retry and issuance races against B01–B12 before reasserting all tasks complete. Source inspection shows multiple commits during offboarding, so do not call the whole operation atomic without transaction/crash evidence. Verify policy freshness/withdrawal and installed acknowledgements in a real local RADIUS test.
