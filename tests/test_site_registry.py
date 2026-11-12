@@ -131,6 +131,20 @@ def test_checkin_succeeds_with_valid_token_and_updates_last_seen(tmp_path, monke
     assert site.last_reported_freeradius_ok is True
 
 
+def test_checkin_flags_renewal_due_when_site_has_no_server_cert_yet(tmp_path, monkeypatch, throwaway_pki):
+    app, client, app_settings = _make_app(tmp_path, monkeypatch, throwaway_pki)
+    body, session = _create_site_via_api(client, app_settings)
+    token = body["token"]
+
+    resp = client.post(
+        "/api/site/checkin",
+        json={"agent_version": "1.0.0", "freeradius_ok": True, "crl_sha256": None, "server_cert_serial": None},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["renewal_due"] is True
+
+
 def test_crl_pull_returns_304_when_etag_matches(tmp_path, monkeypatch, throwaway_pki):
     app, client, app_settings = _make_app(tmp_path, monkeypatch, throwaway_pki)
     body, session = _create_site_via_api(client, app_settings)

@@ -59,7 +59,7 @@ def get_router(deps) -> APIRouter:
             current_crl_sha256 is not None and current_crl_sha256 != reported_crl_sha256
         )
 
-        renewal_due = False
+        renewal_due = server_cert_serial is None
         if server_cert_serial is not None:
             cert = session.scalar(
                 select(db.Certificate).where(db.Certificate.serial == str(server_cert_serial))
