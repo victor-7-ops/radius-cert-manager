@@ -64,7 +64,16 @@ case "${SSH_ORIGINAL_COMMAND:-}" in
         fi
 
         cp "$CRL_STAGING" "$CRL_DEST"
-        chmod 644 "$CRL_DEST"
+        # No chmod here: `cp` onto an existing destination never changes its
+        # mode, only its content, so this never needed the chmod in the
+        # first place. The chmod it used to do (644) required OWNING the
+        # file, not just group-writing it -- and crl.pem is also written by
+        # the site-agent's pull path (certmgr-agent user), which leaves it
+        # owned freerad:freerad, mode 664. crlpush is in group freerad (so
+        # the `cp` above succeeds via group-write) but is never the owner,
+        # so `chmod 644` here reliably failed EPERM once the pull path had
+        # touched the file first -- confirmed broken in production 18 Nov
+        # 2026 (certmanager-crl.service alert log, freeradius1).
         rm -f "$CRL_STAGING"
 
         if ! freeradius -XC > /tmp/freeradius_check.$$.log 2>&1; then
