@@ -296,9 +296,6 @@ def post_auth(p: tuple) -> tuple:
     
     Called by FreeRADIUS after successful TLS handshake and CRL verification.
     """
-    # Extract request dictionary from FreeRADIUS tuple pairs
-    req = dict(p) if isinstance(p, (dict, list, tuple)) else {}
-
     subject_values = [value for key, value in (p if isinstance(p, (list, tuple)) else ())
                       if key == "TLS-Client-Cert-Subject"]
     if isinstance(p, dict):
