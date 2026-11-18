@@ -1,0 +1,8 @@
+[Unit]
+Description=Nightly off-array certmanager backup push
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/srv/data/backup_push.sh

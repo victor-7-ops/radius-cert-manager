@@ -1,0 +1,8 @@
+[Unit]
+Description=certmanager CRL regeneration and push
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec certmanager python -m scripts.regenerate_crl_cron

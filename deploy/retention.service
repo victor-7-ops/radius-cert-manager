@@ -1,3 +1,11 @@
+# NOT DEPLOYED on topline-server as of 2026-11-18 (confirmed: absent from
+# `systemctl list-units --all`). Also still points at the bare-metal venv
+# path (/opt/certmanager/.venv), not the dockerized `docker exec
+# certmanager ...` pattern certmanager-crl.service/fleet_watch.service
+# actually use on the live host — would need both fixes before install.
+# Per the file's own comment, every *_retention_days is unset by default
+# so this is a safe no-op even once installed; still, data retention is
+# not currently running anywhere.
 [Unit]
 Description=Certmanager data retention/minimisation (HANDOFF-COMPLIANCE.md §1)
 After=network-online.target

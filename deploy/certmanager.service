@@ -1,3 +1,10 @@
+# NOT DEPLOYED on topline-server as of 2026-11-18 (confirmed: absent from
+# `systemctl list-units --all`). The live hub runs certmanager dockerized
+# via docker-compose at /srv/apps/certmanager, started by Docker's own
+# restart policy, not by this unit. This file describes the bare-metal
+# venv deployment this repo was originally built for; it was never
+# reconciled with the dockerized deploy that's actually running. Do not
+# assume this is what's keeping the hub's web app up.
 [Unit]
 Description=RADIUS Certificate Manager
 After=network-online.target

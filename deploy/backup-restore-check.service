@@ -1,3 +1,11 @@
+# NOT DEPLOYED on topline-server as of 2026-11-18 (confirmed: absent from
+# `systemctl list-units --all`). Also still points at the bare-metal venv
+# path (/opt/certmanager/.venv) and the old scripts/backup.py output dir
+# (/var/backups/certmanager) — the live backup unit (certmanager-backup
+# .service) actually calls an untracked host script, /srv/data/
+# backup_push.sh, not scripts/backup.py, so this restore-check targets a
+# backup location nothing currently writes to. The restore drill this
+# file describes has never been run against the live backup path.
 [Unit]
 Description=Certmanager restore drill — prove the latest backup actually restores (HANDOFF-FLEET.md §8.4)
 After=network-online.target backup.service
