@@ -83,7 +83,7 @@ def get_health(session: Session) -> CrlHealth:
     next_update = _aware(state.next_update)
     now = _now()
     hours_remaining = None
-    is_stale = False
+    is_stale = next_update is None
     if next_update is not None:
         delta = next_update - now
         hours_remaining = delta.total_seconds() / 3600

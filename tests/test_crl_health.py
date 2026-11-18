@@ -48,6 +48,13 @@ def test_no_state_yet_reports_no_crash(tmp_path):
     assert health.hours_remaining is None
 
 
+def test_no_crl_ever_generated_is_critical(tmp_path):
+    session = make_session(tmp_path)
+    health = crl_health.get_health(session)
+    assert health.is_critical is True
+    assert health.is_stale is True
+
+
 def test_push_retries_with_backoff_and_succeeds_on_second_attempt(tmp_path):
     session = make_session(tmp_path)
     attempts = []
