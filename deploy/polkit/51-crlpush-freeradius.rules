@@ -1,0 +1,17 @@
+// Lets the crlpush SSH user (see deploy/crlpush_forced_command.sh) reload
+// freeradius.service without a password, via systemctl, as the final
+// step of a CRL push.
+//
+// Without this rule `systemctl reload freeradius` fails with "Interactive
+// authentication required" when run by crlpush -- confirmed missing on
+// topline-freeradius2 (never provisioned there until 18 Nov 2026);
+// topline-freeradius1 has carried this file, undocumented in the repo,
+// since initial setup. Install at /etc/polkit-1/rules.d/ on any box that
+// runs the crlpush forced-command script.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        subject.user == "crlpush" &&
+        action.lookup("unit") == "freeradius.service") {
+        return polkit.Result.YES;
+    }
+});
