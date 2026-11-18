@@ -81,3 +81,31 @@ def test_regenerate_crl_cron_runs_synchronously(app_settings, throwaway_pki, mon
     assert len(pushed) == 1
     assert (app_settings.pki_path / "crl.pem").exists()
 
+
+def test_crl_push_reaches_every_active_site_with_a_push_host(app_settings, throwaway_pki, monkeypatch):
+    pushed_hosts = []
+    monkeypatch.setattr(
+        crl_push,
+        "push_crl",
+        lambda crl_path, host, *a, **k: (pushed_hosts.append(host), crl_push.PushResult(ok=True, detail="stubbed"))[1],
+    )
+    _write_throwaway_pki(app_settings, throwaway_pki)
+
+    app = create_app(app_settings)
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    from app import site_service
+    site_service.create_site(
+        session, name="freeradius2", radius_cn="freeradius2.topline.local", actor="system",
+        crl_push_host="192.168.13.102",
+    )
+    # pull-only site -- no crl_push_host -- must NOT receive a push.
+    site_service.create_site(
+        session, name="pull-only-site", radius_cn="pull-only.topline.local", actor="system",
+    )
+
+    app.state.regenerate_and_push_crl(background=False)
+
+    assert set(pushed_hosts) == {app_settings.radius_host, "192.168.13.102"}
+

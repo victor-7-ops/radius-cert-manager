@@ -553,6 +553,13 @@ class Site(Base):
     # that was last alerted on; scripts/fleet_watch.py only alerts again
     # when the derived status changes.
 
+    # SSH push target for this site's crl.pem (app/crl_push.py), in
+    # addition to the pull-based checkin loop every site already has.
+    # NULL means "pull-only" -- the site waits up to
+    # checkin_interval_seconds for a fresh CRL via /checkin instead of
+    # getting it immediately after regeneration.
+    crl_push_host: Mapped[str | None] = mapped_column(String, nullable=True)
+
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
@@ -713,6 +720,7 @@ _SITE_COLUMN_MIGRATIONS = [
     ("last_alerted_status", "VARCHAR"),
     ("vlan_segmentation_enabled", "BOOLEAN DEFAULT 1"),
     ("wifi_ssid", "VARCHAR"),
+    ("crl_push_host", "VARCHAR"),
 ]
 
 _AUDIT_LOG_COLUMN_MIGRATIONS = [

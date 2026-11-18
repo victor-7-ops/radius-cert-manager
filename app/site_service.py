@@ -30,6 +30,7 @@ def create_site(
     crl_validity_days: int = 30,
     checkin_interval_seconds: int = 3600,
     notes: str | None = None,
+    crl_push_host: str | None = None,
 ) -> CreateSiteResult:
     existing = session.scalar(select(db.Site).where(db.Site.radius_cn == radius_cn))
     if existing is not None:
@@ -45,6 +46,7 @@ def create_site(
         crl_validity_days=crl_validity_days,
         checkin_interval_seconds=checkin_interval_seconds,
         notes=notes,
+        crl_push_host=crl_push_host,
     )
     session.add(site)
     session.commit()

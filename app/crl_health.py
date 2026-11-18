@@ -124,15 +124,19 @@ def push_with_retry(
     alert_fn: callable | None,
     sleep_fn: callable = None,
     delays: list[int] = None,
+    host: str | None = None,
 ) -> PushResult:
     """Retry push_fn() with backoff. On continued failure, write an audit
     row and fire alert_fn(detail) — loud failure, not a silent one
     (handoff §8.5). sleep_fn/delays are injectable so tests never
-    actually sleep 15 minutes."""
+    actually sleep 15 minutes. `host` is cosmetic only (audit/alert
+    detail) — multiple hosts share crl_state, so last_push_ok reflects
+    whichever host pushed most recently."""
     import time
 
     sleep_fn = sleep_fn or time.sleep
     delays = delays if delays is not None else DEFAULT_RETRY_DELAYS_SECONDS
+    host_label = f"{host}: " if host else ""
 
     result = None
     for i, delay in enumerate(delays):
@@ -142,10 +146,18 @@ def push_with_retry(
         record_push_result(session, result.ok)
         if result.ok:
             return result
-        logger.warning("CRL push attempt %d/%d failed: %s", i + 1, len(delays), result.detail)
+        logger.warning(
+            "CRL push attempt %d/%d failed (%s): %s", i + 1, len(delays), host or "?", result.detail
+        )
 
-    audit(session, actor="system", action="crl_push_failed", target="crl.pem", detail=result.detail)
+    audit(
+        session,
+        actor="system",
+        action="crl_push_failed",
+        target="crl.pem",
+        detail=f"{host_label}{result.detail}",
+    )
     session.commit()
     if alert_fn is not None:
-        alert_fn(f"CRL push failed after {len(delays)} attempts: {result.detail}")
+        alert_fn(f"CRL push failed after {len(delays)} attempts ({host_label}{result.detail})")
     return result

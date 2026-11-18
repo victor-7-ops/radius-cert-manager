@@ -90,3 +90,18 @@ def test_push_exhausts_retries_writes_audit_and_fires_alert(tmp_path):
 
     audit_row = session.query(db.AuditLog).filter_by(action="crl_push_failed").one()
     assert audit_row.target == "crl.pem"
+
+
+def test_push_failure_alert_names_the_failing_host(tmp_path):
+    session = make_session(tmp_path)
+
+    def push_fn():
+        return crl_push.PushResult(ok=False, detail="permanent failure")
+
+    alerts = []
+    crl_health.push_with_retry(
+        session, push_fn, alert_fn=alerts.append, sleep_fn=lambda s: None, delays=[0], host="192.168.13.102"
+    )
+    assert "192.168.13.102" in alerts[0]
+    audit_row = session.query(db.AuditLog).filter_by(action="crl_push_failed").one()
+    assert "192.168.13.102" in audit_row.detail
