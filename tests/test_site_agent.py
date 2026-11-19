@@ -180,11 +180,41 @@ def test_fetch_and_install_crl_installs_when_next_update_is_future(tmp_path, mon
         return _ok()
 
     monkeypatch.setattr(site_agent, "_run", fake_run)
-    monkeypatch.setattr(site_agent, "_install_with_safety", lambda cfg, files, label: True)
+    monkeypatch.setattr(
+        site_agent, "_install_with_safety", lambda cfg, files, label, restart=False: True
+    )
 
     result = site_agent.fetch_and_install_crl(cfg, session, reported_etag=None)
 
     assert result == site_agent._sha256_bytes(b"FAKE CRL BYTES")
+
+
+def test_fetch_and_install_crl_restarts_not_reloads(tmp_path, monkeypatch):
+    # A reload (SIGHUP) doesn't rebuild eap_tls's X509 CRL store, so a
+    # just-revoked cert keeps authenticating after it -- confirmed live,
+    # 19 Nov 2026. CRL installs must force a restart.
+    cfg = _make_cfg(tmp_path)
+    session = MagicMock()
+    session.get.return_value = MagicMock(status_code=200, content=b"FAKE CRL BYTES")
+
+    def fake_run(cmd, **k):
+        if cmd[0] == "openssl":
+            return _ok(stdout="nextUpdate=Jan  1 00:00:00 2099 GMT")
+        if cmd[0] == "date":
+            return _ok(stdout="4102444800")
+        return _ok()
+
+    monkeypatch.setattr(site_agent, "_run", fake_run)
+    calls = []
+    monkeypatch.setattr(
+        site_agent,
+        "_install_with_safety",
+        lambda cfg, files, label, restart=False: calls.append(restart) or True,
+    )
+
+    site_agent.fetch_and_install_crl(cfg, session, reported_etag=None)
+
+    assert calls == [True]
 
 
 def test_renew_server_cert_rejects_when_hub_rejects_csr(tmp_path, monkeypatch):

@@ -352,7 +352,11 @@ def fetch_and_install_crl(cfg: Config, session: requests.Session, reported_etag:
         return None
 
     live_path = cfg.cert_dir / cfg.crl_filename
-    installed = _install_with_safety(cfg, {live_path: crl_bytes}, label="crl")
+    # restart=True: a reload (SIGHUP) does not rebuild eap_tls's X509 CRL
+    # store, so a just-revoked cert keeps authenticating after a reload --
+    # confirmed live, 19 Nov 2026 (see crlpush_forced_command.sh for the
+    # matching push-side fix and the acceptance test that found this).
+    installed = _install_with_safety(cfg, {live_path: crl_bytes}, label="crl", restart=True)
     if not installed:
         return None
     return _sha256_bytes(crl_bytes)

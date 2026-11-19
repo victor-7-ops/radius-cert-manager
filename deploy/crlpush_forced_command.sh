@@ -82,8 +82,17 @@ case "${SSH_ORIGINAL_COMMAND:-}" in
         fi
         rm -f /tmp/freeradius_check.$$.log
 
-        systemctl reload freeradius
-        echo "CRL installed and FreeRADIUS reloaded. nextUpdate epoch: $next_update_epoch"
+        # restart, not reload: a SIGHUP re-reads radiusd.conf but does NOT
+        # rebuild eap_tls's X509 CRL store, so a revoked cert keeps
+        # authenticating successfully after a reload -- confirmed live,
+        # 19 Nov 2026 (topline-freeradius2, Task A2 acceptance test: a
+        # revoked cert still got CTRL-EVENT-EAP-SUCCESS after `reload`,
+        # and only failed correctly after a full `restart`). Causes a
+        # few seconds of auth downtime on every CRL push, not just ones
+        # that actually revoke something -- accepted tradeoff for
+        # revocation to be enforced promptly instead of not at all.
+        systemctl restart freeradius
+        echo "CRL installed and FreeRADIUS restarted. nextUpdate epoch: $next_update_epoch"
         ;;
 
     sha256sum-crl)
