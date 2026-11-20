@@ -1,3 +1,13 @@
+# NOT DEPLOYED on topline-server as of 2026-11-18 (confirmed: absent from
+# `systemctl list-units --all`), and NOT NEEDED: app/routes/site.py's
+# GET /network-policy already republishes a site's lease on pull whenever
+# it's expired or missing (no separate pre-emptive refresh job required).
+# Confirmed via SitePolicyRevision history on the live hub — both
+# existing sites' leases renew on their own ~24h cadence with no
+# scheduled job driving it. Also still points at the bare-metal venv path
+# (/opt/certmanager/.venv), not the dockerized ExecStart pattern the
+# live units use, so it would need that fix too before install, but
+# there is currently no reason to install it.
 [Unit]
 Description=Certmanager site network policy refresh and lease renewal
 After=network-online.target

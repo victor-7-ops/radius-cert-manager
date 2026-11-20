@@ -33,6 +33,9 @@ def test_issue_list_suspend_revoke_flow(app_settings, throwaway_pki, monkeypatch
     monkeypatch.setattr(
         crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed")
     )
+    monkeypatch.setattr(
+        crl_push, "check_host_health", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed")
+    )
     _write_throwaway_pki(app_settings, throwaway_pki)
     admin = _seed_admin(app_settings, "flow-admin", db.AdminRole.super_admin)
 
@@ -68,6 +71,9 @@ def test_regenerate_crl_cron_runs_synchronously(app_settings, throwaway_pki, mon
     monkeypatch.setattr(
         crl_push, "push_crl", lambda *a, **k: (pushed.append(True), crl_push.PushResult(ok=True, detail="cron stubbed"))[1]
     )
+    monkeypatch.setattr(
+        crl_push, "check_host_health", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed")
+    )
     _write_throwaway_pki(app_settings, throwaway_pki)
     monkeypatch.setenv("SECRET_KEY", app_settings.secret_key)
     monkeypatch.setenv("PKI_PATH", str(app_settings.pki_path))
@@ -80,4 +86,35 @@ def test_regenerate_crl_cron_runs_synchronously(app_settings, throwaway_pki, mon
     assert exit_code == 0
     assert len(pushed) == 1
     assert (app_settings.pki_path / "crl.pem").exists()
+
+
+def test_crl_push_reaches_every_active_site_with_a_push_host(app_settings, throwaway_pki, monkeypatch):
+    pushed_hosts = []
+    monkeypatch.setattr(
+        crl_push,
+        "push_crl",
+        lambda crl_path, host, *a, **k: (pushed_hosts.append(host), crl_push.PushResult(ok=True, detail="stubbed"))[1],
+    )
+    monkeypatch.setattr(
+        crl_push, "check_host_health", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed")
+    )
+    _write_throwaway_pki(app_settings, throwaway_pki)
+
+    app = create_app(app_settings)
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    from app import site_service
+    site_service.create_site(
+        session, name="freeradius2", radius_cn="freeradius2.topline.local", actor="system",
+        crl_push_host="192.168.13.102",
+    )
+    # pull-only site -- no crl_push_host -- must NOT receive a push.
+    site_service.create_site(
+        session, name="pull-only-site", radius_cn="pull-only.topline.local", actor="system",
+    )
+
+    app.state.regenerate_and_push_crl(background=False)
+
+    assert set(pushed_hosts) == {app_settings.radius_host, "192.168.13.102"}
 

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily certmanager CRL regeneration
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

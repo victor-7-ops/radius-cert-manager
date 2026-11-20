@@ -39,6 +39,11 @@ from pathlib import Path
 
 import requests
 
+try:
+    import grp  # POSIX only -- this agent only ever runs on the RADIUS boxes
+except ImportError:
+    grp = None
+
 logger = logging.getLogger("site_agent")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -62,6 +67,7 @@ class Config:
         self.server_key_filename = os.environ.get("SERVER_KEY_FILENAME", "server.key")
         self.ca_chain_filename = os.environ.get("CA_CHAIN_FILENAME", "ca-chain.pem")
         self.freeradius_service = os.environ.get("FREERADIUS_SERVICE", "freeradius")
+        self.radius_group = os.environ.get("RADIUS_GROUP", "freerad")
         self.radius_adapter_path = Path(
             os.environ.get("RADIUS_ADAPTER_PATH", "/opt/certmanager/deploy/radius/authorize_policy.py")
         )
@@ -182,7 +188,40 @@ def _install_with_safety(cfg: Config, staged_files: dict[Path, bytes], label: st
     try:
         for path, content in staged_files.items():
             path.write_bytes(content)
-            path.chmod(0o640 if "key" in path.name else 0o644)
+            if "key" in path.name:
+                mode = 0o640
+            elif path.name == cfg.crl_filename:
+                # crl.pem has two independent writers: this agent's pull
+                # path (certmgr-agent) and the hub's push path (crlpush,
+                # via crlpush_forced_command.sh's `cp`). Both are in the
+                # freerad group, but `cp` onto an existing file never
+                # changes its owner/group -- whichever of the two creates
+                # the file first fixes its owner for good. 0o644 denies
+                # group-write, so if this agent creates it first the push
+                # path can never update it again (confirmed broken on
+                # topline-freeradius2, 18 Nov 2026). 0o664 keeps it
+                # writable by both regardless of creation order.
+                mode = 0o664
+            else:
+                mode = 0o644
+            path.chmod(mode)
+            # Writing a file here always sets its group to this process's
+            # own primary group (certmgr-agent), which freeradius -XC --
+            # run by the crlpush SSH user during a CRL push, see
+            # crlpush_forced_command.sh -- cannot read even at mode 0o640.
+            # crlpush is already in cfg.radius_group (same group FreeRADIUS
+            # itself runs as); chgrp'ing every installed file to it keeps
+            # server.key etc. readable regardless of which process wrote
+            # the file last. Confirmed broken without this: freeradius -XC
+            # silently failing permission-denied on server.key during
+            # every push-path install, both boxes, 18 Nov 2026 -- harmless
+            # only because check_crl is still off.
+            if grp is not None:
+                try:
+                    radius_gid = grp.getgrnam(cfg.radius_group).gr_gid
+                    os.chown(path, -1, radius_gid)
+                except KeyError:
+                    logger.warning("group %r not found, skipping chgrp on %s", cfg.radius_group, path)
 
         ok, detail = _freeradius_check()
         if not ok:
@@ -313,7 +352,11 @@ def fetch_and_install_crl(cfg: Config, session: requests.Session, reported_etag:
         return None
 
     live_path = cfg.cert_dir / cfg.crl_filename
-    installed = _install_with_safety(cfg, {live_path: crl_bytes}, label="crl")
+    # restart=True: a reload (SIGHUP) does not rebuild eap_tls's X509 CRL
+    # store, so a just-revoked cert keeps authenticating after a reload --
+    # confirmed live, 19 Nov 2026 (see crlpush_forced_command.sh for the
+    # matching push-side fix and the acceptance test that found this).
+    installed = _install_with_safety(cfg, {live_path: crl_bytes}, label="crl", restart=True)
     if not installed:
         return None
     return _sha256_bytes(crl_bytes)

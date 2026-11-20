@@ -64,7 +64,16 @@ case "${SSH_ORIGINAL_COMMAND:-}" in
         fi
 
         cp "$CRL_STAGING" "$CRL_DEST"
-        chmod 644 "$CRL_DEST"
+        # No chmod here: `cp` onto an existing destination never changes its
+        # mode, only its content, so this never needed the chmod in the
+        # first place. The chmod it used to do (644) required OWNING the
+        # file, not just group-writing it -- and crl.pem is also written by
+        # the site-agent's pull path (certmgr-agent user), which leaves it
+        # owned freerad:freerad, mode 664. crlpush is in group freerad (so
+        # the `cp` above succeeds via group-write) but is never the owner,
+        # so `chmod 644` here reliably failed EPERM once the pull path had
+        # touched the file first -- confirmed broken in production 18 Nov
+        # 2026 (certmanager-crl.service alert log, freeradius1).
         rm -f "$CRL_STAGING"
 
         if ! freeradius -XC > /tmp/freeradius_check.$$.log 2>&1; then
@@ -73,8 +82,17 @@ case "${SSH_ORIGINAL_COMMAND:-}" in
         fi
         rm -f /tmp/freeradius_check.$$.log
 
-        systemctl reload freeradius
-        echo "CRL installed and FreeRADIUS reloaded. nextUpdate epoch: $next_update_epoch"
+        # restart, not reload: a SIGHUP re-reads radiusd.conf but does NOT
+        # rebuild eap_tls's X509 CRL store, so a revoked cert keeps
+        # authenticating successfully after a reload -- confirmed live,
+        # 19 Nov 2026 (topline-freeradius2, Task A2 acceptance test: a
+        # revoked cert still got CTRL-EVENT-EAP-SUCCESS after `reload`,
+        # and only failed correctly after a full `restart`). Causes a
+        # few seconds of auth downtime on every CRL push, not just ones
+        # that actually revoke something -- accepted tradeoff for
+        # revocation to be enforced promptly instead of not at all.
+        systemctl restart freeradius
+        echo "CRL installed and FreeRADIUS restarted. nextUpdate epoch: $next_update_epoch"
         ;;
 
     sha256sum-crl)
@@ -84,6 +102,18 @@ case "${SSH_ORIGINAL_COMMAND:-}" in
             exit 1
         fi
         sha256sum "$CRL_DEST" | awk '{print $1, "crl.pem"}'
+        ;;
+
+    health-check)
+        # H1: the health gate between staggered restarts on a multi-host
+        # push. Confirms this box actually came back up after the restart
+        # step above, not just that sshd answered.
+        if systemctl is-active --quiet freeradius; then
+            echo "active"
+        else
+            echo "freeradius not active" >&2
+            exit 1
+        fi
         ;;
 
     *)
