@@ -87,3 +87,30 @@ def push_crl(
         return PushResult(ok=False, detail="hash mismatch after push")
 
     return PushResult(ok=True, detail="pushed and verified")
+
+
+def check_host_health(
+    radius_host: str,
+    ssh_user: str,
+    ssh_key: Path,
+    run: callable = subprocess.run,
+) -> PushResult:
+    """Health gate for a staggered multi-host push (handoff H1): confirm
+    the host that was just restarted is actually answering again before
+    moving on to the next one. Uses the same restricted crlpush key —
+    see the health-check case in crlpush_forced_command.sh."""
+    known_hosts = ssh_key.with_name("known_hosts")
+    host_key_opts = ["-o", "StrictHostKeyChecking=yes", "-o", f"UserKnownHostsFile={known_hosts}"]
+
+    cmd = [
+        "ssh",
+        "-i",
+        str(ssh_key),
+        *host_key_opts,
+        f"{ssh_user}@{radius_host}",
+        "health-check",
+    ]
+    result = run(cmd, capture_output=True, timeout=30)
+    if result.returncode != 0:
+        return PushResult(ok=False, detail=f"health check failed: {result.stderr!r}")
+    return PushResult(ok=True, detail="healthy")

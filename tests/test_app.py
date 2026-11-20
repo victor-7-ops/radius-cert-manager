@@ -33,6 +33,9 @@ def test_issue_list_suspend_revoke_flow(app_settings, throwaway_pki, monkeypatch
     monkeypatch.setattr(
         crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed")
     )
+    monkeypatch.setattr(
+        crl_push, "check_host_health", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed")
+    )
     _write_throwaway_pki(app_settings, throwaway_pki)
     admin = _seed_admin(app_settings, "flow-admin", db.AdminRole.super_admin)
 
@@ -68,6 +71,9 @@ def test_regenerate_crl_cron_runs_synchronously(app_settings, throwaway_pki, mon
     monkeypatch.setattr(
         crl_push, "push_crl", lambda *a, **k: (pushed.append(True), crl_push.PushResult(ok=True, detail="cron stubbed"))[1]
     )
+    monkeypatch.setattr(
+        crl_push, "check_host_health", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed")
+    )
     _write_throwaway_pki(app_settings, throwaway_pki)
     monkeypatch.setenv("SECRET_KEY", app_settings.secret_key)
     monkeypatch.setenv("PKI_PATH", str(app_settings.pki_path))
@@ -88,6 +94,9 @@ def test_crl_push_reaches_every_active_site_with_a_push_host(app_settings, throw
         crl_push,
         "push_crl",
         lambda crl_path, host, *a, **k: (pushed_hosts.append(host), crl_push.PushResult(ok=True, detail="stubbed"))[1],
+    )
+    monkeypatch.setattr(
+        crl_push, "check_host_health", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed")
     )
     _write_throwaway_pki(app_settings, throwaway_pki)
 

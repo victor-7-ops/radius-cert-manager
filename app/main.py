@@ -325,6 +325,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     if site.crl_push_host:
                         targets.add(site.crl_push_host)
 
+                # H1: push sequentially, one host at a time, with a health
+                # gate between them. The push restarts FreeRADIUS (reload
+                # doesn't rebuild the X509/CRL store, 19 Nov), and pushing
+                # to every host back-to-back took both the primary and
+                # secondary down within seconds of each other. If a host
+                # doesn't come back healthy, abort rather than continuing
+                # to the next one: a half-pushed CRL across the failover
+                # pair is worse than a stale one on both.
                 for host in sorted(targets):
                     def _push(host=host):
                         return crl_push.push_crl(
@@ -334,9 +342,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             settings.radius_ssh_key,
                         )
 
-                    crl_health.push_with_retry(
+                    result = crl_health.push_with_retry(
                         push_session, _push, alert_fn=_alert, host=host
                     )
+                    if not result.ok:
+                        # push_with_retry already audited and alerted.
+                        break
+
+                    health = crl_push.check_host_health(
+                        host, settings.radius_ssh_user, settings.radius_ssh_key
+                    )
+                    if not health.ok:
+                        db.audit(
+                            push_session,
+                            actor="system",
+                            action="crl_push_health_gate_failed",
+                            target=host,
+                            detail=health.detail,
+                        )
+                        push_session.commit()
+                        _alert(
+                            f"CRL push: {host} did not come back healthy after restart "
+                            f"({health.detail}) — aborting push to remaining hosts"
+                        )
+                        break
 
         if background:
             import threading

@@ -104,6 +104,18 @@ case "${SSH_ORIGINAL_COMMAND:-}" in
         sha256sum "$CRL_DEST" | awk '{print $1, "crl.pem"}'
         ;;
 
+    health-check)
+        # H1: the health gate between staggered restarts on a multi-host
+        # push. Confirms this box actually came back up after the restart
+        # step above, not just that sshd answered.
+        if systemctl is-active --quiet freeradius; then
+            echo "active"
+        else
+            echo "freeradius not active" >&2
+            exit 1
+        fi
+        ;;
+
     *)
         echo "This key may only push, install, or read back crl.pem." >&2
         exit 1
