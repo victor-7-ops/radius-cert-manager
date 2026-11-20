@@ -1,0 +1,1082 @@
+[1mdiff --git a/app/main.py b/app/main.py[m
+[1mindex 54f9a95..6875a7e 100644[m
+[1m--- a/app/main.py[m
+[1m+++ b/app/main.py[m
+[36m@@ -1,533 +1,544 @@[m
+[31m-"""FastAPI app: router mounting, exception handlers, startup reconciliation.[m
+[31m-[m
+[31m-Handoff §5.6: a catch-all exception handler returns a generic error plus[m
+[31m-a correlation ID. Raw tracebacks must never reach a client.[m
+[31m-"""[m
+[31m-[m
+[31m-from __future__ import annotations[m
+[31m-[m
+[31m-import contextvars[m
+[31m-import json[m
+[31m-import logging[m
+[31m-import time[m
+[31m-import uuid[m
+[31m-from dataclasses import dataclass[m
+[31m-from pathlib import Path[m
+[31m-[m
+[31m-from urllib.parse import urlparse[m
+[31m-[m
+[31m-from fastapi import FastAPI, Request, Response, status[m
+[31m-from fastapi.responses import JSONResponse[m
+[31m-from fastapi.staticfiles import StaticFiles[m
+[31m-from fastapi.templating import Jinja2Templates[m
+[31m-from sqlalchemy.orm import Session, scoped_session[m
+[31m-[m
+[31m-import datetime[m
+[31m-import urllib.request[m
+[31m-[m
+[31m-from app import auth, cert_service, crl_health, crl_push, db, expiry_alerts, fleet_watch, pki, reconcile, site_auth, site_service[m
+[31m-from app.config import Settings, load_settings[m
+[31m-from app.db import init_db, make_engine, make_session_factory[m
+[31m-from app.routes.certs import get_router as get_certs_router[m
+[31m-from app.routes.health import get_router as get_health_router[m
+[31m-from app.routes.web import get_router as get_web_router[m
+[31m-from app.routes.web_account import get_router as get_web_account_router[m
+[31m-from app.routes.web_admins import get_router as get_web_admins_router[m
+[31m-from app.routes.web_certs import get_router as get_web_certs_router[m
+[31m-from app.routes.web_auth import get_router as get_web_auth_router[m
+[31m-from app.routes.bulk import get_router as get_bulk_router[m
+[31m-from app.routes.bulk_network import get_router as get_bulk_network_router[m
+[31m-from app.routes.site import get_router as get_site_router[m
+[31m-from app.routes.sites_admin import get_router as get_sites_admin_router[m
+[31m-from app.routes.web_sites import get_router as get_web_sites_router[m
+[31m-from app.routes.web_subsidiaries import get_router as get_web_subsidiaries_router[m
+[31m-from app.routes.web_employees import get_router as get_web_employees_router[m
+[31m-from app.routes.web_renewals import get_router as get_web_renewals_router[m
+[31m-from app.routes.liveness import get_router as get_liveness_router[m
+[31m-from app.routes.metrics import get_router as get_metrics_router[m
+[31m-from app.routes.network_policy import get_router as get_network_policy_router[m
+[31m-from app.routes.employees import get_router as get_employees_router[m
+[31m-[m
+[31m-BASE_DIR = Path(__file__).resolve().parent[m
+[31m-[m
+[31m-logger = logging.getLogger("certmanager")[m
+[31m-[m
+[31m-# Never log key material, .p12 bytes, or export passwords (§5.6) — this[m
+[31m-# logger must only ever receive the fields explicitly passed below.[m
+[31m-[m
+[31m-[m
+[31m-def _avatar_hue(name: str) -> int:[m
+[31m-    """Deterministic 0-359 hue from a name, for a per-user avatar color[m
+[31m-    that's stable across sessions without needing to store one."""[m
+[31m-    return sum(ord(c) for c in (name or "?")) * 37 % 360[m
+[31m-[m
+[31m-[m
+[31m-@dataclass[m
+[31m-class RouteDeps:[m
+[31m-    require_admin: callable[m
+[31m-    require_super_admin: callable[m
+[31m-    require_write: callable[m
+[31m-    require_site: callable[m
+[31m-    get_db_session: callable[m
+[31m-    pki_path: Path[m
+[31m-    db_path: Path[m
+[31m-    radius_adapter_path: Path[m
+[31m-    inter_cert: object[m
+[31m-    inter_key: object[m
+[31m-    client_cert_days: int[m
+[31m-    server_cert_days: int[m
+[31m-    site_renewal_stagger_window_days: int[m
+[31m-    liveness_token: str | None[m
+[31m-    store_pending_bundle: callable[m
+[31m-    take_pending_bundle: callable[m
+[31m-    peek_pending_bundle: callable[m
+[31m-    store_pending_password: callable[m
+[31m-    peek_pending_password: callable[m
+[31m-    regenerate_and_push_crl: callable[m
+[31m-    check_expiry_alerts: callable[m
+[31m-    expiry_alert_days: int[m
+[31m-    alert_webhook_url: str | None[m
+[31m-    secret_key: str[m
+[31m-    root_cert: object | None[m
+[31m-    store_pending_preview: callable[m
+[31m-    take_pending_preview: callable[m
+[31m-    peek_pending_preview: callable[m
+[31m-    store_pending_batch: callable[m
+[31m-    take_pending_batch: callable[m
+[31m-    peek_pending_batch: callable[m
+[31m-    settings: Settings[m
+[31m-[m
+[31m-[m
+[31m-def create_app(settings: Settings | None = None) -> FastAPI:[m
+[31m-    settings = settings or load_settings()[m
+[31m-[m
+[31m-    from app.logging_conf import setup_logging[m
+[31m-    setup_logging(log_format=getattr(settings, "log_format", "text"))[m
+[31m-[m
+[31m-    engine = make_engine(str(settings.db_path))[m
+[31m-    session_factory = make_session_factory(engine)[m
+[31m-    init_db(engine)[m
+[31m-[m
+[31m-    # Every route just called session_factory() straight, once per[m
+[31m-    # deps.get_db_session() call, and nothing ever closed the result —[m
+[31m-    # each request quietly leaked a connection back to nothing but GC[m
+[31m-    # timing, and under any real concurrency (or a slow synchronous[m
+[31m-    # regenerate_and_push_crl() holding one open through a CRL-push[m
+[31m-    # retry/backoff) the pool exhausts. scoped_session ties one session[m
+[31m-    # per request: the registry key is a ContextVar set once by the[m
+[31m-    # middleware below, before FastAPI forks dependency/handler[m
+[31m-    # resolution into separate threadpool calls — those calls each get[m
+[31m-    # their own COPY of the context, but a copy still reads the value[m
+[31m-    # set before the copy, so every get_db_session() call within one[m
+[31m-    # request resolves to the same session, and request_scoped_db.remove()[m
+[31m-    # after the response closes it and evicts it from the registry.[m
+[31m-    _request_db_key: contextvars.ContextVar[object | None] = contextvars.ContextVar([m
+[31m-        "_request_db_key", default=None[m
+[31m-    )[m
+[31m-    request_scoped_db = scoped_session(session_factory, scopefunc=_request_db_key.get)[m
+[31m-[m
+[31m-    inter_cert = pki.load_cert_pem(settings.pki_path / "intermediate.crt")[m
+[31m-    inter_key = pki.load_key_pem(settings.pki_path / "private" / "intermediate.key")[m
+[31m-    # root.crt is the real self-signed Root CA. ca-chain.pem was kept as a[m
+[31m-    # fallback for older layouts, but on the live hub it was found to[m
+[31m-    # actually hold the intermediate cert under a misleading name (root.crt[m
+[31m-    # existed alongside it) -- load_cert_pem only reads the first cert in[m
+[31m-    # a file, so a wrongly-named/ordered ca-chain.pem silently produces[m
+[31m-    # the intermediate's own thumbprint instead of the root's wherever[m
+[31m-    # root_cert is used (TrustedRootCA pinning, .mobileconfig anchors),[m
+[31m-    # defeating the whole point of having it. Prefer root.crt explicitly.[m
+[31m-    root_crt_path = settings.pki_path / "root.crt"[m
+[31m-    ca_chain_path = settings.pki_path / "ca-chain.pem"[m
+[31m-    if root_crt_path.exists():[m
+[31m-        root_cert = pki.load_cert_pem(root_crt_path)[m
+[31m-    elif ca_chain_path.exists():[m
+[31m-        root_cert = pki.load_cert_pem(ca_chain_path)[m
+[31m-    else:[m
+[31m-        root_cert = None[m
+[31m-[m
+[31m-    # First-run import, then reconciliation (handoff §5.8) — import runs[m
+[31m-    # first so pre-existing certs are recorded rather than flagged.[m
+[31m-    bootstrap_session = session_factory()[m
+[31m-    issued_dir = settings.pki_path / "issued"[m
+[31m-    issued_dir.mkdir(parents=True, exist_ok=True)[m
+[31m-    reconcile.import_existing_certs(bootstrap_session, issued_dir)[m
+[31m-    orphans = reconcile.reconcile_issued_dir(bootstrap_session, issued_dir)[m
+[31m-    if orphans:[m
+[31m-        logger.warning("startup reconciliation found orphaned certs: %s", orphans)[m
+[31m-[m
+[31m-    # Seed one site row from the existing RADIUS_HOST env value so the[m
+[31m-    # working push-based test rig keeps functioning while pull is proven[m
+[31m-    # (HANDOFF-FLEET.md §4.1) — do not break the existing push path here.[m
+[31m-    from sqlalchemy import select as _select[m
+[31m-[m
+[31m-    if bootstrap_session.scalar(_select(db.Site)) is None:[m
+[31m-        site_service.create_site([m
+[31m-            bootstrap_session,[m
+[31m-            name=settings.radius_host,[m
+[31m-            radius_cn=settings.radius_host,[m
+[31m-            actor="system",[m
+[31m-            crl_validity_days=settings.crl_validity_days,[m
+[31m-        )[m
+[31m-    bootstrap_session.close()[m
+[31m-[m
+[31m-    require_admin, require_super_admin, require_write = auth.get_current_admin_factory([m
+[31m-        get_db_session=request_scoped_db,[m
+[31m-        get_secret_key=lambda: settings.secret_key,[m
+[31m-    )[m
+[31m-    require_site = site_auth.get_current_site_factory(get_db_session=request_scoped_db)[m
+[31m-[m
+[31m-    # These four stores hold secret material (private keys, p12 export[m
+[31m-    # passwords) purely in RAM, consumed-once by design — but "consumed[m
+[31m-    # once" only fires if the admin actually completes the flow. An[m
+[31m-    # abandoned delivery page or bulk-preview leaves its entry sitting in[m
+[31m-    # memory indefinitely: unbounded growth, and a private key or[m
+[31m-    # password outliving the request that should have been its only[m
+[31m-    # consumer. Each store is opportunistically swept for stale entries[m
+[31m-    # (by insertion time, not last access) on every write, bounding both[m
+[31m-    # how long secrets linger and how large these dicts can grow.[m
+[31m-    _PENDING_TTL_SECONDS = 15 * 60[m
+[31m-[m
+[31m-    def _sweep_stale(store: dict[str, tuple[float, object]], now: float, ttl: float) -> None:[m
+[31m-        for stale_key in [k for k, (ts, _) in store.items() if now - ts > ttl]:[m
+[31m-            del store[stale_key][m
+[31m-[m
+[31m-    # One-time bundle store: serial -> Pkcs12Bundle, consumed on first read[m
+[31m-    # (handoff §6.4 — a second request for the same bundle returns 410).[m
+[31m-    pending_bundles: dict[str, tuple[float, object]] = {}[m
+[31m-[m
+[31m-    def store_pending_bundle(serial: str, bundle) -> None:[m
+[31m-        now = time.monotonic()[m
+[31m-        _sweep_stale(pending_bundles, now, _PENDING_TTL_SECONDS)[m
+[31m-        if bundle is not None:[m
+[31m-            pending_bundles[serial] = (now, bundle)[m
+[31m-[m
+[31m-    def peek_pending_bundle(serial: str) -> bool:[m
+[31m-        return serial in pending_bundles[m
+[31m-[m
+[31m-    def take_pending_bundle(serial: str):[m
+[31m-        entry = pending_bundles.pop(serial, None)[m
+[31m-        # The password is only ever truly "delivered" once the bundle[m
+[31m-        # itself is downloaded -- drop it in lockstep so a page view[m
+[31m-        # (which may happen more than once: the admin reloading, a[m
+[31m-        # since-expired QR link, a retry) never burns the one real[m
+[31m-        # delivery on its own.[m
+[31m-        pending_passwords.pop(serial, None)[m
+[31m-        return entry[1] if entry is not None else None[m
+[31m-[m
+[31m-    # Export password shown on the delivery screen (handoff §6.4) —[m
+[31m-    # never persisted, never logged. Survives repeat page views (see[m
+[31m-    # take_pending_bundle above); only actually consumed alongside the[m
+[31m-    # bundle once a credential download happens.[m
+[31m-    pending_passwords: dict[str, tuple[float, str]] = {}[m
+[31m-[m
+[31m-    def store_pending_password(serial: str, password: str) -> None:[m
+[31m-        now = time.monotonic()[m
+[31m-        _sweep_stale(pending_passwords, now, _PENDING_TTL_SECONDS)[m
+[31m-        pending_passwords[serial] = (now, password)[m
+[31m-[m
+[31m-    def peek_pending_password(serial: str):[m
+[31m-        entry = pending_passwords.get(serial)[m
+[31m-        return entry[1] if entry is not None else None[m
+[31m-[m
+[31m-    # Bulk issue (handoff §6.5): a preview token maps to the classified[m
+[31m-    # valid-identifier list, consumed on confirm so a resubmitted preview[m
+[31m-    # can't reissue the same batch twice. A batch entry (result + zip)[m
+[31m-    # is kept until its ZIP is downloaded once (410 after).[m
+[31m-    pending_previews: dict[str, tuple[float, list[str]]] = {}[m
+[31m-    pending_batches: dict[str, tuple[float, tuple[object, bytes]]] = {}[m
+[31m-[m
+[31m-    def store_pending_preview(token: str, identifiers: list[str]) -> None:[m
+[31m-        now = time.monotonic()[m
+[31m-        _sweep_stale(pending_previews, now, _PENDING_TTL_SECONDS)[m
+[31m-        pending_previews[token] = (now, identifiers)[m
+[31m-[m
+[31m-    def take_pending_preview(token: str):[m
+[31m-        entry = pending_previews.pop(token, None)[m
+[31m-        return entry[1] if entry is not None else None[m
+[31m-[m
+[31m-    def peek_pending_preview(token: str):[m
+[31m-        # Non-consuming — the "fix a malformed row" flow mutates the[m
+[31m-        # list in place (same object, no re-store needed) while the[m
+[31m-        # batch is still under review; only /confirm consumes it.[m
+[31m-        entry = pending_previews.get(token)[m
+[31m-        return entry[1] if entry is not None else None[m
+[31m-[m
+[31m-    def store_pending_batch(batch_id: str, result, zip_bytes: bytes) -> None:[m
+[31m-        now = time.monotonic()[m
+[31m-        _sweep_stale(pending_batches, now, _PENDING_TTL_SECONDS)[m
+[31m-        pending_batches[batch_id] = (now, (result, zip_bytes))[m
+[31m-[m
+[31m-    def peek_pending_batch(batch_id: str):[m
+[31m-        entry = pending_batches.get(batch_id)[m
+[31m-        return entry[1] if entry is not None else None[m
+[31m-[m
+[31m-    def take_pending_batch(batch_id: str):[m
+[31m-        entry = pending_batches.pop(batch_id, None)[m
+[31m-        return entry[1] if entry is not None else None[m
+[31m-[m
+[31m-    def _alert(message: str) -> None:[m
+[31m-        logger.error("ALERT: %s", message)[m
+[31m-        if not settings.alert_webhook_url:[m
+[31m-            return[m
+[31m-        try:[m
+[31m-            # Slack incoming webhooks require a JSON body shaped[m
+[31m-            # {"text": ...} — a plain-text POST is silently accepted[m
+[31m-            # (200) but never posts anything, so this would have looked[m
+[31m-            # "on standby and working" right up until someone actually[m
+[31m-            # pointed it at Slack and nothing showed up.[m
+[31m-            req = urllib.request.Request([m
+[31m-                settings.alert_webhook_url,[m
+[31m-                data=json.dumps({"text": message}).encode(),[m
+[31m-                headers={"Content-Type": "application/json"},[m
+[31m-                method="POST",[m
+[31m-            )[m
+[31m-            urllib.request.urlopen(req, timeout=10)[m
+[31m-        except Exception:[m
+[31m-            logger.exception("failed to deliver alert webhook")[m
+[31m-[m
+[31m-    def check_expiry_alerts() -> list:[m
+[31m-        session = request_scoped_db()[m
+[31m-        return expiry_alerts.check_and_alert(session, _alert, warning_days=settings.expiry_alert_days)[m
+[31m-[m
+[31m-    def run_fleet_watch() -> list:[m
+[31m-        session = request_scoped_db()[m
+[31m-        return fleet_watch.check_and_alert(session, _alert)[m
+[31m-[m
+[31m-    def send_heartbeat() -> None:[m
+[31m-        # Deliberately independent of _alert's webhook (handoff §8.2): if[m
+[31m-        # the hub itself is down, it can't tell you over its own path —[m
+[31m-        # this is meant to feed an external dead-man's-switch instead.[m
+[31m-        if not settings.heartbeat_url:[m
+[31m-            return[m
+[31m-        try:[m
+[31m-            req = urllib.request.Request(settings.heartbeat_url, method="GET")[m
+[31m-            urllib.request.urlopen(req, timeout=10)[m
+[31m-        except Exception:[m
+[31m-            logger.exception("failed to send heartbeat")[m
+[31m-[m
+[31m-    def regenerate_and_push_crl(background: bool = True) -> None:[m
+[31m-        session = request_scoped_db()[m
+[31m-        pem = cert_service.regenerate_crl([m
+[31m-            session, settings.pki_path, inter_cert, inter_key, settings.crl_validity_days[m
+[31m-        )[m
+[31m-        next_update = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta([m
+[31m-            days=settings.crl_validity_days[m
+[31m-        )[m
+[31m-        crl_health.record_generation(session, next_update)[m
+[31m-[m
+[31m-        def _do_push():[m
+[31m-            with session_factory() as push_session:[m
+[31m-                def _push():[m
+[31m-                    return crl_push.push_crl([m
+[31m-                        settings.pki_path / "crl.pem",[m
+[31m-                        settings.radius_host,[m
+[31m-                        settings.radius_ssh_user,[m
+[31m-                        settings.radius_ssh_key,[m
+[31m-                    )[m
+[31m-[m
+[31m-                crl_health.push_with_retry(push_session, _push, alert_fn=_alert)[m
+[31m-[m
+[31m-        if background:[m
+[31m-            import threading[m
+[31m-            t = threading.Thread(target=_do_push, daemon=True, name="crl-push-bg")[m
+[31m-            t.start()[m
+[31m-        else:[m
+[31m-            _do_push()[m
+[31m-[m
+[31m-    deps = RouteDeps([m
+[31m-        require_admin=require_admin,[m
+[31m-        require_super_admin=require_super_admin,[m
+[31m-        require_write=require_write,[m
+[31m-        require_site=require_site,[m
+[31m-        get_db_session=request_scoped_db,[m
+[31m-        pki_path=settings.pki_path,[m
+[31m-        db_path=settings.db_path,[m
+[31m-        radius_adapter_path=BASE_DIR.parent / "deploy" / "radius" / "authorize_policy.py",[m
+[31m-        inter_cert=inter_cert,[m
+[31m-        inter_key=inter_key,[m
+[31m-        client_cert_days=settings.client_cert_days,[m
+[31m-        server_cert_days=settings.server_cert_days,[m
+[31m-        site_renewal_stagger_window_days=settings.site_renewal_stagger_window_days,[m
+[31m-        liveness_token=settings.liveness_token,[m
+[31m-        store_pending_bundle=store_pending_bundle,[m
+[31m-        take_pending_bundle=take_pending_bundle,[m
+[31m-        peek_pending_bundle=peek_pending_bundle,[m
+[31m-        store_pending_password=store_pending_password,[m
+[31m-        peek_pending_password=peek_pending_password,[m
+[31m-        regenerate_and_push_crl=regenerate_and_push_crl,[m
+[31m-        check_expiry_alerts=check_expiry_alerts,[m
+[31m-        expiry_alert_days=settings.expiry_alert_days,[m
+[31m-        alert_webhook_url=settings.alert_webhook_url,[m
+[31m-        secret_key=settings.secret_key,[m
+[31m-        root_cert=root_cert,[m
+[31m-        store_pending_preview=store_pending_preview,[m
+[31m-        take_pending_preview=take_pending_preview,[m
+[31m-        peek_pending_preview=peek_pending_preview,[m
+[31m-        store_pending_batch=store_pending_batch,[m
+[31m-        take_pending_batch=take_pending_batch,[m
+[31m-        peek_pending_batch=peek_pending_batch,[m
+[31m-        settings=settings,[m
+[31m-    )[m
+[31m-[m
+[31m-    templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))[m
+[31m-    templates.env.filters["avatar_hue"] = _avatar_hue[m
+[31m-    templates.env.filters["subsidiary_color"] = db.subsidiary_color[m
+[31m-[m
+[31m-    app = FastAPI(title="RADIUS Certificate Manager")[m
+[31m-[m
+[31m-    @app.middleware("http")[m
+[31m-    async def _scope_db_session_to_request(request: Request, call_next):[m
+[31m-        token = _request_db_key.set(id(request))[m
+[31m-        try:[m
+[31m-            return await call_next(request)[m
+[31m-        finally:[m
+[31m-            request_scoped_db.remove()[m
+[31m-            _request_db_key.reset(token)[m
+[31m-[m
+[31m-    _CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}[m
+[31m-[m
+[31m-    @app.middleware("http")[m
+[31m-    async def _check_csrf_origin(request: Request, call_next):[m
+[31m-        # Cross-site request forgery defense-in-depth for the admin UI.[m
+[31m-        # The session cookie is already SameSite=Strict (app/auth.py),[m
+[31m-        # which blocks the vast majority of CSRF vectors on its own — this[m
+[31m-        # is a second, independent check in case that ever regresses (a[m
+[31m-        # future samesite=lax change, a browser quirk, a subdomain[m
+[31m-        # sharing the cookie). It only ever looks at requests carrying the[m
+[31m-        # admin session cookie; require_site's Authorization-header auth[m
+[31m-        # (app/site_auth.py) and the unauthenticated /auth/login route are[m
+[31m-        # untouched.[m
+[31m-        #[m
+[31m-        # Checked only when Origin/Referer is present: every mainstream[m
+[31m-        # browser attaches Origin to same-origin and cross-origin[m
+[31m-        # state-changing requests alike, so a genuine forged[m
+[31m-        # cross-origin POST always carries a (mismatching) Origin header.[m
+[31m-        # Absence just means a non-browser client or a test client with[m
+[31m-        # no session cookie in play, which this check doesn't apply to.[m
+[31m-        if ([m
+[31m-            request.method not in _CSRF_SAFE_METHODS[m
+[31m-            and auth.SESSION_COOKIE in request.cookies[m
+[31m-        ):[m
+[31m-            origin = request.headers.get("origin") or request.headers.get("referer")[m
+[31m-            if origin is not None:[m
+[31m-                origin_host = urlparse(origin).netloc[m
+[31m-                if origin_host and origin_host != request.headers.get("host", ""):[m
+[31m-                    return JSONResponse([m
+[31m-                        {"detail": "Cross-origin request rejected"}, status_code=status.HTTP_403_FORBIDDEN[m
+[31m-                    )[m
+[31m-        return await call_next(request)[m
+[31m-[m
+[31m-    @app.middleware("http")[m
+[31m-    async def _htmx_redirect(request: Request, call_next):[m
+[31m-        # Every write route (suspend/unsuspend/revoke/reissue, same[m
+[31m-        # pattern under Employees/Devices) returns a plain 303[m
+[31m-        # RedirectResponse with flash-message query params. htmx's own[m
+[31m-        # fetch follows that redirect itself and swaps the *resulting[m
+[31m-        # page's* HTML into whatever element triggered the request —[m
+[31m-        # with no hx-target set, that's the button, so the entire next[m
+[31m-        # page (header, sidebar, everything) gets nested inside it[m
+[31m-        # instead of the browser navigating there. htmx's documented[m
+[31m-        # fix is an HX-Redirect response header instead of a body[m
+[31m-        # redirect, which it treats as "do a real navigation" rather[m
+[31m-        # than "swap this content in" — translate server-side so no[m
+[31m-        # individual route has to special-case HX-Request.[m
+[31m-        response = await call_next(request)[m
+[31m-        if ([m
+[31m-            request.headers.get("HX-Request") == "true"[m
+[31m-            and response.status_code in (301, 302, 303, 307, 308)[m
+[31m-            and "location" in response.headers[m
+[31m-        ):[m
+[31m-            return Response(status_code=200, headers={"HX-Redirect": response.headers["location"]})[m
+[31m-        return response[m
+[31m-[m
+[31m-    app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")[m
+[31m-    app.include_router(get_certs_router(deps))[m
+[31m-    app.include_router(get_health_router(deps))[m
+[31m-    app.include_router(get_web_auth_router(deps, templates))[m
+[31m-    app.include_router(get_bulk_router(deps, templates))[m
+[31m-    app.include_router(get_bulk_network_router(deps, templates))[m
+[31m-    app.include_router(get_site_router(deps))[m
+[31m-    app.include_router(get_sites_admin_router(deps))[m
+[31m-    app.include_router(get_web_sites_router(deps, templates))[m
+[31m-    app.include_router(get_web_subsidiaries_router(deps, templates))[m
+[31m-    app.include_router(get_web_employees_router(deps, templates))[m
+[31m-    app.include_router(get_web_renewals_router(deps, templates))[m
+[31m-    app.include_router(get_liveness_router(deps))[m
+[31m-    app.include_router(get_metrics_router(deps))[m
+[31m-    app.include_router(get_network_policy_router(deps))[m
+[31m-    app.include_router(get_employees_router(deps))[m
+[31m-    app.include_router(get_web_certs_router(deps, templates))[m
+[31m-    app.include_router(get_web_account_router(deps, templates))[m
+[31m-    app.include_router(get_web_admins_router(deps, templates))[m
+[31m-    app.include_router(get_web_router(deps, templates))[m
+[31m-    app.state.regenerate_and_push_crl = regenerate_and_push_crl[m
+[31m-    app.state.run_fleet_watch = run_fleet_watch[m
+[31m-    app.state.send_heartbeat = send_heartbeat[m
+[31m-    app.state.settings = settings[m
+[31m-    app.state.get_db_session = request_scoped_db[m
+[31m-[m
+[31m-    from fastapi import HTTPException[m
+[31m-    from fastapi.responses import RedirectResponse[m
+[31m-[m
+[31m-    ERROR_TITLES = {[m
+[31m-        403: "You don't have access to this",[m
+[31m-        404: "Not found",[m
+[31m-        409: "Conflict",[m
+[31m-        410: "No longer available",[m
+[31m-        429: "Slow down",[m
+[31m-        500: "Something went wrong",[m
+[31m-    }[m
+[31m-[m
+[31m-    @app.exception_handler(HTTPException)[m
+[31m-    async def http_exception_handler(request: Request, exc: HTTPException):[m
+[31m-        is_web_route = not request.url.path.startswith("/api")[m
+[31m-        if exc.status_code == 401 and is_web_route:[m
+[31m-            return RedirectResponse("/login", status_code=303)[m
+[31m-        if exc.status_code == auth.PASSWORD_CHANGE_REQUIRED_STATUS and is_web_route:[m
+[31m-            return RedirectResponse(auth.PASSWORD_CHANGE_PATH, status_code=303)[m
+[31m-        if is_web_route and request.method == "GET":[m
+[31m-            # A raw JSON error body is a "raw error text" failure mode for[m
+[31m-            # a page a human is looking at (handoff §6.1) — render the[m
+[31m-            # same designed error state instead.[m
+[31m-            return templates.TemplateResponse([m
+[31m-                request,[m
+[31m-                "error.html",[m
+[31m-                {[m
+[31m-                    "status_code": exc.status_code,[m
+[31m-                    "title": ERROR_TITLES.get(exc.status_code, "Error"),[m
+[31m-                    "message": str(exc.detail),[m
+[31m-                },[m
+[31m-                status_code=exc.status_code,[m
+[31m-            )[m
+[31m-        return JSONResponse([m
+[31m-            status_code=exc.status_code,[m
+[31m-            content={"error": {"code": "error", "message": str(exc.detail), "correlation_id": None}},[m
+[31m-        )[m
+[31m-[m
+[31m-    @app.exception_handler(Exception)[m
+[31m-    async def catch_all(request: Request, exc: Exception):[m
+[31m-        correlation_id = str(uuid.uuid4())[m
+[31m-        logger.exception("unhandled error [correlation_id=%s]", correlation_id)[m
+[31m-        if not request.url.path.startswith("/api") and request.method == "GET":[m
+[31m-            return templates.TemplateResponse([m
+[31m-                request,[m
+[31m-                "error.html",[m
+[31m-                {[m
+[31m-                    "status_code": 500,[m
+[31m-                    "title": ERROR_TITLES[500],[m
+[31m-                    "message": f"An unexpected error occurred. Reference: {correlation_id}",[m
+[31m-                },[m
+[31m-                status_code=500,[m
+[31m-            )[m
+[31m-        return JSONResponse([m
+[31m-            status_code=500,[m
+[31m-            content={[m
+[31m-                "error": {[m
+[31m-                    "code": "internal_error",[m
+[31m-                    "message": "An unexpected error occurred.",[m
+[31m-                    "correlation_id": correlation_id,[m
+[31m-                }[m
+[31m-            },[m
+[31m-        )[m
+[31m-[m
+[31m-    return app[m
+[32m+[m[32m"""FastAPI app: router mounting, exception handlers, startup reconciliation.[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32mHandoff §5.6: a catch-all exception handler returns a generic error plus[m[41m[m
+[32m+[m[32ma correlation ID. Raw tracebacks must never reach a client.[m[41m[m
+[32m+[m[32m"""[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32mfrom __future__ import annotations[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32mimport contextvars[m[41m[m
+[32m+[m[32mimport json[m[41m[m
+[32m+[m[32mimport logging[m[41m[m
+[32m+[m[32mimport time[m[41m[m
+[32m+[m[32mimport uuid[m[41m[m
+[32m+[m[32mfrom dataclasses import dataclass[m[41m[m
+[32m+[m[32mfrom pathlib import Path[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32mfrom urllib.parse import urlparse[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32mfrom fastapi import FastAPI, Request, Response, status[m[41m[m
+[32m+[m[32mfrom fastapi.responses import JSONResponse[m[41m[m
+[32m+[m[32mfrom fastapi.staticfiles import StaticFiles[m[41m[m
+[32m+[m[32mfrom fastapi.templating import Jinja2Templates[m[41m[m
+[32m+[m[32mfrom sqlalchemy.orm import Session, scoped_session[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32mimport datetime[m[41m[m
+[32m+[m[32mimport urllib.request[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32mfrom app import auth, cert_service, crl_health, crl_push, db, expiry_alerts, fleet_watch, pki, reconcile, site_auth, site_service[m[41m[m
+[32m+[m[32mfrom app.config import Settings, load_settings[m[41m[m
+[32m+[m[32mfrom app.db import init_db, make_engine, make_session_factory[m[41m[m
+[32m+[m[32mfrom app.routes.certs import get_router as get_certs_router[m[41m[m
+[32m+[m[32mfrom app.routes.health import get_router as get_health_router[m[41m[m
+[32m+[m[32mfrom app.routes.web import get_router as get_web_router[m[41m[m
+[32m+[m[32mfrom app.routes.web_account import get_router as get_web_account_router[m[41m[m
+[32m+[m[32mfrom app.routes.web_admins import get_router as get_web_admins_router[m[41m[m
+[32m+[m[32mfrom app.routes.web_certs import get_router as get_web_certs_router[m[41m[m
+[32m+[m[32mfrom app.routes.web_auth import get_router as get_web_auth_router[m[41m[m
+[32m+[m[32mfrom app.routes.bulk import get_router as get_bulk_router[m[41m[m
+[32m+[m[32mfrom app.routes.bulk_network import get_router as get_bulk_network_router[m[41m[m
+[32m+[m[32mfrom app.routes.site import get_router as get_site_router[m[41m[m
+[32m+[m[32mfrom app.routes.sites_admin import get_router as get_sites_admin_router[m[41m[m
+[32m+[m[32mfrom app.routes.web_sites import get_router as get_web_sites_router[m[41m[m
+[32m+[m[32mfrom app.routes.web_subsidiaries import get_router as get_web_subsidiaries_router[m[41m[m
+[32m+[m[32mfrom app.routes.web_employees import get_router as get_web_employees_router[m[41m[m
+[32m+[m[32mfrom app.routes.web_renewals import get_router as get_web_renewals_router[m[41m[m
+[32m+[m[32mfrom app.routes.liveness import get_router as get_liveness_router[m[41m[m
+[32m+[m[32mfrom app.routes.metrics import get_router as get_metrics_router[m[41m[m
+[32m+[m[32mfrom app.routes.network_policy import get_router as get_network_policy_router[m[41m[m
+[32m+[m[32mfrom app.routes.employees import get_router as get_employees_router[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32mBASE_DIR = Path(__file__).resolve().parent[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32mlogger = logging.getLogger("certmanager")[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m# Never log key material, .p12 bytes, or export passwords (§5.6) — this[m[41m[m
+[32m+[m[32m# logger must only ever receive the fields explicitly passed below.[m[41m[m
+[32m+[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32mdef _avatar_hue(name: str) -> int:[m[41m[m
+[32m+[m[32m    """Deterministic 0-359 hue from a name, for a per-user avatar color[m[41m[m
+[32m+[m[32m    that's stable across sessions without needing to store one."""[m[41m[m
+[32m+[m[32m    return sum(ord(c) for c in (name or "?")) * 37 % 360[m[41m[m
+[32m+[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m@dataclass[m[41m[m
+[32m+[m[32mclass RouteDeps:[m[41m[m
+[32m+[m[32m    require_admin: callable[m[41m[m
+[32m+[m[32m    require_super_admin: callable[m[41m[m
+[32m+[m[32m    require_write: callable[m[41m[m
+[32m+[m[32m    require_site: callable[m[41m[m
+[32m+[m[32m    get_db_session: callable[m[41m[m
+[32m+[m[32m    pki_path: Path[m[41m[m
+[32m+[m[32m    db_path: Path[m[41m[m
+[32m+[m[32m    radius_adapter_path: Path[m[41m[m
+[32m+[m[32m    inter_cert: object[m[41m[m
+[32m+[m[32m    inter_key: object[m[41m[m
+[32m+[m[32m    client_cert_days: int[m[41m[m
+[32m+[m[32m    server_cert_days: int[m[41m[m
+[32m+[m[32m    site_renewal_stagger_window_days: int[m[41m[m
+[32m+[m[32m    liveness_token: str | None[m[41m[m
+[32m+[m[32m    store_pending_bundle: callable[m[41m[m
+[32m+[m[32m    take_pending_bundle: callable[m[41m[m
+[32m+[m[32m    peek_pending_bundle: callable[m[41m[m
+[32m+[m[32m    store_pending_password: callable[m[41m[m
+[32m+[m[32m    peek_pending_password: callable[m[41m[m
+[32m+[m[32m    regenerate_and_push_crl: callable[m[41m[m
+[32m+[m[32m    check_expiry_alerts: callable[m[41m[m
+[32m+[m[32m    expiry_alert_days: int[m[41m[m
+[32m+[m[32m    alert_webhook_url: str | None[m[41m[m
+[32m+[m[32m    secret_key: str[m[41m[m
+[32m+[m[32m    root_cert: object | None[m[41m[m
+[32m+[m[32m    store_pending_preview: callable[m[41m[m
+[32m+[m[32m    take_pending_preview: callable[m[41m[m
+[32m+[m[32m    peek_pending_preview: callable[m[41m[m
+[32m+[m[32m    store_pending_batch: callable[m[41m[m
+[32m+[m[32m    take_pending_batch: callable[m[41m[m
+[32m+[m[32m    peek_pending_batch: callable[m[41m[m
+[32m+[m[32m    settings: Settings[m[41m[m
+[32m+[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32mdef create_app(settings: Settings | None = None) -> FastAPI:[m[41m[m
+[32m+[m[32m    settings = settings or load_settings()[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    from app.logging_conf import setup_logging[m[41m[m
+[32m+[m[32m    setup_logging(log_format=getattr(settings, "log_format", "text"))[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    engine = make_engine(str(settings.db_path))[m[41m[m
+[32m+[m[32m    session_factory = make_session_factory(engine)[m[41m[m
+[32m+[m[32m    init_db(engine)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    # Every route just called session_factory() straight, once per[m[41m[m
+[32m+[m[32m    # deps.get_db_session() call, and nothing ever closed the result —[m[41m[m
+[32m+[m[32m    # each request quietly leaked a connection back to nothing but GC[m[41m[m
+[32m+[m[32m    # timing, and under any real concurrency (or a slow synchronous[m[41m[m
+[32m+[m[32m    # regenerate_and_push_crl() holding one open through a CRL-push[m[41m[m
+[32m+[m[32m    # retry/backoff) the pool exhausts. scoped_session ties one session[m[41m[m
+[32m+[m[32m    # per request: the registry key is a ContextVar set once by the[m[41m[m
+[32m+[m[32m    # middleware below, before FastAPI forks dependency/handler[m[41m[m
+[32m+[m[32m    # resolution into separate threadpool calls — those calls each get[m[41m[m
+[32m+[m[32m    # their own COPY of the context, but a copy still reads the value[m[41m[m
+[32m+[m[32m    # set before the copy, so every get_db_session() call within one[m[41m[m
+[32m+[m[32m    # request resolves to the same session, and request_scoped_db.remove()[m[41m[m
+[32m+[m[32m    # after the response closes it and evicts it from the registry.[m[41m[m
+[32m+[m[32m    _request_db_key: contextvars.ContextVar[object | None] = contextvars.ContextVar([m[41m[m
+[32m+[m[32m        "_request_db_key", default=None[m[41m[m
+[32m+[m[32m    )[m[41m[m
+[32m+[m[32m    request_scoped_db = scoped_session(session_factory, scopefunc=_request_db_key.get)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    inter_cert = pki.load_cert_pem(settings.pki_path / "intermediate.crt")[m[41m[m
+[32m+[m[32m    inter_key = pki.load_key_pem(settings.pki_path / "private" / "intermediate.key")[m[41m[m
+[32m+[m[32m    # root.crt is the real self-signed Root CA. ca-chain.pem was kept as a[m[41m[m
+[32m+[m[32m    # fallback for older layouts, but on the live hub it was found to[m[41m[m
+[32m+[m[32m    # actually hold the intermediate cert under a misleading name (root.crt[m[41m[m
+[32m+[m[32m    # existed alongside it) -- load_cert_pem only reads the first cert in[m[41m[m
+[32m+[m[32m    # a file, so a wrongly-named/ordered ca-chain.pem silently produces[m[41m[m
+[32m+[m[32m    # the intermediate's own thumbprint instead of the root's wherever[m[41m[m
+[32m+[m[32m    # root_cert is used (TrustedRootCA pinning, .mobileconfig anchors),[m[41m[m
+[32m+[m[32m    # defeating the whole point of having it. Prefer root.crt explicitly.[m[41m[m
+[32m+[m[32m    root_crt_path = settings.pki_path / "root.crt"[m[41m[m
+[32m+[m[32m    ca_chain_path = settings.pki_path / "ca-chain.pem"[m[41m[m
+[32m+[m[32m    if root_crt_path.exists():[m[41m[m
+[32m+[m[32m        root_cert = pki.load_cert_pem(root_crt_path)[m[41m[m
+[32m+[m[32m    elif ca_chain_path.exists():[m[41m[m
+[32m+[m[32m        root_cert = pki.load_cert_pem(ca_chain_path)[m[41m[m
+[32m+[m[32m    else:[m[41m[m
+[32m+[m[32m        root_cert = None[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    # First-run import, then reconciliation (handoff §5.8) — import runs[m[41m[m
+[32m+[m[32m    # first so pre-existing certs are recorded rather than flagged.[m[41m[m
+[32m+[m[32m    bootstrap_session = session_factory()[m[41m[m
+[32m+[m[32m    issued_dir = settings.pki_path / "issued"[m[41m[m
+[32m+[m[32m    issued_dir.mkdir(parents=True, exist_ok=True)[m[41m[m
+[32m+[m[32m    reconcile.import_existing_certs(bootstrap_session, issued_dir)[m[41m[m
+[32m+[m[32m    orphans = reconcile.reconcile_issued_dir(bootstrap_session, issued_dir)[m[41m[m
+[32m+[m[32m    if orphans:[m[41m[m
+[32m+[m[32m        logger.warning("startup reconciliation found orphaned certs: %s", orphans)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    # Seed one site row from the existing RADIUS_HOST env value so the[m[41m[m
+[32m+[m[32m    # working push-based test rig keeps functioning while pull is proven[m[41m[m
+[32m+[m[32m    # (HANDOFF-FLEET.md §4.1) — do not break the existing push path here.[m[41m[m
+[32m+[m[32m    from sqlalchemy import select as _select[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    if bootstrap_session.scalar(_select(db.Site)) is None:[m[41m[m
+[32m+[m[32m        site_service.create_site([m[41m[m
+[32m+[m[32m            bootstrap_session,[m[41m[m
+[32m+[m[32m            name=settings.radius_host,[m[41m[m
+[32m+[m[32m            radius_cn=settings.radius_host,[m[41m[m
+[32m+[m[32m            actor="system",[m[41m[m
+[32m+[m[32m            crl_validity_days=settings.crl_validity_days,[m[41m[m
+[32m+[m[32m            crl_push_host=settings.radius_host,[m[41m[m
+[32m+[m[32m        )[m[41m[m
+[32m+[m[32m    bootstrap_session.close()[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    require_admin, require_super_admin, require_write = auth.get_current_admin_factory([m[41m[m
+[32m+[m[32m        get_db_session=request_scoped_db,[m[41m[m
+[32m+[m[32m        get_secret_key=lambda: settings.secret_key,[m[41m[m
+[32m+[m[32m    )[m[41m[m
+[32m+[m[32m    require_site = site_auth.get_current_site_factory(get_db_session=request_scoped_db)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    # These four stores hold secret material (private keys, p12 export[m[41m[m
+[32m+[m[32m    # passwords) purely in RAM, consumed-once by design — but "consumed[m[41m[m
+[32m+[m[32m    # once" only fires if the admin actually completes the flow. An[m[41m[m
+[32m+[m[32m    # abandoned delivery page or bulk-preview leaves its entry sitting in[m[41m[m
+[32m+[m[32m    # memory indefinitely: unbounded growth, and a private key or[m[41m[m
+[32m+[m[32m    # password outliving the request that should have been its only[m[41m[m
+[32m+[m[32m    # consumer. Each store is opportunistically swept for stale entries[m[41m[m
+[32m+[m[32m    # (by insertion time, not last access) on every write, bounding both[m[41m[m
+[32m+[m[32m    # how long secrets linger and how large these dicts can grow.[m[41m[m
+[32m+[m[32m    _PENDING_TTL_SECONDS = 15 * 60[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def _sweep_stale(store: dict[str, tuple[float, object]], now: float, ttl: float) -> None:[m[41m[m
+[32m+[m[32m        for stale_key in [k for k, (ts, _) in store.items() if now - ts > ttl]:[m[41m[m
+[32m+[m[32m            del store[stale_key][m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    # One-time bundle store: serial -> Pkcs12Bundle, consumed on first read[m[41m[m
+[32m+[m[32m    # (handoff §6.4 — a second request for the same bundle returns 410).[m[41m[m
+[32m+[m[32m    pending_bundles: dict[str, tuple[float, object]] = {}[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def store_pending_bundle(serial: str, bundle) -> None:[m[41m[m
+[32m+[m[32m        now = time.monotonic()[m[41m[m
+[32m+[m[32m        _sweep_stale(pending_bundles, now, _PENDING_TTL_SECONDS)[m[41m[m
+[32m+[m[32m        if bundle is not None:[m[41m[m
+[32m+[m[32m            pending_bundles[serial] = (now, bundle)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def peek_pending_bundle(serial: str) -> bool:[m[41m[m
+[32m+[m[32m        return serial in pending_bundles[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def take_pending_bundle(serial: str):[m[41m[m
+[32m+[m[32m        entry = pending_bundles.pop(serial, None)[m[41m[m
+[32m+[m[32m        # The password is only ever truly "delivered" once the bundle[m[41m[m
+[32m+[m[32m        # itself is downloaded -- drop it in lockstep so a page view[m[41m[m
+[32m+[m[32m        # (which may happen more than once: the admin reloading, a[m[41m[m
+[32m+[m[32m        # since-expired QR link, a retry) never burns the one real[m[41m[m
+[32m+[m[32m        # delivery on its own.[m[41m[m
+[32m+[m[32m        pending_passwords.pop(serial, None)[m[41m[m
+[32m+[m[32m        return entry[1] if entry is not None else None[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    # Export password shown on the delivery screen (handoff §6.4) —[m[41m[m
+[32m+[m[32m    # never persisted, never logged. Survives repeat page views (see[m[41m[m
+[32m+[m[32m    # take_pending_bundle above); only actually consumed alongside the[m[41m[m
+[32m+[m[32m    # bundle once a credential download happens.[m[41m[m
+[32m+[m[32m    pending_passwords: dict[str, tuple[float, str]] = {}[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def store_pending_password(serial: str, password: str) -> None:[m[41m[m
+[32m+[m[32m        now = time.monotonic()[m[41m[m
+[32m+[m[32m        _sweep_stale(pending_passwords, now, _PENDING_TTL_SECONDS)[m[41m[m
+[32m+[m[32m        pending_passwords[serial] = (now, password)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def peek_pending_password(serial: str):[m[41m[m
+[32m+[m[32m        entry = pending_passwords.get(serial)[m[41m[m
+[32m+[m[32m        return entry[1] if entry is not None else None[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    # Bulk issue (handoff §6.5): a preview token maps to the classified[m[41m[m
+[32m+[m[32m    # valid-identifier list, consumed on confirm so a resubmitted preview[m[41m[m
+[32m+[m[32m    # can't reissue the same batch twice. A batch entry (result + zip)[m[41m[m
+[32m+[m[32m    # is kept until its ZIP is downloaded once (410 after).[m[41m[m
+[32m+[m[32m    pending_previews: dict[str, tuple[float, list[str]]] = {}[m[41m[m
+[32m+[m[32m    pending_batches: dict[str, tuple[float, tuple[object, bytes]]] = {}[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def store_pending_preview(token: str, identifiers: list[str]) -> None:[m[41m[m
+[32m+[m[32m        now = time.monotonic()[m[41m[m
+[32m+[m[32m        _sweep_stale(pending_previews, now, _PENDING_TTL_SECONDS)[m[41m[m
+[32m+[m[32m        pending_previews[token] = (now, identifiers)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def take_pending_preview(token: str):[m[41m[m
+[32m+[m[32m        entry = pending_previews.pop(token, None)[m[41m[m
+[32m+[m[32m        return entry[1] if entry is not None else None[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def peek_pending_preview(token: str):[m[41m[m
+[32m+[m[32m        # Non-consuming — the "fix a malformed row" flow mutates the[m[41m[m
+[32m+[m[32m        # list in place (same object, no re-store needed) while the[m[41m[m
+[32m+[m[32m        # batch is still under review; only /confirm consumes it.[m[41m[m
+[32m+[m[32m        entry = pending_previews.get(token)[m[41m[m
+[32m+[m[32m        return entry[1] if entry is not None else None[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def store_pending_batch(batch_id: str, result, zip_bytes: bytes) -> None:[m[41m[m
+[32m+[m[32m        now = time.monotonic()[m[41m[m
+[32m+[m[32m        _sweep_stale(pending_batches, now, _PENDING_TTL_SECONDS)[m[41m[m
+[32m+[m[32m        pending_batches[batch_id] = (now, (result, zip_bytes))[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def peek_pending_batch(batch_id: str):[m[41m[m
+[32m+[m[32m        entry = pending_batches.get(batch_id)[m[41m[m
+[32m+[m[32m        return entry[1] if entry is not None else None[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def take_pending_batch(batch_id: str):[m[41m[m
+[32m+[m[32m        entry = pending_batches.pop(batch_id, None)[m[41m[m
+[32m+[m[32m        return entry[1] if entry is not None else None[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def _alert(message: str) -> None:[m[41m[m
+[32m+[m[32m        logger.error("ALERT: %s", message)[m[41m[m
+[32m+[m[32m        if not settings.alert_webhook_url:[m[41m[m
+[32m+[m[32m            return[m[41m[m
+[32m+[m[32m        try:[m[41m[m
+[32m+[m[32m            # Slack incoming webhooks require a JSON body shaped[m[41m[m
+[32m+[m[32m            # {"text": ...} — a plain-text POST is silently accepted[m[41m[m
+[32m+[m[32m            # (200) but never posts anything, so this would have looked[m[41m[m
+[32m+[m[32m            # "on standby and working" right up until someone actually[m[41m[m
+[32m+[m[32m            # pointed it at Slack and nothing showed up.[m[41m[m
+[32m+[m[32m            req = urllib.request.Request([m[41m[m
+[32m+[m[32m                settings.alert_webhook_url,[m[41m[m
+[32m+[m[32m                data=json.dumps({"text": message}).encode(),[m[41m[m
+[32m+[m[32m                headers={"Content-Type": "application/json"},[m[41m[m
+[32m+[m[32m                method="POST",[m[41m[m
+[32m+[m[32m            )[m[41m[m
+[32m+[m[32m            urllib.request.urlopen(req, timeout=10)[m[41m[m
+[32m+[m[32m        except Exception:[m[41m[m
+[32m+[m[32m            logger.exception("failed to deliver alert webhook")[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def check_expiry_alerts() -> list:[m[41m[m
+[32m+[m[32m        session = request_scoped_db()[m[41m[m
+[32m+[m[32m        return expiry_alerts.check_and_alert(session, _alert, warning_days=settings.expiry_alert_days)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def run_fleet_watch() -> list:[m[41m[m
+[32m+[m[32m        session = request_scoped_db()[m[41m[m
+[32m+[m[32m        return fleet_watch.check_and_alert(session, _alert)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def send_heartbeat() -> None:[m[41m[m
+[32m+[m[32m        # Deliberately independent of _alert's webhook (handoff §8.2): if[m[41m[m
+[32m+[m[32m        # the hub itself is down, it can't tell you over its own path —[m[41m[m
+[32m+[m[32m        # this is meant to feed an external dead-man's-switch instead.[m[41m[m
+[32m+[m[32m        if not settings.heartbeat_url:[m[41m[m
+[32m+[m[32m            return[m[41m[m
+[32m+[m[32m        try:[m[41m[m
+[32m+[m[32m            req = urllib.request.Request(settings.heartbeat_url, method="GET")[m[41m[m
+[32m+[m[32m            urllib.request.urlopen(req, timeout=10)[m[41m[m
+[32m+[m[32m        except Exception:[m[41m[m
+[32m+[m[32m            logger.exception("failed to send heartbeat")[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    def regenerate_and_push_crl(background: bool = True) -> None:[m[41m[m
+[32m+[m[32m        session = request_scoped_db()[m[41m[m
+[32m+[m[32m        pem = cert_service.regenerate_crl([m[41m[m
+[32m+[m[32m            session, settings.pki_path, inter_cert, inter_key, settings.crl_validity_days[m[41m[m
+[32m+[m[32m        )[m[41m[m
+[32m+[m[32m        next_update = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta([m[41m[m
+[32m+[m[32m            days=settings.crl_validity_days[m[41m[m
+[32m+[m[32m        )[m[41m[m
+[32m+[m[32m        crl_health.record_generation(session, next_update)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m        def _do_push():[m[41m[m
+[32m+[m[32m            with session_factory() as push_session:[m[41m[m
+[32m+[m[32m                targets = {settings.radius_host}[m[41m[m
+[32m+[m[32m                for site in push_session.scalars([m[41m[m
+[32m+[m[32m                    _select(db.Site).where(db.Site.is_active.is_(True))[m[41m[m
+[32m+[m[32m                ):[m[41m[m
+[32m+[m[32m                    if site.crl_push_host:[m[41m[m
+[32m+[m[32m                        targets.add(site.crl_push_host)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m                for host in sorted(targets):[m[41m[m
+[32m+[m[32m                    def _push(host=host):[m[41m[m
+[32m+[m[32m                        return crl_push.push_crl([m[41m[m
+[32m+[m[32m                            settings.pki_path / "crl.pem",[m[41m[m
+[32m+[m[32m                            host,[m[41m[m
+[32m+[m[32m                            settings.radius_ssh_user,[m[41m[m
+[32m+[m[32m                            settings.radius_ssh_key,[m[41m[m
+[32m+[m[32m                        )[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m                    crl_health.push_with_retry([m[41m[m
+[32m+[m[32m                        push_session, _push, alert_fn=_alert, host=host[m[41m[m
+[32m+[m[32m                    )[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m        if background:[m[41m[m
+[32m+[m[32m            import threading[m[41m[m
+[32m+[m[32m            t = threading.Thread(target=_do_push, daemon=True, name="crl-push-bg")[m[41m[m
+[32m+[m[32m            t.start()[m[41m[m
+[32m+[m[32m        else:[m[41m[m
+[32m+[m[32m            _do_push()[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    deps = RouteDeps([m[41m[m
+[32m+[m[32m        require_admin=require_admin,[m[41m[m
+[32m+[m[32m        require_super_admin=require_super_admin,[m[41m[m
+[32m+[m[32m        require_write=require_write,[m[41m[m
+[32m+[m[32m        require_site=require_site,[m[41m[m
+[32m+[m[32m        get_db_session=request_scoped_db,[m[41m[m
+[32m+[m[32m        pki_path=settings.pki_path,[m[41m[m
+[32m+[m[32m        db_path=settings.db_path,[m[41m[m
+[32m+[m[32m        radius_adapter_path=BASE_DIR.parent / "deploy" / "radius" / "authorize_policy.py",[m[41m[m
+[32m+[m[32m        inter_cert=inter_cert,[m[41m[m
+[32m+[m[32m        inter_key=inter_key,[m[41m[m
+[32m+[m[32m        client_cert_days=settings.client_cert_days,[m[41m[m
+[32m+[m[32m        server_cert_days=settings.server_cert_days,[m[41m[m
+[32m+[m[32m        site_renewal_stagger_window_days=settings.site_renewal_stagger_window_days,[m[41m[m
+[32m+[m[32m        liveness_token=settings.liveness_token,[m[41m[m
+[32m+[m[32m        store_pending_bundle=store_pending_bundle,[m[41m[m
+[32m+[m[32m        take_pending_bundle=take_pending_bundle,[m[41m[m
+[32m+[m[32m        peek_pending_bundle=peek_pending_bundle,[m[41m[m
+[32m+[m[32m        store_pending_password=store_pending_password,[m[41m[m
+[32m+[m[32m        peek_pending_password=peek_pending_password,[m[41m[m
+[32m+[m[32m        regenerate_and_push_crl=regenerate_and_push_crl,[m[41m[m
+[32m+[m[32m        check_expiry_alerts=check_expiry_alerts,[m[41m[m
+[32m+[m[32m        expiry_alert_days=settings.expiry_alert_days,[m[41m[m
+[32m+[m[32m        alert_webhook_url=settings.alert_webhook_url,[m[41m[m
+[32m+[m[32m        secret_key=settings.secret_key,[m[41m[m
+[32m+[m[32m        root_cert=root_cert,[m[41m[m
+[32m+[m[32m        store_pending_preview=store_pending_preview,[m[41m[m
+[32m+[m[32m        take_pending_preview=take_pending_preview,[m[41m[m
+[32m+[m[32m        peek_pending_preview=peek_pending_preview,[m[41m[m
+[32m+[m[32m        store_pending_batch=store_pending_batch,[m[41m[m
+[32m+[m[32m        take_pending_batch=take_pending_batch,[m[41m[m
+[32m+[m[32m        peek_pending_batch=peek_pending_batch,[m[41m[m
+[32m+[m[32m        settings=settings,[m[41m[m
+[32m+[m[32m    )[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))[m[41m[m
+[32m+[m[32m    templates.env.filters["avatar_hue"] = _avatar_hue[m[41m[m
+[32m+[m[32m    templates.env.filters["subsidiary_color"] = db.subsidiary_color[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    app = FastAPI(title="RADIUS Certificate Manager")[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    @app.middleware("http")[m[41m[m
+[32m+[m[32m    async def _scope_db_session_to_request(request: Request, call_next):[m[41m[m
+[32m+[m[32m        token = _request_db_key.set(id(request))[m[41m[m
+[32m+[m[32m        try:[m[41m[m
+[32m+[m[32m            return await call_next(request)[m[41m[m
+[32m+[m[32m        finally:[m[41m[m
+[32m+[m[32m            request_scoped_db.remove()[m[41m[m
+[32m+[m[32m            _request_db_key.reset(token)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    _CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    @app.middleware("http")[m[41m[m
+[32m+[m[32m    async def _check_csrf_origin(request: Request, call_next):[m[41m[m
+[32m+[m[32m        # Cross-site request forgery defense-in-depth for the admin UI.[m[41m[m
+[32m+[m[32m        # The session cookie is already SameSite=Strict (app/auth.py),[m[41m[m
+[32m+[m[32m        # which blocks the vast majority of CSRF vectors on its own — this[m[41m[m
+[32m+[m[32m        # is a second, independent check in case that ever regresses (a[m[41m[m
+[32m+[m[32m        # future samesite=lax change, a browser quirk, a subdomain[m[41m[m
+[32m+[m[32m        # sharing the cookie). It only ever looks at requests carrying the[m[41m[m
+[32m+[m[32m        # admin session cookie; require_site's Authorization-header auth[m[41m[m
+[32m+[m[32m        # (app/site_auth.py) and the unauthenticated /auth/login route are[m[41m[m
+[32m+[m[32m        # untouched.[m[41m[m
+[32m+[m[32m        #[m[41m[m
+[32m+[m[32m        # Checked only when Origin/Referer is present: every mainstream[m[41m[m
+[32m+[m[32m        # browser attaches Origin to same-origin and cross-origin[m[41m[m
+[32m+[m[32m        # state-changing requests alike, so a genuine forged[m[41m[m
+[32m+[m[32m        # cross-origin POST always carries a (mismatching) Origin header.[m[41m[m
+[32m+[m[32m        # Absence just means a non-browser client or a test client with[m[41m[m
+[32m+[m[32m        # no session cookie in play, which this check doesn't apply to.[m[41m[m
+[32m+[m[32m        if ([m[41m[m
+[32m+[m[32m            request.method not in _CSRF_SAFE_METHODS[m[41m[m
+[32m+[m[32m            and auth.SESSION_COOKIE in request.cookies[m[41m[m
+[32m+[m[32m        ):[m[41m[m
+[32m+[m[32m            origin = request.headers.get("origin") or request.headers.get("referer")[m[41m[m
+[32m+[m[32m            if origin is not None:[m[41m[m
+[32m+[m[32m                origin_host = urlparse(origin).netloc[m[41m[m
+[32m+[m[32m                if origin_host and origin_host != request.headers.get("host", ""):[m[41m[m
+[32m+[m[32m                    return JSONResponse([m[41m[m
+[32m+[m[32m                        {"detail": "Cross-origin request rejected"}, status_code=status.HTTP_403_FORBIDDEN[m[41m[m
+[32m+[m[32m                    )[m[41m[m
+[32m+[m[32m        return await call_next(request)[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    @app.middleware("http")[m[41m[m
+[32m+[m[32m    async def _htmx_redirect(request: Request, call_next):[m[41m[m
+[32m+[m[32m        # Every write route (suspend/unsuspend/revoke/reissue, same[m[41m[m
+[32m+[m[32m        # pattern under Employees/Devices) returns a plain 303[m[41m[m
+[32m+[m[32m        # RedirectResponse with flash-message query params. htmx's own[m[41m[m
+[32m+[m[32m        # fetch follows that redirect itself and swaps the *resulting[m[41m[m
+[32m+[m[32m        # page's* HTML into whatever element triggered the request —[m[41m[m
+[32m+[m[32m        # with no hx-target set, that's the button, so the entire next[m[41m[m
+[32m+[m[32m        # page (header, sidebar, everything) gets nested inside it[m[41m[m
+[32m+[m[32m        # instead of the browser navigating there. htmx's documented[m[41m[m
+[32m+[m[32m        # fix is an HX-Redirect response header instead of a body[m[41m[m
+[32m+[m[32m        # redirect, which it treats as "do a real navigation" rather[m[41m[m
+[32m+[m[32m        # than "swap this content in" — translate server-side so no[m[41m[m
+[32m+[m[32m        # individual route has to special-case HX-Request.[m[41m[m
+[32m+[m[32m        response = await call_next(request)[m[41m[m
+[32m+[m[32m        if ([m[41m[m
+[32m+[m[32m            request.headers.get("HX-Request") == "true"[m[41m[m
+[32m+[m[32m            and response.status_code in (301, 302, 303, 307, 308)[m[41m[m
+[32m+[m[32m            and "location" in response.headers[m[41m[m
+[32m+[m[32m        ):[m[41m[m
+[32m+[m[32m            return Response(status_code=200, headers={"HX-Redirect": response.headers["location"]})[m[41m[m
+[32m+[m[32m        return response[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")[m[41m[m
+[32m+[m[32m    app.include_router(get_certs_router(deps))[m[41m[m
+[32m+[m[32m    app.include_router(get_health_router(deps))[m[41m[m
+[32m+[m[32m    app.include_router(get_web_auth_router(deps, templates))[m[41m[m
+[32m+[m[32m    app.include_router(get_bulk_router(deps, templates))[m[41m[m
+[32m+[m[32m    app.include_router(get_bulk_network_router(deps, templates))[m[41m[m
+[32m+[m[32m    app.include_router(get_site_router(deps))[m[41m[m
+[32m+[m[32m    app.include_router(get_sites_admin_router(deps))[m[41m[m
+[32m+[m[32m    app.include_router(get_web_sites_router(deps, templates))[m[41m[m
+[32m+[m[32m    app.include_router(get_web_subsidiaries_router(deps, templates))[m[41m[m
+[32m+[m[32m    app.include_router(get_web_employees_router(deps, templates))[m[41m[m
+[32m+[m[32m    app.include_router(get_web_renewals_router(deps, templates))[m[41m[m
+[32m+[m[32m    app.include_router(get_liveness_router(deps))[m[41m[m
+[32m+[m[32m    app.include_router(get_metrics_router(deps))[m[41m[m
+[32m+[m[32m    app.include_router(get_network_policy_router(deps))[m[41m[m
+[32m+[m[32m    app.include_router(get_employees_router(deps))[m[41m[m
+[32m+[m[32m    app.include_router(get_web_certs_router(deps, templates))[m[41m[m
+[32m+[m[32m    app.include_router(get_web_account_router(deps, templates))[m[41m[m
+[32m+[m[32m    app.include_router(get_web_admins_router(deps, templates))[m[41m[m
+[32m+[m[32m    app.include_router(get_web_router(deps, templates))[m[41m[m
+[32m+[m[32m    app.state.regenerate_and_push_crl = regenerate_and_push_crl[m[41m[m
+[32m+[m[32m    app.state.run_fleet_watch = run_fleet_watch[m[41m[m
+[32m+[m[32m    app.state.send_heartbeat = send_heartbeat[m[41m[m
+[32m+[m[32m    app.state.settings = settings[m[41m[m
+[32m+[m[32m    app.state.get_db_session = request_scoped_db[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    from fastapi import HTTPException[m[41m[m
+[32m+[m[32m    from fastapi.responses import RedirectResponse[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    ERROR_TITLES = {[m[41m[m
+[32m+[m[32m        403: "You don't have access to this",[m[41m[m
+[32m+[m[32m        404: "Not found",[m[41m[m
+[32m+[m[32m        409: "Conflict",[m[41m[m
+[32m+[m[32m        410: "No longer available",[m[41m[m
+[32m+[m[32m        429: "Slow down",[m[41m[m
+[32m+[m[32m        500: "Something went wrong",[m[41m[m
+[32m+[m[32m    }[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    @app.exception_handler(HTTPException)[m[41m[m
+[32m+[m[32m    async def http_exception_handler(request: Request, exc: HTTPException):[m[41m[m
+[32m+[m[32m        is_web_route = not request.url.path.startswith("/api")[m[41m[m
+[32m+[m[32m        if exc.status_code == 401 and is_web_route:[m[41m[m
+[32m+[m[32m            return RedirectResponse("/login", status_code=303)[m[41m[m
+[32m+[m[32m        if exc.status_code == auth.PASSWORD_CHANGE_REQUIRED_STATUS and is_web_route:[m[41m[m
+[32m+[m[32m            return RedirectResponse(auth.PASSWORD_CHANGE_PATH, status_code=303)[m[41m[m
+[32m+[m[32m        if is_web_route and request.method == "GET":[m[41m[m
+[32m+[m[32m            # A raw JSON error body is a "raw error text" failure mode for[m[41m[m
+[32m+[m[32m            # a page a human is looking at (handoff §6.1) — render the[m[41m[m
+[32m+[m[32m            # same designed error state instead.[m[41m[m
+[32m+[m[32m            return templates.TemplateResponse([m[41m[m
+[32m+[m[32m                request,[m[41m[m
+[32m+[m[32m                "error.html",[m[41m[m
+[32m+[m[32m                {[m[41m[m
+[32m+[m[32m                    "status_code": exc.status_code,[m[41m[m
+[32m+[m[32m                    "title": ERROR_TITLES.get(exc.status_code, "Error"),[m[41m[m
+[32m+[m[32m                    "message": str(exc.detail),[m[41m[m
+[32m+[m[32m                },[m[41m[m
+[32m+[m[32m                status_code=exc.status_code,[m[41m[m
+[32m+[m[32m            )[m[41m[m
+[32m+[m[32m        return JSONResponse([m[41m[m
+[32m+[m[32m            status_code=exc.status_code,[m[41m[m
+[32m+[m[32m            content={"error": {"code": "error", "message": str(exc.detail), "correlation_id": None}},[m[41m[m
+[32m+[m[32m        )[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    @app.exception_handler(Exception)[m[41m[m
+[32m+[m[32m    async def catch_all(request: Request, exc: Exception):[m[41m[m
+[32m+[m[32m        correlation_id = str(uuid.uuid4())[m[41m[m
+[32m+[m[32m        logger.exception("unhandled error [correlation_id=%s]", correlation_id)[m[41m[m
+[32m+[m[32m        if not request.url.path.startswith("/api") and request.method == "GET":[m[41m[m
+[32m+[m[32m            return templates.TemplateResponse([m[41m[m
+[32m+[m[32m                request,[m[41m[m
+[32m+[m[32m                "error.html",[m[41m[m
+[32m+[m[32m                {[m[41m[m
+[32m+[m[32m                    "status_code": 500,[m[41m[m
+[32m+[m[32m                    "title": ERROR_TITLES[500],[m[41m[m
+[32m+[m[32m                    "message": f"An unexpected error occurred. Reference: {correlation_id}",[m[41m[m
+[32m+[m[32m                },[m[41m[m
+[32m+[m[32m                status_code=500,[m[41m[m
+[32m+[m[32m            )[m[41m[m
+[32m+[m[32m        return JSONResponse([m[41m[m
+[32m+[m[32m            status_code=500,[m[41m[m
+[32m+[m[32m            content={[m[41m[m
+[32m+[m[32m                "error": {[m[41m[m
+[32m+[m[32m                    "code": "internal_error",[m[41m[m
+[32m+[m[32m                    "message": "An unexpected error occurred.",[m[41m[m
+[32m+[m[32m                    "correlation_id": correlation_id,[m[41m[m
+[32m+[m[32m                }[m[41m[m
+[32m+[m[32m            },[m[41m[m
+[32m+[m[32m        )[m[41m[m
+[32m+[m[41m[m
+[32m+[m[32m    return app[m[41m[m

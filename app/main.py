@@ -167,6 +167,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             radius_cn=settings.radius_host,
             actor="system",
             crl_validity_days=settings.crl_validity_days,
+            crl_push_host=settings.radius_host,
         )
     bootstrap_session.close()
 
@@ -317,15 +318,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         def _do_push():
             with session_factory() as push_session:
-                def _push():
-                    return crl_push.push_crl(
-                        settings.pki_path / "crl.pem",
-                        settings.radius_host,
-                        settings.radius_ssh_user,
-                        settings.radius_ssh_key,
-                    )
+                targets = {settings.radius_host}
+                for site in push_session.scalars(
+                    _select(db.Site).where(db.Site.is_active.is_(True))
+                ):
+                    if site.crl_push_host:
+                        targets.add(site.crl_push_host)
 
-                crl_health.push_with_retry(push_session, _push, alert_fn=_alert)
+                for host in sorted(targets):
+                    def _push(host=host):
+                        return crl_push.push_crl(
+                            settings.pki_path / "crl.pem",
+                            host,
+                            settings.radius_ssh_user,
+                            settings.radius_ssh_key,
+                        )
+
+                    crl_health.push_with_retry(
+                        push_session, _push, alert_fn=_alert, host=host
+                    )
 
         if background:
             import threading
