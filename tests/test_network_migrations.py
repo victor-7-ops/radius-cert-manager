@@ -18,10 +18,14 @@ from app import db
 from app.network_migrations import (
     INITIAL_SUBSIDIARIES,
     LEGACY_SUBSIDIARY_ALIASES,
+    TOPLINE_DEPARTMENT_ROLE_MAP,
+    TOPLINE_DEPARTMENTS,
+    TOPLINE_NETWORK_ROLES,
     get_deterministic_subsidiary_id,
     resolve_subsidiary_alias,
     run_network_migrations,
     seed_baseline_subsidiaries,
+    seed_topline_network_roles,
 )
 
 
@@ -255,6 +259,77 @@ def test_employee_and_device_inventory_models(tmp_path):
         # Verify device relationship
         reloaded_emp = session.get(db.Employee, emp1.id)
         assert len(reloaded_emp.devices) == 2
+
+
+def test_topline_network_roles_seeded_idempotently(tmp_path):
+    db_file = tmp_path / "test_topline_roles.db"
+    engine = db.make_engine(str(db_file))
+    db.init_db(engine)
+
+    with Session(engine) as session:
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+
+        depts = {d.code: d for d in session.scalars(
+            select(db.Department).where(db.Department.subsidiary_id == sub.id)
+        ).all()}
+        roles = {r.code: r for r in session.scalars(
+            select(db.NetworkRole).where(db.NetworkRole.subsidiary_id == sub.id)
+        ).all()}
+        assert set(depts.keys()) == {d["code"] for d in TOPLINE_DEPARTMENTS}
+        assert set(roles.keys()) == {r["code"] for r in TOPLINE_NETWORK_ROLES}
+
+        links = session.scalars(select(db.DepartmentRole)).all()
+        link_pairs = {(depts[d.code].id, roles[r.code].id) for d in depts.values() for r in roles.values()
+                      if any(link.department_id == d.id and link.network_role_id == r.id for link in links)}
+        for dept_code, role_code in TOPLINE_DEPARTMENT_ROLE_MAP.items():
+            assert (depts[dept_code].id, roles[role_code].id) in link_pairs
+
+        dept_count_before = len(depts)
+        role_count_before = len(roles)
+        link_count_before = len(links)
+
+    # Re-run is a no-op: run_network_migrations is already gated by
+    # db.run_once, same pattern as baseline_subsidiaries_seed.
+    run_network_migrations(engine)
+
+    with Session(engine) as session:
+        assert session.query(db.Department).count() == dept_count_before
+        assert session.query(db.NetworkRole).count() == role_count_before
+        assert session.query(db.DepartmentRole).count() == link_count_before
+
+
+def test_topline_network_roles_seed_leaves_existing_placeholder_data_alone(tmp_path):
+    """handoff task K, 20 Nov 2026: the seed must never touch a
+    pre-existing department/role that already has real data on it --
+    it only adds the new ones, by code, next to whatever is already
+    there."""
+    db_file = tmp_path / "test_topline_placeholder.db"
+    engine = db.make_engine(str(db_file))
+    db.init_db(engine)
+
+    with Session(engine) as session:
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+        sub_id = sub.id
+        placeholder_it = db.Department(subsidiary_id=sub.id, code="it", display_name="IT")
+        session.add(placeholder_it)
+        session.commit()
+        placeholder_id = placeholder_it.id
+
+    seed_topline_network_roles(engine)
+
+    with Session(engine) as session:
+        still_there = session.get(db.Department, placeholder_id)
+        assert still_there is not None
+        assert still_there.code == "it"
+
+        # The new seeded IT department uses a different code, not "it".
+        new_it = session.scalar(
+            select(db.Department).where(
+                db.Department.subsidiary_id == sub_id, db.Department.code == "topline_it_dept"
+            )
+        )
+        assert new_it is not None
+        assert new_it.id != placeholder_id
 
 
 def test_certificate_additive_columns_on_legacy_db(tmp_path):
