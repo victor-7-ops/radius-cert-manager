@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app import auth, crl_push, db, pki
 from app.main import create_app
-from tests.conftest import login_as
+from tests.conftest import create_test_device, login_as
 
 
 def _write_throwaway_pki(app_settings, throwaway_pki):
@@ -48,8 +48,8 @@ def test_scoped_admin_only_sees_own_subsidiary_in_list_and_export(app_settings, 
     client = TestClient(app)
     _login(client, app_settings, unscoped)
 
-    client.post("/certs/issue", data={"cn": "boracay-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Boracay"})
-    client.post("/certs/issue", data={"cn": "cebu-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu"})
+    client.post("/certs/issue", data={"cn": "boracay-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Boracay", "device_id": create_test_device(app_settings)})
+    client.post("/certs/issue", data={"cn": "cebu-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu", "device_id": create_test_device(app_settings)})
 
     scoped = _seed_admin(app_settings, "boracay-admin", db.AdminRole.admin, subsidiary_scope="Lezzgo Boracay")
     _login(client, app_settings, scoped)
@@ -77,7 +77,7 @@ def test_scoped_admin_cannot_view_or_act_on_other_subsidiary_cert(app_settings, 
     client = TestClient(app)
     _login(client, app_settings, unscoped)
 
-    client.post("/certs/issue", data={"cn": "cebu-only-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu"})
+    client.post("/certs/issue", data={"cn": "cebu-only-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu", "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="cebu-only-device").one()
 
@@ -108,6 +108,7 @@ def test_scoped_admin_issued_cert_is_forced_to_their_subsidiary(app_settings, th
     # request is silently overridden, not honored or rejected
     client.post("/certs/issue", data={
         "cn": "sneaky-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu",
+        "device_id": create_test_device(app_settings, subsidiary_name="Lezzgo Boracay"),
     })
 
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
@@ -124,7 +125,7 @@ def test_scoped_admin_bulk_action_skips_out_of_scope_serial(app_settings, throwa
     client = TestClient(app)
     _login(client, app_settings, unscoped)
 
-    client.post("/certs/issue", data={"cn": "cebu-bulk-target", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu"})
+    client.post("/certs/issue", data={"cn": "cebu-bulk-target", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu", "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="cebu-bulk-target").one()
 
@@ -210,8 +211,8 @@ def test_json_api_enforces_subsidiary_scope(app_settings, throwaway_pki, monkeyp
     client = TestClient(app)
     _login(client, app_settings, unscoped)
 
-    client.post("/certs/issue", data={"cn": "api-boracay-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Boracay"})
-    client.post("/certs/issue", data={"cn": "api-cebu-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu"})
+    client.post("/certs/issue", data={"cn": "api-boracay-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Boracay", "device_id": create_test_device(app_settings)})
+    client.post("/certs/issue", data={"cn": "api-cebu-device", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu", "device_id": create_test_device(app_settings)})
 
     engine = db.make_engine(str(app_settings.db_path))
     session = db.make_session_factory(engine)()
@@ -243,7 +244,7 @@ def test_unscoped_admin_is_unaffected(app_settings, throwaway_pki, monkeypatch):
     client = TestClient(app)
     _login(client, app_settings, admin)
 
-    client.post("/certs/issue", data={"cn": "unscoped-device", "request_id": str(uuid.uuid4()), "subsidiary": "Bay Mall"})
+    client.post("/certs/issue", data={"cn": "unscoped-device", "request_id": str(uuid.uuid4()), "subsidiary": "Bay Mall", "device_id": create_test_device(app_settings)})
     resp = client.get("/certs")
     assert "unscoped-device" in resp.text
     assert client.get("/bulk/employees").status_code == 200

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import auth, crl_push, db, pki
 from app.main import create_app
-from tests.conftest import login_as
+from tests.conftest import create_test_device, login_as
 
 
 def _write_throwaway_pki(app_settings, throwaway_pki):
@@ -51,8 +51,8 @@ def test_health_page_shows_cert_counts_and_storage(app_settings, throwaway_pki, 
     client = TestClient(app)
     login_as(client, app_settings, super_admin)
 
-    client.post("/certs/issue", data={"cn": "health-device-a", "request_id": str(uuid.uuid4())})
-    client.post("/certs/issue", data={"cn": "health-device-b", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "health-device-a", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
+    client.post("/certs/issue", data={"cn": "health-device-b", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="health-device-b").one()
     client.post(f"/certs/{cert.serial}/suspend", data={"reason": "test"})
@@ -136,7 +136,7 @@ def test_health_page_load_triggers_expiry_alert_and_posts_slack_json(app_setting
     login_as(client, app_settings, super_admin)
 
     client.post("/certs/issue", data={
-        "cn": "expiring-soon-device", "request_id": str(uuid.uuid4()),
+        "cn": "expiring-soon-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings),
     })
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="expiring-soon-device").one()

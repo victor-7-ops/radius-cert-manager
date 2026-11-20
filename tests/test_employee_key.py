@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app import auth, cert_service, crl_push, db, pki
 from app.main import create_app
 from app.validation import normalize_employee_key
-from tests.conftest import login_as
+from tests.conftest import create_test_device, login_as
 
 
 def _write_throwaway_pki(app_settings, throwaway_pki):
@@ -164,14 +164,14 @@ def test_issue_form_warns_but_does_not_block_on_spelling_mismatch(app_settings, 
 
     resp = client.post(
         "/certs/issue",
-        data={"cn": "device-1.example", "request_id": str(uuid.uuid4()), "employee_name": "Juan Dela Cruz"},
+        data={"cn": "device-1.example", "request_id": str(uuid.uuid4()), "employee_name": "Juan Dela Cruz", "device_id": create_test_device(app_settings)},
         follow_redirects=False,
     )
     assert resp.status_code in (200, 303)
 
     resp = client.post(
         "/certs/issue",
-        data={"cn": "device-2.example", "request_id": str(uuid.uuid4()), "employee_name": "juan dela cruz"},
+        data={"cn": "device-2.example", "request_id": str(uuid.uuid4()), "employee_name": "juan dela cruz", "device_id": create_test_device(app_settings)},
     )
     assert resp.status_code == 200
     assert "different spelling" in resp.text
@@ -186,13 +186,13 @@ def test_issue_form_confirm_duplicate_bypasses_spelling_warning(app_settings, th
     client = _client(app_settings, throwaway_pki, monkeypatch)
     client.post(
         "/certs/issue",
-        data={"cn": "device-1.example", "request_id": str(uuid.uuid4()), "employee_name": "Juan Dela Cruz"},
+        data={"cn": "device-1.example", "request_id": str(uuid.uuid4()), "employee_name": "Juan Dela Cruz", "device_id": create_test_device(app_settings)},
     )
     resp = client.post(
         "/certs/issue",
         data={
             "cn": "device-2.example", "request_id": str(uuid.uuid4()),
-            "employee_name": "juan dela cruz", "confirm_duplicate": "1",
+            "employee_name": "juan dela cruz", "confirm_duplicate": "1", "device_id": create_test_device(app_settings),
         },
         follow_redirects=False,
     )

@@ -4,7 +4,7 @@
 <div class="page-header dashboard-heading">
   <div><p class="dashboard-eyebrow">WORKSPACE OVERVIEW</p><h1 class="page-title">Certificate dashboard</h1>
   <p class="page-subtitle">Welcome back, {{ admin.username }}. Review credentials and access health.</p></div>
-  {% if admin.role.value != "viewer" %}<a href="/certs/issue" class="btn-primary">Issue certificate</a>{% endif %}
+  {% if admin.role.value != "viewer" %}<a href="/employees" class="btn-primary">Issue certificate</a>{% endif %}
 </div>
 
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">

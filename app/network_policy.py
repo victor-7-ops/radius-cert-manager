@@ -138,6 +138,28 @@ def assert_can_manage_subsidiary(actor: db.Admin, subsidiary_id: str, session: S
     raise ForbiddenError("Unauthorized role")
 
 
+def assert_can_issue_for_subsidiary(actor: db.Admin, subsidiary_id: str, session: Session) -> None:
+    """Looser than assert_can_manage_subsidiary (which gates changing a
+    tenant's departments/roles/VLANs): issuing a cert for an existing
+    device is routine admin work, not tenant configuration. An ordinary,
+    unscoped admin may issue for any subsidiary -- the same freedom the
+    legacy free-text subsidiary field on this form always had. A scoped
+    admin (any role) is still confined to their own subsidiary, same as
+    the cert list/export scoping elsewhere in this module (handoff J,
+    20 Nov 2026 -- found while requiring a device on /certs/issue, which
+    made assert_can_manage_subsidiary's blanket admin-role block actually
+    fire for the first time)."""
+    if actor.role == db.AdminRole.viewer:
+        raise ForbiddenError("Viewers have read-only access and cannot issue certificates")
+    if not actor.subsidiary_scope:
+        return
+    actor_sub_id = resolve_admin_subsidiary_id(actor, session)
+    if not actor_sub_id:
+        raise ForbiddenError("Your configured subsidiary scope could not be resolved")
+    if actor_sub_id != subsidiary_id:
+        raise ForbiddenError("Cannot issue a certificate for a device outside your assigned subsidiary")
+
+
 def create_subsidiary(
     actor: db.Admin, code: str, display_name: str, session: Session
 ) -> db.Subsidiary:

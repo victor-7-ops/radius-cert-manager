@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from app import auth, cert_service, crl_push, db, pki
 from app.main import create_app
-from tests.conftest import login_as
+from tests.conftest import create_test_device, login_as
 
 
 def _write_throwaway_pki(app_settings, throwaway_pki):
@@ -119,7 +119,7 @@ def test_reissue_route_e2e(app_settings, throwaway_pki, monkeypatch):
     client = TestClient(app)
     _login(client, app_settings, admin)
 
-    issue_resp = client.post("/certs/issue", data={"cn": "web-reissue-device", "request_id": str(uuid.uuid4())})
+    issue_resp = client.post("/certs/issue", data={"cn": "web-reissue-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     assert issue_resp.status_code == 200  # delivery page after redirect-follow
 
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
@@ -148,8 +148,8 @@ def test_csv_export_respects_status_filter(app_settings, throwaway_pki, monkeypa
     client = TestClient(app)
     _login(client, app_settings, admin)
 
-    client.post("/certs/issue", data={"cn": "export-active-device", "request_id": str(uuid.uuid4())})
-    resp2 = client.post("/certs/issue", data={"cn": "export-revoked-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "export-active-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
+    resp2 = client.post("/certs/issue", data={"cn": "export-revoked-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
 
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     revoked_cert = session.query(db.Certificate).filter_by(cn="export-revoked-device").one()
@@ -223,7 +223,7 @@ def test_suspend_redirect_carries_flash_message(app_settings, throwaway_pki, mon
     client = TestClient(app)
     _login(client, app_settings, admin)
 
-    client.post("/certs/issue", data={"cn": "flash-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "flash-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="flash-device").one()
 
@@ -243,7 +243,7 @@ def test_activity_log_action_and_date_filters(app_settings, throwaway_pki, monke
     client = TestClient(app)
     _login(client, app_settings, admin)
 
-    client.post("/certs/issue", data={"cn": "activity-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "activity-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     client.post("/admins", data={"username": "throwaway-admin", "role": "admin"})
 
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
@@ -291,9 +291,9 @@ def test_bulk_suspend(app_settings, throwaway_pki, monkeypatch):
     client = TestClient(app)
     _login(client, app_settings, admin)
 
-    client.post("/certs/issue", data={"cn": "bulk-a", "request_id": str(uuid.uuid4())})
-    client.post("/certs/issue", data={"cn": "bulk-b", "request_id": str(uuid.uuid4())})
-    client.post("/certs/issue", data={"cn": "bulk-c", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "bulk-a", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
+    client.post("/certs/issue", data={"cn": "bulk-b", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
+    client.post("/certs/issue", data={"cn": "bulk-c", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
 
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     a = session.query(db.Certificate).filter_by(cn="bulk-a").one()
@@ -325,7 +325,7 @@ def test_bulk_revoke_requires_super_admin(app_settings, throwaway_pki, monkeypat
     client = TestClient(app)
 
     _login(client, app_settings, plain_admin)
-    client.post("/certs/issue", data={"cn": "bulk-revoke-target", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "bulk-revoke-target", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="bulk-revoke-target").one()
 
@@ -365,10 +365,10 @@ def test_cert_search_matches_mac_and_serial(app_settings, throwaway_pki, monkeyp
     _login(client, app_settings, admin)
 
     client.post("/certs/issue", data={
-        "cn": "search-target-device", "request_id": str(uuid.uuid4()),
+        "cn": "search-target-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings),
         "device_mac": "AA:BB:CC:11:22:33", "device_serial": "ASSET-7788",
     })
-    client.post("/certs/issue", data={"cn": "search-other-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "search-other-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
 
     # MAC search is format-insensitive — normalized the same way at issue
     # time and at query time, so dashes/no-separator still find a
@@ -396,7 +396,7 @@ def test_delivery_page_qr_download_works_once_without_login(app_settings, throwa
     client = TestClient(app)
     _login(client, app_settings, admin)
 
-    issue_resp = client.post("/certs/issue", data={"cn": "qr-device", "request_id": str(uuid.uuid4())})
+    issue_resp = client.post("/certs/issue", data={"cn": "qr-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     assert issue_resp.status_code == 200  # delivery page after redirect-follow
     assert "One link" in issue_resp.text
 
@@ -426,7 +426,7 @@ def test_delivery_page_qr_download_rejects_bad_token(app_settings, throwaway_pki
     client = TestClient(app)
     _login(client, app_settings, admin)
 
-    client.post("/certs/issue", data={"cn": "qr-bad-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "qr-bad-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="qr-bad-device").one()
 
@@ -452,7 +452,7 @@ def test_delivery_page_is_reloadable_until_bundle_actually_downloaded(app_settin
     client = TestClient(app)
     _login(client, app_settings, admin)
 
-    client.post("/certs/issue", data={"cn": "reload-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "reload-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="reload-device").one()
 
@@ -493,7 +493,7 @@ def test_onboard_bundle_pins_root_ca_and_ships_full_chain(app_settings, throwawa
     app = create_app(app_settings)
     client = TestClient(app)
     _login(client, app_settings, admin)
-    client.post("/certs/issue", data={"cn": "chain-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "chain-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="chain-device").one()
 
@@ -540,7 +540,7 @@ def test_root_crt_preferred_over_mislabeled_ca_chain_pem(app_settings, throwaway
     app = create_app(app_settings)
     client = TestClient(app)
     _login(client, app_settings, admin)
-    client.post("/certs/issue", data={"cn": "rootcrt-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "rootcrt-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="rootcrt-device").one()
 
@@ -598,7 +598,7 @@ def test_onboard_bundle_covers_every_authorized_site_ssid(app_settings, throwawa
     app = create_app(app_settings)
     client = TestClient(app)
     _login(client, app_settings, admin)
-    client.post("/certs/issue", data={"cn": "multisite-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "multisite-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
 
     session2 = db.make_session_factory(engine)()
     cert = session2.query(db.Certificate).filter_by(cn="multisite-device").one()
@@ -709,7 +709,7 @@ def test_smart_install_serves_mobileconfig_on_apple_user_agent(app_settings, thr
     app = create_app(app_settings)
     client = TestClient(app)
     _login(client, app_settings, admin)
-    client.post("/certs/issue", data={"cn": "install-mac-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "install-mac-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="install-mac-device").one()
     token = auth.make_bundle_qr_token(app_settings.secret_key, cert.serial)
@@ -740,7 +740,7 @@ def test_smart_install_serves_zip_on_windows_user_agent(app_settings, throwaway_
     app = create_app(app_settings)
     client = TestClient(app)
     _login(client, app_settings, admin)
-    client.post("/certs/issue", data={"cn": "install-win-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "install-win-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="install-win-device").one()
     token = auth.make_bundle_qr_token(app_settings.secret_key, cert.serial)
@@ -776,7 +776,7 @@ def test_smart_install_serves_plain_p12_on_android_user_agent(app_settings, thro
     app = create_app(app_settings)
     client = TestClient(app)
     _login(client, app_settings, admin)
-    client.post("/certs/issue", data={"cn": "install-android-device", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "install-android-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="install-android-device").one()
     token = auth.make_bundle_qr_token(app_settings.secret_key, cert.serial)
@@ -801,13 +801,13 @@ def test_issue_warns_on_duplicate_mac_and_can_be_overridden(app_settings, throwa
     _login(client, app_settings, admin)
 
     client.post("/certs/issue", data={
-        "cn": "dup-mac-first", "request_id": str(uuid.uuid4()), "device_mac": "aa:bb:cc:11:22:33",
+        "cn": "dup-mac-first", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings), "device_mac": "aa:bb:cc:11:22:33",
     })
 
     # a second device with the same MAC (typed in a different format) is
     # flagged rather than silently issued
     resp = client.post("/certs/issue", data={
-        "cn": "dup-mac-second", "request_id": str(uuid.uuid4()), "device_mac": "AA-BB-CC-11-22-33",
+        "cn": "dup-mac-second", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings), "device_mac": "AA-BB-CC-11-22-33",
     })
     assert resp.status_code == 200
     assert "already on an active certificate" in resp.text
@@ -819,7 +819,7 @@ def test_issue_warns_on_duplicate_mac_and_can_be_overridden(app_settings, throwa
     # re-submitting with confirm_duplicate=1 (what the "Issue anyway"
     # button sends) goes through
     resp2 = client.post("/certs/issue", data={
-        "cn": "dup-mac-second", "request_id": str(uuid.uuid4()),
+        "cn": "dup-mac-second", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings),
         "device_mac": "AA-BB-CC-11-22-33", "confirm_duplicate": "1",
     })
     assert resp2.status_code == 200
@@ -837,11 +837,11 @@ def test_issue_warns_on_duplicate_serial_but_not_against_revoked_certs(app_setti
     _login(client, app_settings, admin)
 
     client.post("/certs/issue", data={
-        "cn": "dup-serial-first", "request_id": str(uuid.uuid4()), "device_serial": "ASSET-9999",
+        "cn": "dup-serial-first", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings), "device_serial": "ASSET-9999",
     })
 
     resp = client.post("/certs/issue", data={
-        "cn": "dup-serial-second", "request_id": str(uuid.uuid4()), "device_serial": "ASSET-9999",
+        "cn": "dup-serial-second", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings), "device_serial": "ASSET-9999",
     })
     assert "already on an active certificate" in resp.text
 
@@ -852,7 +852,7 @@ def test_issue_warns_on_duplicate_serial_but_not_against_revoked_certs(app_setti
     # once the original is revoked, reusing its serial/asset tag no
     # longer needs an override — this is the normal hardware-reuse case
     resp2 = client.post("/certs/issue", data={
-        "cn": "dup-serial-third", "request_id": str(uuid.uuid4()), "device_serial": "ASSET-9999",
+        "cn": "dup-serial-third", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings), "device_serial": "ASSET-9999",
     })
     assert "already on an active certificate" not in resp2.text
     session.expire_all()

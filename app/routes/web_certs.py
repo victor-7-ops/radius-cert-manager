@@ -222,9 +222,22 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     ):
         session = deps.get_db_session()
         device = session.get(db.Device, device_id) if device_id else None
+        if not device:
+            # A cert issued without a device has no department/network_role,
+            # which authorize_policy.py correctly Access-Rejects — a
+            # guaranteed-dead credential (handoff J, 20 Nov 2026). Route
+            # through a device instead of allowing the standalone form.
+            return RedirectResponse(
+                h.flash(
+                    "/employees",
+                    "Pick (or add) the employee's device first — certificates always need a device so they can authenticate.",
+                    "danger",
+                ),
+                status_code=303,
+            )
         form_data = {"subsidiary": admin.subsidiary_scope} if admin.subsidiary_scope else {}
         if device:
-            network_policy.assert_can_manage_subsidiary(admin, device.subsidiary_id, session)
+            network_policy.assert_can_issue_for_subsidiary(admin, device.subsidiary_id, session)
             sub = session.get(db.Subsidiary, device.subsidiary_id)
             form_data.update({
                 "cn": device.asset_tag or device.display_name.lower().replace(" ", "-"),
@@ -269,7 +282,18 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         session = deps.get_db_session()
         device = session.get(db.Device, device_id) if device_id else None
         if device:
-            network_policy.assert_can_manage_subsidiary(admin, device.subsidiary_id, session)
+            network_policy.assert_can_issue_for_subsidiary(admin, device.subsidiary_id, session)
+        else:
+            # Mirrors the GET guard — a device-less cert has no
+            # department/network_role and can never authenticate.
+            return RedirectResponse(
+                h.flash(
+                    "/employees",
+                    "Pick (or add) the employee's device first — certificates always need a device so they can authenticate.",
+                    "danger",
+                ),
+                status_code=303,
+            )
 
         if admin.subsidiary_scope:
             # Scoped admin: the subsidiary isn't a free-text choice, it's

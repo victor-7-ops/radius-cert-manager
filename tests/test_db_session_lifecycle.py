@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from app import auth, crl_push, db, pki
 from app.main import create_app
-from tests.conftest import login_as
+from tests.conftest import create_test_device, login_as
 
 
 def _write_throwaway_pki(app_settings, throwaway_pki):
@@ -61,7 +61,7 @@ def test_db_connections_are_returned_to_the_pool_after_each_request(app_settings
     # through a mutation route — exercise those too, since that function
     # used to open its own separate, also-never-closed session.
     for i in range(10):
-        client.post("/certs/issue", data={"cn": f"pool-check-device-{i}-{uuid.uuid4()}", "request_id": str(uuid.uuid4())})
+        client.post("/certs/issue", data={"cn": f"pool-check-device-{i}-{uuid.uuid4()}", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
 
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     assert session.query(db.Certificate).count() == 10

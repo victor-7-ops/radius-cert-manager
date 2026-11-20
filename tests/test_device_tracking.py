@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app import auth, cert_service, crl_push, db, pki
 from app.main import create_app
-from tests.conftest import login_as
+from tests.conftest import create_test_device, login_as
 
 
 def _write_throwaway_pki(app_settings, throwaway_pki):
@@ -129,6 +129,7 @@ def test_issue_form_and_employee_drilldown_e2e(app_settings, throwaway_pki, monk
             data={
                 "cn": cn,
                 "request_id": str(uuid.uuid4()),
+                "device_id": create_test_device(app_settings),
                 "employee_name": "Jordan Ellis",
                 "device_type": "Laptop" if "laptop" in cn else "Phone",
                 "device_mac": "AA:BB:CC:DD:EE:FF" if "laptop" in cn else "",
@@ -173,7 +174,10 @@ def test_issue_rejects_invalid_mac(app_settings, throwaway_pki, monkeypatch):
 
     resp = client.post(
         "/certs/issue",
-        data={"cn": "bad-mac-device", "request_id": str(uuid.uuid4()), "device_mac": "not-a-mac"},
+        data={
+            "cn": "bad-mac-device", "request_id": str(uuid.uuid4()), "device_mac": "not-a-mac",
+            "device_id": create_test_device(app_settings),
+        },
     )
     assert resp.status_code == 400
     assert "Invalid MAC" in resp.text
@@ -211,7 +215,10 @@ def test_issue_form_and_subsidiary_filter_e2e(app_settings, throwaway_pki, monke
     for cn, subsidiary in [("bay-mall-pos-01", "Bay Mall"), ("bmead-laptop-01", "BMEAD")]:
         resp = client.post(
             "/certs/issue",
-            data={"cn": cn, "request_id": str(uuid.uuid4()), "subsidiary": subsidiary},
+            data={
+                "cn": cn, "request_id": str(uuid.uuid4()), "subsidiary": subsidiary,
+                "device_id": create_test_device(app_settings),
+            },
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -238,7 +245,8 @@ def test_issue_form_offers_subsidiary_choices(app_settings, throwaway_pki, monke
     client = TestClient(app)
     _login(client, app_settings, admin)
 
-    resp = client.get("/certs/issue")
+    device_id = create_test_device(app_settings)
+    resp = client.get("/certs/issue", params={"device_id": device_id})
     assert resp.status_code == 200
     engine = db.make_engine(str(app_settings.db_path))
     session = db.make_session_factory(engine)()
@@ -255,8 +263,9 @@ def test_issue_form_stores_and_shows_device_model(app_settings, throwaway_pki, m
     client = TestClient(app)
     _login(client, app_settings, admin)
 
+    device_id = create_test_device(app_settings)
     resp = client.post("/certs/issue", data={
-        "cn": "model-device", "request_id": str(uuid.uuid4()),
+        "cn": "model-device", "request_id": str(uuid.uuid4()), "device_id": device_id,
         "device_type": "Laptop", "device_model": "VICTUS 15",
     })
     assert resp.status_code == 200  # delivery page after redirect-follow
@@ -283,9 +292,11 @@ def test_search_matches_device_model(app_settings, throwaway_pki, monkeypatch):
 
     client.post("/certs/issue", data={
         "cn": "victus-device", "request_id": str(uuid.uuid4()), "device_model": "VICTUS 15",
+        "device_id": create_test_device(app_settings),
     })
     client.post("/certs/issue", data={
         "cn": "elitebook-device", "request_id": str(uuid.uuid4()), "device_model": "HP EliteBook 840",
+        "device_id": create_test_device(app_settings),
     })
 
     resp = client.get("/certs", params={"q": "VICTUS"})
@@ -304,6 +315,7 @@ def test_reissue_carries_device_model_forward(app_settings, throwaway_pki, monke
 
     client.post("/certs/issue", data={
         "cn": "reissue-model-device", "request_id": str(uuid.uuid4()), "device_model": "Acer Aspire 5",
+        "device_id": create_test_device(app_settings),
     })
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     original = session.query(db.Certificate).filter_by(cn="reissue-model-device").one()
@@ -315,3 +327,37 @@ def test_reissue_carries_device_model_forward(app_settings, throwaway_pki, monke
     assert len(rows) == 2
     new_row = [r for r in rows if r.id != original.id][0]
     assert new_row.device_model == "Acer Aspire 5"
+
+
+def test_issue_form_get_without_device_redirects_to_employees(app_settings, throwaway_pki):
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "no-device-get-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    resp = client.get("/certs/issue", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"].startswith("/employees")
+
+
+def test_issue_form_post_without_device_redirects_and_creates_no_cert(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "no-device-post-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    resp = client.post(
+        "/certs/issue",
+        data={"cn": "no-device-cert", "request_id": str(uuid.uuid4())},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert resp.headers["location"].startswith("/employees")
+
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    assert session.query(db.Certificate).filter_by(cn="no-device-cert").count() == 0

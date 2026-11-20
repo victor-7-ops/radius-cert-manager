@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app import auth, bulk_network_service, crl_push, db, pki
 from app.main import create_app
-from tests.conftest import login_as
+from tests.conftest import create_test_device, login_as
 
 
 def test_bulk_employees_classify_rejects_unknown_subsidiary_code(app_settings):
@@ -71,6 +71,7 @@ def test_issue_form_rejects_unknown_subsidiary(app_settings, throwaway_pki, monk
             "cn": "device-1.example",
             "request_id": str(uuid.uuid4()),
             "subsidiary": "Not A Real Company",
+            "device_id": create_test_device(app_settings),
         },
     )
     assert resp.status_code == 400
@@ -98,6 +99,7 @@ def test_issue_form_accepts_known_subsidiary(app_settings, throwaway_pki, monkey
             "cn": "device-2.example",
             "request_id": str(uuid.uuid4()),
             "subsidiary": db.SUBSIDIARIES[0],
+            "device_id": create_test_device(app_settings),
         },
         follow_redirects=False,
     )

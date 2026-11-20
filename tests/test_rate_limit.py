@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app import auth, crl_push, db, pki, rate_limit
 from app.main import create_app
-from tests.conftest import login_as
+from tests.conftest import create_test_device, login_as
 
 
 @pytest.fixture(autouse=True)
@@ -123,7 +123,7 @@ def test_real_bundle_download_still_works_within_limit(app_settings, throwaway_p
     client = TestClient(app)
     login_as(client, app_settings, admin)
 
-    issue_resp = client.post("/certs/issue", data={"cn": "rate-limit-device", "request_id": str(uuid.uuid4())})
+    issue_resp = client.post("/certs/issue", data={"cn": "rate-limit-device", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     assert issue_resp.status_code == 200
 
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()

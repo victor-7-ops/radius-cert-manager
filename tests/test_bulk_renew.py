@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from app import auth, crl_push, db, pki
 from app.main import create_app
-from tests.conftest import login_as
+from tests.conftest import create_test_device, login_as
 
 
 def _write_throwaway_pki(app_settings, throwaway_pki):
@@ -44,8 +44,8 @@ def test_bulk_renew_reissues_all_selected_and_leaves_old_certs_active(app_settin
     client = TestClient(app)
     login_as(client, app_settings, admin)
 
-    client.post("/certs/issue", data={"cn": "renew-a", "request_id": str(uuid.uuid4()), "employee_name": "Jordan Ellis"})
-    client.post("/certs/issue", data={"cn": "renew-b", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "renew-a", "request_id": str(uuid.uuid4()), "employee_name": "Jordan Ellis", "device_id": create_test_device(app_settings)})
+    client.post("/certs/issue", data={"cn": "renew-b", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     old_a = session.query(db.Certificate).filter_by(cn="renew-a").one()
     old_b = session.query(db.Certificate).filter_by(cn="renew-b").one()
@@ -85,8 +85,8 @@ def test_bulk_renew_bundle_download_has_both_p12s(app_settings, throwaway_pki, m
     client = TestClient(app)
     login_as(client, app_settings, admin)
 
-    client.post("/certs/issue", data={"cn": "renew-zip-a", "request_id": str(uuid.uuid4())})
-    client.post("/certs/issue", data={"cn": "renew-zip-b", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "renew-zip-a", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
+    client.post("/certs/issue", data={"cn": "renew-zip-b", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     a = session.query(db.Certificate).filter_by(cn="renew-zip-a").one()
     b = session.query(db.Certificate).filter_by(cn="renew-zip-b").one()
@@ -118,7 +118,7 @@ def test_bulk_renew_rejects_short_export_password(app_settings, throwaway_pki, m
     client = TestClient(app)
     login_as(client, app_settings, admin)
 
-    client.post("/certs/issue", data={"cn": "renew-short-a", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "renew-short-a", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="renew-short-a").one()
 
@@ -140,8 +140,8 @@ def test_bulk_renew_partial_failure_does_not_block_the_rest(app_settings, throwa
     client = TestClient(app)
     login_as(client, app_settings, admin)
 
-    client.post("/certs/issue", data={"cn": "renew-ok", "request_id": str(uuid.uuid4())})
-    client.post("/certs/issue", data={"cn": "renew-revoked", "request_id": str(uuid.uuid4())})
+    client.post("/certs/issue", data={"cn": "renew-ok", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
+    client.post("/certs/issue", data={"cn": "renew-revoked", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     ok_cert = session.query(db.Certificate).filter_by(cn="renew-ok").one()
     revoked_cert = session.query(db.Certificate).filter_by(cn="renew-revoked").one()
@@ -166,7 +166,7 @@ def test_bulk_renew_requires_min_password_and_scope(app_settings, throwaway_pki,
     client = TestClient(app)
     login_as(client, app_settings, unscoped)
 
-    client.post("/certs/issue", data={"cn": "renew-scope-target", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu"})
+    client.post("/certs/issue", data={"cn": "renew-scope-target", "request_id": str(uuid.uuid4()), "subsidiary": "Lezzgo Cebu", "device_id": create_test_device(app_settings)})
     session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
     cert = session.query(db.Certificate).filter_by(cn="renew-scope-target").one()
 

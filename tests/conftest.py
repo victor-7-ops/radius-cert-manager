@@ -8,10 +8,12 @@ it is wrong.
 import datetime
 import os
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
 from argon2 import PasswordHasher
+from sqlalchemy import select
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -43,6 +45,39 @@ def login_as(client, app_settings, admin):
         "session_start": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     })
     client.cookies.set(auth.SESSION_COOKIE, cookie)
+
+
+def create_test_device(app_settings, subsidiary_name: str | None = None, employee_name: str = "Test Employee") -> str:
+    """Minimal employee+device fixture (handoff J, 20 Nov 2026): /certs/issue
+    now requires a device, since a device-less cert has no
+    department/network_role and authorize_policy.py always Access-Rejects
+    it. db.init_db seeds the real Subsidiary rows on every create_app call;
+    Department/NetworkRole aren't seeded, so create throwaway ones here."""
+    engine = db.make_engine(str(app_settings.db_path))
+    db.init_db(engine)
+    session = db.make_session_factory(engine)()
+    if subsidiary_name:
+        sub = session.scalars(select(db.Subsidiary).where(db.Subsidiary.display_name == subsidiary_name)).one()
+    else:
+        sub = session.scalars(select(db.Subsidiary).where(db.Subsidiary.is_active.is_(True))).first()
+    suffix = uuid.uuid4().hex[:8]
+    dept = db.Department(subsidiary_id=sub.id, code=f"test-{suffix}", display_name="Test Dept")
+    session.add(dept)
+    session.flush()
+    role = db.NetworkRole(subsidiary_id=sub.id, code=f"test-{suffix}", display_name="Test Role")
+    session.add(role)
+    session.flush()
+    emp = db.Employee(subsidiary_id=sub.id, display_name=employee_name, department_id=dept.id)
+    session.add(emp)
+    session.flush()
+    device = db.Device(
+        subsidiary_id=sub.id, employee_id=emp.id, display_name=f"{employee_name}'s device",
+        department_id=dept.id, network_role_id=role.id,
+    )
+    session.add(device)
+    session.commit()
+    session.refresh(device)
+    return device.id
 
 
 @pytest.fixture
