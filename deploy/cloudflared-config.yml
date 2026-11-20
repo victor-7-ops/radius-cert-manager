@@ -1,0 +1,9 @@
+tunnel: e89dcfaa-ba61-4c4a-8763-ae820d588554
+credentials-file: /home/topline-server/.cloudflared/e89dcfaa-ba61-4c4a-8763-ae820d588554.json
+
+ingress:
+  - hostname: certmanager.topline.ph
+    service: https://localhost:8443
+    originRequest:
+      noTLSVerify: true
+  - service: http_status:404

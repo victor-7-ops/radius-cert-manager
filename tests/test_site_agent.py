@@ -46,6 +46,7 @@ def _make_cfg(tmp_path):
     cfg.request_timeout = 5.0
     cfg.hub_ca_bundle = str(tmp_path / "ca-chain.pem")
     cfg.radius_adapter_path = tmp_path / "radius" / "authorize_policy.py"
+    cfg.radius_group = "freerad"
     return cfg
 
 

@@ -1,0 +1,30 @@
+services:
+  certmanager:
+    build: .
+    container_name: certmanager
+    extra_hosts:
+      - "topline-freeradius1:192.168.13.54"
+    restart: unless-stopped
+    env_file: .env
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "8443:8443"   # direct LAN access until certmanager.topline.ph DNS/port-forward exist
+    volumes:
+      - /srv/data/certmanager:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.certmanager.rule=Host(`topline-hub.duckdns.org`)"
+      - "traefik.http.routers.certmanager.entrypoints=websecure"
+      - "traefik.http.routers.certmanager.tls.certresolver=le"
+      - "traefik.http.services.certmanager.loadbalancer.server.port=8443"
+    networks:
+      - web
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+networks:
+  web:
+    external: true
