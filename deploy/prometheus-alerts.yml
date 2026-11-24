@@ -29,7 +29,7 @@ groups:
           severity: warning
         annotations:
           summary: "RADIUS CRL expiration imminent"
-          description: "The CRL on {{ $labels.instance }} has less than 48 hours remaining (current: {{ $value | printf \"%.1f\" }}h). Verify the cron job / opt/certmanager/.venv/bin/python scripts/regenerate_crl_cron.py."
+          description: "The CRL on {{ $labels.instance }} has less than 48 hours remaining (current: {{ $value | printf \"%.1f\" }}h). Verify certmanager-crl.timer is running: systemctl status certmanager-crl.timer; docker exec certmanager python -m scripts.regenerate_crl_cron."
 
       - alert: RadiusCRLPushFailed
         expr: radius_crl_last_push_ok == 0
