@@ -63,6 +63,8 @@ class Config:
         self.policy_filename = os.environ.get("POLICY_FILENAME", "policy.json")
         self.policy_public_key_file = os.environ.get("POLICY_PUBLIC_KEY_FILE", "")
         self.crl_filename = os.environ.get("CRL_FILENAME", "crl.pem")
+        self.clients_conf_dir = Path(os.environ.get("CLIENTS_CONF_DIR", str(self.policy_dir / "clients.d")))
+        self.clients_conf_filename = os.environ.get("CLIENTS_CONF_FILENAME", "aps_hub_managed.conf")
         self.server_cert_filename = os.environ.get("SERVER_CERT_FILENAME", "server.pem")
         self.server_key_filename = os.environ.get("SERVER_KEY_FILENAME", "server.key")
         self.ca_chain_filename = os.environ.get("CA_CHAIN_FILENAME", "ca-chain.pem")
@@ -362,6 +364,55 @@ def fetch_and_install_crl(cfg: Config, session: requests.Session, reported_etag:
     return _sha256_bytes(crl_bytes)
 
 
+def fetch_and_install_clients_conf(cfg: Config, session: requests.Session) -> bool:
+    """Pulls this site's hub-managed AP client blocks and installs them to
+    CLIENTS_CONF_DIR/CLIENTS_CONF_FILENAME, restart=True -- a reload does
+    NOT pick up a clients.conf secret change (confirmed live on fr2, 23
+    Nov 2026, same failure class as the 19 Nov CRL/X509 reload bug). The
+    main clients.conf must $INCLUDE this file once, by hand, per
+    deploy/radius/README.md's onboarding step -- this never touches
+    clients.conf itself, so existing manually-managed client entries
+    (localhost, any AP added before this system existed) are untouched."""
+    headers = {"Authorization": f"Bearer {cfg.token}"}
+    hash_file = cfg.state_dir / "clients_conf_hash.txt"
+
+    etag = hash_file.read_text().strip() if hash_file.exists() else None
+    if etag:
+        headers["If-None-Match"] = etag
+
+    try:
+        resp = _hub_request(
+            cfg, session, "GET", "/api/site/clients-conf", headers=headers, timeout=cfg.request_timeout
+        )
+    except requests.RequestException:
+        logger.exception("clients.conf pull request failed")
+        return False
+
+    if resp is None:
+        return True
+
+    if resp.status_code == 304:
+        logger.info("clients.conf (AP secrets) unchanged (304)")
+        return True
+
+    if resp.status_code != 200:
+        logger.error("clients.conf pull failed: %s %s", resp.status_code, resp.text[:500])
+        return False
+
+    content = resp.content
+    new_hash = resp.headers.get("ETag") or _sha256_bytes(content)
+
+    cfg.clients_conf_dir.mkdir(parents=True, exist_ok=True)
+    live_path = cfg.clients_conf_dir / cfg.clients_conf_filename
+    installed = _install_with_safety(cfg, {live_path: content}, label="clients-conf", restart=True)
+
+    if installed:
+        hash_file.write_text(new_hash)
+        logger.info("clients.conf (AP secrets) installed: sha256=%s", new_hash[:16])
+        return True
+    return False
+
+
 def _generate_key_and_csr(cn: str, work_dir: Path) -> tuple[Path, Path]:
     """Generates an EC P-256 key and CSR via openssl — never via a
     serialization path that could re-encrypt the key (§3.4 trap: the
@@ -486,7 +537,11 @@ def run_once(cfg: Config) -> int:
     # here on its next poll, same pull-only trust model as the policy above.
     adapter_ok = fetch_and_install_radius_adapter(cfg, session)
 
-    return 0 if (policy_ok and adapter_ok) else 1
+    # AP shared secrets (handoff task M) -- separate file, restart=True
+    # install, same safety as above; see fetch_and_install_clients_conf.
+    clients_conf_ok = fetch_and_install_clients_conf(cfg, session)
+
+    return 0 if (policy_ok and adapter_ok and clients_conf_ok) else 1
 
 
 def _validate_cached_policy(cfg: Config, rev_file: Path) -> bool:

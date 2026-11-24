@@ -561,6 +561,28 @@ class Site(Base):
     crl_push_host: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class AccessPoint(Base):
+    """A NAS/AP client entry for one site's clients.conf (handoff task M,
+    24 Nov 2026). secret_ciphertext is Fernet-encrypted via app.ap_secrets
+    -- never stored or logged in plaintext. Rendered into clients.conf by
+    GET /api/site/clients-conf and installed by the site-agent with the
+    same restart-with-health-gate safety as the CRL/adapter installs,
+    since a reload does not pick up a secret change (confirmed live on
+    fr2, 23 Nov 2026 -- same failure class as the 19 Nov CRL/X509 bug)."""
+
+    __tablename__ = "access_points"
+    __table_args__ = (UniqueConstraint("site_id", "name", name="uq_access_points_site_name"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    site_id: Mapped[str] = mapped_column(String, ForeignKey("sites.id"), index=True)
+    name: Mapped[str] = mapped_column(String)
+    ip_address: Mapped[str] = mapped_column(String)
+    secret_ciphertext: Mapped[str] = mapped_column(String)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

@@ -12,7 +12,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 
-from app import cert_service, db, rate_limit, site_policy
+from app import ap_secrets, cert_service, db, rate_limit, site_policy
 
 
 def _now() -> datetime.datetime:
@@ -232,6 +232,49 @@ def get_router(deps) -> APIRouter:
         envelope = site_policy.sign_code_bundle(content, version=content_sha256[:12], private_key=priv_key)
 
         return Response(content=json.dumps(envelope).encode("utf-8"), media_type="application/json", headers={"ETag": etag})
+
+    @router.get("/clients-conf")
+    def get_clients_conf(
+        request: Request,
+        site: db.Site = Depends(deps.require_site),
+    ):
+        """Renders this site's AccessPoint rows as FreeRADIUS clients.conf
+        client blocks (handoff task M). ETag-cached like the CRL/policy/
+        adapter pulls -- the site-agent must install this with
+        restart=True, since a reload does not pick up a secret change
+        (confirmed live, 23 Nov 2026)."""
+        _enforce_rate_limit(site, "clients_conf", (30, 60.0))
+        session = deps.get_db_session()
+
+        aps = session.scalars(
+            select(db.AccessPoint)
+            .where(db.AccessPoint.site_id == site.id, db.AccessPoint.is_active.is_(True))
+            .order_by(db.AccessPoint.name)
+        ).all()
+
+        blocks = []
+        for ap in aps:
+            secret = ap_secrets.decrypt_secret(ap.secret_ciphertext, deps.pki_path)
+            blocks.append(
+                f"client {ap.name} {{\n"
+                f"    ipaddr = {ap.ip_address}\n"
+                f"    secret = {secret}\n"
+                f"    shortname = {ap.name}\n"
+                f"}}\n"
+            )
+        content = "\n".join(blocks).encode("utf-8")
+        etag = hashlib.sha256(content).hexdigest()
+
+        db.audit(
+            session, actor=f"site:{site.radius_cn}", action="clients_conf.pull", target=site.radius_cn,
+            detail=f"ap_count={len(aps)} etag={etag[:16]}", subsidiary=site.subsidiary, site_id=site.id,
+        )
+        session.commit()
+
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+
+        return Response(content=content, media_type="text/plain", headers={"ETag": etag})
 
     @router.post("/network-policy/ack")
     def ack_network_policy(

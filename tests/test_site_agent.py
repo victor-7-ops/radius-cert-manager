@@ -47,6 +47,8 @@ def _make_cfg(tmp_path):
     cfg.hub_ca_bundle = str(tmp_path / "ca-chain.pem")
     cfg.radius_adapter_path = tmp_path / "radius" / "authorize_policy.py"
     cfg.radius_group = "freerad"
+    cfg.clients_conf_dir = tmp_path / "policy" / "clients.d"
+    cfg.clients_conf_filename = "aps_hub_managed.conf"
     return cfg
 
 
@@ -382,6 +384,50 @@ def _pin_adapter_pub_key(cfg):
     return priv
 
 
+def test_clients_conf_fetch_installs_on_200_with_restart(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    cfg.state_dir.mkdir()
+    content = b"client ap1 {\n    ipaddr = 10.0.0.1\n    secret = s3cret\n}\n"
+    response = MagicMock(status_code=200, content=content, headers={"ETag": "abc123"})
+    monkeypatch.setattr(site_agent, "_hub_request", lambda *a, **k: response)
+
+    installed = []
+    monkeypatch.setattr(
+        site_agent, "_install_with_safety",
+        lambda cfg, staged, label, restart=False: installed.append((staged, restart)) or True,
+    )
+
+    assert site_agent.fetch_and_install_clients_conf(cfg, MagicMock()) is True
+    staged, restart = installed[0]
+    assert staged == {cfg.clients_conf_dir / cfg.clients_conf_filename: content}
+    assert restart is True
+    assert (cfg.state_dir / "clients_conf_hash.txt").read_text() == "abc123"
+
+
+def test_clients_conf_fetch_304_is_noop(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    response = MagicMock(status_code=304)
+    monkeypatch.setattr(site_agent, "_hub_request", lambda *a, **k: response)
+    monkeypatch.setattr(
+        site_agent, "_install_with_safety",
+        lambda *a, **k: pytest.fail("must not install on 304"),
+    )
+
+    assert site_agent.fetch_and_install_clients_conf(cfg, MagicMock()) is True
+
+
+def test_clients_conf_fetch_failure_does_not_install(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    response = MagicMock(status_code=500, text="boom")
+    monkeypatch.setattr(site_agent, "_hub_request", lambda *a, **k: response)
+    monkeypatch.setattr(
+        site_agent, "_install_with_safety",
+        lambda *a, **k: pytest.fail("must not install on error"),
+    )
+
+    assert site_agent.fetch_and_install_clients_conf(cfg, MagicMock()) is False
+
+
 def test_radius_adapter_fetch_installs_on_200(tmp_path, monkeypatch):
     cfg = _make_cfg(tmp_path)
     cfg.state_dir.mkdir()
@@ -462,6 +508,7 @@ def test_run_once_verifies_against_hub_ca_bundle(tmp_path, monkeypatch):
     monkeypatch.setattr(site_agent, "_freeradius_is_active", lambda service: True)
     monkeypatch.setattr(site_agent, "fetch_and_install_policy", lambda cfg, session: True)
     monkeypatch.setattr(site_agent, "fetch_and_install_radius_adapter", lambda cfg, session: True)
+    monkeypatch.setattr(site_agent, "fetch_and_install_clients_conf", lambda cfg, session: True)
 
     site_agent.run_once(cfg)
 
@@ -480,6 +527,7 @@ def test_run_once_returns_failure_when_policy_sync_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(site_agent, "_freeradius_is_active", lambda service: True)
     monkeypatch.setattr(site_agent, "fetch_and_install_policy", lambda cfg, session: False)
     monkeypatch.setattr(site_agent, "fetch_and_install_radius_adapter", lambda cfg, session: True)
+    monkeypatch.setattr(site_agent, "fetch_and_install_clients_conf", lambda cfg, session: True)
     assert site_agent.run_once(cfg) == 1
 
 

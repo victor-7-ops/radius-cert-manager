@@ -166,6 +166,72 @@ def test_crl_pull_returns_304_when_etag_matches(tmp_path, monkeypatch, throwaway
     assert resp2.status_code == 304
 
 
+def test_clients_conf_renders_active_aps_and_decrypts_secret(tmp_path, monkeypatch, throwaway_pki):
+    from app import ap_secrets
+
+    app, client, app_settings = _make_app(tmp_path, monkeypatch, throwaway_pki)
+    body, session = _create_site_via_api(client, app_settings)
+    token = body["token"]
+
+    ciphertext = ap_secrets.encrypt_secret("s3cret", app_settings.pki_path)
+    session.add(db.AccessPoint(site_id=body["id"], name="ap1", ip_address="10.0.0.1", secret_ciphertext=ciphertext))
+    session.add(
+        db.AccessPoint(
+            site_id=body["id"], name="ap2-inactive", ip_address="10.0.0.2",
+            secret_ciphertext=ciphertext, is_active=False,
+        )
+    )
+    session.commit()
+
+    resp = client.get("/api/site/clients-conf", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    assert "client ap1" in resp.text
+    assert "secret = s3cret" in resp.text
+    assert "ap2-inactive" not in resp.text
+
+
+def test_clients_conf_returns_304_when_etag_matches(tmp_path, monkeypatch, throwaway_pki):
+    from app import ap_secrets
+
+    app, client, app_settings = _make_app(tmp_path, monkeypatch, throwaway_pki)
+    body, session = _create_site_via_api(client, app_settings)
+    token = body["token"]
+
+    ciphertext = ap_secrets.encrypt_secret("s3cret", app_settings.pki_path)
+    session.add(db.AccessPoint(site_id=body["id"], name="ap1", ip_address="10.0.0.1", secret_ciphertext=ciphertext))
+    session.commit()
+
+    resp1 = client.get("/api/site/clients-conf", headers={"Authorization": f"Bearer {token}"})
+    assert resp1.status_code == 200
+    etag = resp1.headers["etag"]
+
+    resp2 = client.get(
+        "/api/site/clients-conf",
+        headers={"Authorization": f"Bearer {token}", "If-None-Match": etag},
+    )
+    assert resp2.status_code == 304
+
+
+def test_clients_conf_does_not_leak_another_sites_aps(tmp_path, monkeypatch, throwaway_pki):
+    from app import ap_secrets
+
+    app, client, app_settings = _make_app(tmp_path, monkeypatch, throwaway_pki)
+    session, admin = _super_admin(app_settings)
+    login_as(client, app_settings, admin)
+    resp_a = client.post("/api/admin/sites", json={"name": "SiteA", "radius_cn": "radius-a.internal"})
+    resp_b = client.post("/api/admin/sites", json={"name": "SiteB", "radius_cn": "radius-b.internal"})
+    assert resp_a.status_code == 200 and resp_b.status_code == 200
+    body_a, body_b = resp_a.json(), resp_b.json()
+
+    ciphertext = ap_secrets.encrypt_secret("other-secret", app_settings.pki_path)
+    session.add(db.AccessPoint(site_id=body_b["id"], name="ap-site-b", ip_address="10.0.0.9", secret_ciphertext=ciphertext))
+    session.commit()
+
+    resp = client.get("/api/site/clients-conf", headers={"Authorization": f"Bearer {body_a['token']}"})
+    assert resp.status_code == 200
+    assert resp.text.strip() == ""
+
+
 def test_server_cert_renewal_end_to_end(tmp_path, monkeypatch, throwaway_pki):
     app, client, app_settings = _make_app(tmp_path, monkeypatch, throwaway_pki)
     body, session = _create_site_via_api(client, app_settings)
