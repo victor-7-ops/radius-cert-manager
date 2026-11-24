@@ -55,6 +55,55 @@ def test_no_crl_ever_generated_is_critical(tmp_path):
     assert health.is_stale is True
 
 
+def _site(session, **overrides):
+    import uuid
+    defaults = dict(
+        id=str(uuid.uuid4()), name="Boracay", radius_cn="radius-boracay.internal",
+        auth_token_hash="x", crl_validity_days=30, checkin_interval_seconds=3600,
+        is_active=True,
+    )
+    defaults.update(overrides)
+    site = db.Site(**defaults)
+    session.add(site)
+    session.commit()
+    return site
+
+
+def test_per_host_freshness_current_when_hash_matches(tmp_path):
+    session = make_session(tmp_path)
+    next_update = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)
+    crl_health.record_generation(session, next_update, sha256="abc123")
+    site = _site(session, last_reported_crl_sha256="abc123")
+
+    results = crl_health.per_host_crl_freshness(session, [site])
+    assert len(results) == 1
+    assert results[0].is_current is True
+    assert results[0].is_critical is False
+
+
+def test_per_host_freshness_stale_when_hash_does_not_match(tmp_path):
+    session = make_session(tmp_path)
+    next_update = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)
+    crl_health.record_generation(session, next_update, sha256="new-hash")
+    site = _site(session, last_reported_crl_sha256="old-hash")
+
+    results = crl_health.per_host_crl_freshness(session, [site])
+    assert results[0].is_current is False
+    assert results[0].is_critical is True
+    assert results[0].hours_remaining is None
+
+
+def test_per_host_freshness_critical_when_site_never_reported(tmp_path):
+    session = make_session(tmp_path)
+    next_update = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)
+    crl_health.record_generation(session, next_update, sha256="abc123")
+    site = _site(session, last_reported_crl_sha256=None)
+
+    results = crl_health.per_host_crl_freshness(session, [site])
+    assert results[0].is_current is False
+    assert results[0].is_critical is True
+
+
 def test_push_retries_with_backoff_and_succeeds_on_second_attempt(tmp_path):
     session = make_session(tmp_path)
     attempts = []

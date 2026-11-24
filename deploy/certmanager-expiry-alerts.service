@@ -1,0 +1,14 @@
+[Unit]
+Description=Certmanager certificate expiry alerts (handoff task N item 1)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Deployed hosts run certmanager as a Docker container (docker-compose.yml),
+# not a host venv — exec into the running container, same pattern as
+# certmanager-crl.service / fleet_watch.service.
+ExecStart=/usr/bin/docker exec certmanager python -m scripts.expiry_alerts_cron
+
+[Install]
+WantedBy=multi-user.target

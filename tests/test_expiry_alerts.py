@@ -1,11 +1,14 @@
-"""Cert-expiry alerting — checked opportunistically (there's no
-scheduler), one alert per newly-crossed-threshold cert rather than
-re-alerting every check. See app/expiry_alerts.py."""
+"""Cert-expiry alerting — one alert per newly-crossed-threshold cert
+rather than re-alerting every check. See app/expiry_alerts.py. Wired to
+a systemd timer (deploy/certmanager-expiry-alerts.{service,timer} +
+scripts/expiry_alerts_cron.py, handoff task N item 1) rather than only
+firing opportunistically off a /health page load."""
 
 import datetime
 import uuid
 
-from app import cert_service, db, expiry_alerts
+from app import cert_service, db, expiry_alerts, pki
+from app.main import create_app
 
 
 def _session(tmp_path):
@@ -104,3 +107,29 @@ def test_suspended_or_revoked_certs_are_not_alerted(tmp_path, throwaway_pki):
 
     assert due == []
     assert calls == []
+
+
+def test_app_wires_check_expiry_alerts_to_a_real_alert(app_settings, throwaway_pki, monkeypatch):
+    """Task N item 1: this is the scheduler's entry point
+    (scripts/expiry_alerts_cron.py calls exactly this), not just the
+    underlying logic in app/expiry_alerts.py — if this isn't wired, the
+    timer fires and does nothing, same as the bug this closes."""
+    (app_settings.pki_path / "intermediate.crt").write_bytes(pki.cert_to_pem(throwaway_pki["inter_cert"]))
+    (app_settings.pki_path / "private" / "intermediate.key").write_bytes(
+        pki.private_key_to_pem(throwaway_pki["inter_key"])
+    )
+    app = create_app(app_settings)
+    assert hasattr(app.state, "check_expiry_alerts")
+
+    session = app.state.get_db_session()
+    cert = _issue(session, app_settings.pki_path, throwaway_pki, "soon-to-expire", days=1)
+    session.commit()
+
+    alerts = []
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: alerts.append(True))
+    monkeypatch.setattr(app_settings, "alert_webhook_url", "https://hooks.example/webhook")
+
+    due = app.state.check_expiry_alerts()
+
+    assert [c.cn for c in due] == [cert.cn]
+    assert alerts == [True]

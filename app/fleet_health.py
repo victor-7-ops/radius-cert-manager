@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 
 from app import cert_service, crl_health, db
 
-CRITICAL_CRL_HOURS_REMAINING = 48
 CRITICAL_CERT_DAYS_REMAINING = 14
 SILENT_MISSED_INTERVALS = 3
 WARN_MISSED_INTERVALS = 1
@@ -38,6 +37,7 @@ class SiteHealth:
     last_seen_at: datetime.datetime | None
     minutes_since_checkin: float | None
     crl_hours_remaining: float | None
+    crl_is_current: bool | None
     server_cert_days_remaining: float | None
     freeradius_ok: bool | None
     agent_version: str | None
@@ -52,12 +52,18 @@ def _aware(dt: datetime.datetime | None) -> datetime.datetime | None:
 def evaluate_site(
     site: db.Site,
     server_cert: db.Certificate | None,
-    crl_last_generated_at: datetime.datetime | None,
+    crl_freshness: "crl_health.HostCrlFreshness | None",
     now: datetime.datetime | None = None,
 ) -> SiteHealth:
     """Derives one status for a site from what the hub actually knows —
     absence of a recent check-in is itself a signal, not just missing
-    data (§5's whole reason for existing)."""
+    data (§5's whole reason for existing).
+
+    crl_freshness is this SITE's own reported CRL state (handoff task N
+    item 2), not the hub's -- a site that missed a checkin and is still
+    running last week's CRL must show as critical on its own, not get
+    averaged into "the hub's CRL is fresh" like the old
+    crl_last_generated_at parameter did."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
     last_seen = _aware(site.last_seen_at)
 
@@ -70,12 +76,8 @@ def evaluate_site(
         else None
     )
 
-    crl_hours_remaining = None
-    if crl_last_generated_at is not None:
-        crl_next_update = _aware(crl_last_generated_at) + datetime.timedelta(
-            days=site.crl_validity_days
-        )
-        crl_hours_remaining = (crl_next_update - now).total_seconds() / 3600
+    crl_hours_remaining = crl_freshness.hours_remaining if crl_freshness else None
+    crl_is_critical = crl_freshness.is_critical if crl_freshness else True
 
     server_cert_days_remaining = None
     if server_cert is not None:
@@ -88,7 +90,7 @@ def evaluate_site(
     if missed_intervals is None or missed_intervals > SILENT_MISSED_INTERVALS:
         status = SiteStatus.silent
     elif (
-        (crl_hours_remaining is not None and crl_hours_remaining <= CRITICAL_CRL_HOURS_REMAINING)
+        crl_is_critical
         or (
             server_cert_days_remaining is not None
             and server_cert_days_remaining <= CRITICAL_CERT_DAYS_REMAINING
@@ -114,6 +116,7 @@ def evaluate_site(
         last_seen_at=last_seen,
         minutes_since_checkin=minutes_since_checkin,
         crl_hours_remaining=crl_hours_remaining,
+        crl_is_current=crl_freshness.is_current if crl_freshness else None,
         server_cert_days_remaining=server_cert_days_remaining,
         freeradius_ok=freeradius_ok,
         agent_version=site.agent_version,
@@ -122,8 +125,10 @@ def evaluate_site(
 
 def evaluate_fleet(session: Session, now: datetime.datetime | None = None) -> list[SiteHealth]:
     now = now or datetime.datetime.now(datetime.timezone.utc)
-    crl_last_generated_at = crl_health.get_health(session).last_generated_at
     sites = session.scalars(select(db.Site).where(db.Site.is_active.is_(True))).all()
+    freshness_by_site = {
+        f.site_id: f for f in crl_health.per_host_crl_freshness(session, sites)
+    }
 
     results = []
     for site in sites:
@@ -132,5 +137,5 @@ def evaluate_fleet(session: Session, now: datetime.datetime | None = None) -> li
             if site.server_cert_id
             else None
         )
-        results.append(evaluate_site(site, cert, crl_last_generated_at, now))
+        results.append(evaluate_site(site, cert, freshness_by_site.get(site.id), now))
     return results

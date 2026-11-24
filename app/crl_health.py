@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from sqlalchemy import DateTime, String, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from app.db import Base, audit
+from app.db import Base, Site, audit
 from app.crl_push import PushResult
 
 logger = logging.getLogger("certmanager.crl_health")
@@ -40,6 +40,13 @@ class CrlState(Base):
     next_update: Mapped[datetime.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # The hub's own current CRL file hash (handoff task N item 2) --
+    # compared against each Site.last_reported_crl_sha256 to tell
+    # whether that site is actually running the latest CRL, not just
+    # whether the hub's own copy is fresh. The two questions are
+    # different: the hub can have a brand-new CRL while a site that
+    # missed a checkin is still running a week-old one.
+    current_sha256: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 def _get_or_create(session: Session) -> CrlState:
@@ -104,10 +111,57 @@ def get_health(session: Session) -> CrlHealth:
     )
 
 
-def record_generation(session: Session, next_update: datetime.datetime) -> None:
+@dataclass
+class HostCrlFreshness:
+    site_id: str
+    name: str
+    radius_cn: str
+    reported_sha256: str | None
+    is_current: bool
+    hours_remaining: float | None
+    is_critical: bool
+
+
+def per_host_crl_freshness(session: Session, sites: list[Site] | None = None) -> list[HostCrlFreshness]:
+    """Per-site CRL freshness (handoff task N item 2 -- round 2's Task 2
+    asked for this and it never landed; the multi-host push exists, the
+    multi-host monitoring did not). Reuses get_health()'s fleet-wide
+    hours_remaining/is_critical logic for a site that IS running the
+    current CRL; a site running anything else (stale, or no checkin yet)
+    is reported critical outright, since the hub has no record of when
+    that older CRL it's still running actually expires."""
+    health = get_health(session)
+    state = _get_or_create(session)
+    sites = sites if sites is not None else session.scalars(select(Site).where(Site.is_active.is_(True))).all()
+
+    results = []
+    for site in sites:
+        reported = site.last_reported_crl_sha256
+        # No reported hash yet (fresh install, never checked in) must
+        # read critical, not "fine because we don't know" -- same bug
+        # shape as get_health's own fresh-install fix (18 Nov 2026).
+        is_current = reported is not None and state.current_sha256 is not None and reported == state.current_sha256
+        if is_current:
+            results.append(HostCrlFreshness(
+                site_id=site.id, name=site.name, radius_cn=site.radius_cn,
+                reported_sha256=reported, is_current=True,
+                hours_remaining=health.hours_remaining, is_critical=health.is_critical,
+            ))
+        else:
+            results.append(HostCrlFreshness(
+                site_id=site.id, name=site.name, radius_cn=site.radius_cn,
+                reported_sha256=reported, is_current=False,
+                hours_remaining=None, is_critical=True,
+            ))
+    return results
+
+
+def record_generation(session: Session, next_update: datetime.datetime, sha256: str | None = None) -> None:
     state = _get_or_create(session)
     state.last_generated_at = _now()
     state.next_update = next_update
+    if sha256 is not None:
+        state.current_sha256 = sha256
     session.commit()
 
 

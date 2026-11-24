@@ -751,6 +751,10 @@ _AUDIT_LOG_COLUMN_MIGRATIONS = [
     ("minimised_at", "DATETIME"),
 ]
 
+_CRL_STATE_COLUMN_MIGRATIONS = [
+    ("current_sha256", "VARCHAR"),
+]
+
 
 def _migrate_columns(engine, table: str, migrations: list[tuple[str, str]]) -> None:
     with engine.begin() as conn:
@@ -768,6 +772,7 @@ def init_db(engine) -> None:
     _migrate_columns(engine, "admins", _ADMIN_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "sites", _SITE_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "audit_log", _AUDIT_LOG_COLUMN_MIGRATIONS)
+    _migrate_columns(engine, "crl_state", _CRL_STATE_COLUMN_MIGRATIONS)
     run_once(engine, "audit_log_subsidiary_backfill", lambda: backfill_audit_log_subsidiary(engine))
     run_once(engine, "certificate_employee_key_backfill", lambda: backfill_employee_key(engine))
     from app.network_migrations import run_network_migrations

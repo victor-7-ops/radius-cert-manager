@@ -5,7 +5,15 @@ transition, not one per scheduler run)."""
 import datetime
 import uuid
 
-from app import db, fleet_health, fleet_watch
+from app import crl_health, db, fleet_health, fleet_watch
+
+
+def _fresh(site_id="s", hours_remaining=1000.0, is_current=True, is_critical=False):
+    return crl_health.HostCrlFreshness(
+        site_id=site_id, name="Boracay", radius_cn="radius-boracay.internal",
+        reported_sha256="abc", is_current=is_current,
+        hours_remaining=hours_remaining, is_critical=is_critical,
+    )
 
 
 def _site(**overrides):
@@ -35,7 +43,7 @@ def test_ok_when_everything_fresh():
     now = datetime.datetime.now(datetime.timezone.utc)
     site = _site(last_seen_at=now - datetime.timedelta(minutes=5))
     cert = _cert(days_remaining=300)
-    health = fleet_health.evaluate_site(site, cert, crl_last_generated_at=now, now=now)
+    health = fleet_health.evaluate_site(site, cert, _fresh(), now=now)
     assert health.status == fleet_health.SiteStatus.ok
 
 
@@ -45,21 +53,21 @@ def test_silent_when_missed_more_than_three_intervals():
         last_seen_at=now - datetime.timedelta(hours=4),  # 4 intervals at 1h each
         checkin_interval_seconds=3600,
     )
-    health = fleet_health.evaluate_site(site, None, crl_last_generated_at=now, now=now)
+    health = fleet_health.evaluate_site(site, None, _fresh(), now=now)
     assert health.status == fleet_health.SiteStatus.silent
 
 
 def test_silent_when_never_checked_in():
     now = datetime.datetime.now(datetime.timezone.utc)
     site = _site(last_seen_at=None)
-    health = fleet_health.evaluate_site(site, None, crl_last_generated_at=now, now=now)
+    health = fleet_health.evaluate_site(site, None, _fresh(), now=now)
     assert health.status == fleet_health.SiteStatus.silent
 
 
 def test_critical_when_freeradius_down():
     now = datetime.datetime.now(datetime.timezone.utc)
     site = _site(last_seen_at=now, last_reported_freeradius_ok=False)
-    health = fleet_health.evaluate_site(site, None, crl_last_generated_at=now, now=now)
+    health = fleet_health.evaluate_site(site, None, _fresh(), now=now)
     assert health.status == fleet_health.SiteStatus.critical
 
 
@@ -67,16 +75,33 @@ def test_critical_when_cert_expiring_within_14_days():
     now = datetime.datetime.now(datetime.timezone.utc)
     site = _site(last_seen_at=now)
     cert = _cert(days_remaining=10)
-    health = fleet_health.evaluate_site(site, cert, crl_last_generated_at=now, now=now)
+    health = fleet_health.evaluate_site(site, cert, _fresh(), now=now)
     assert health.status == fleet_health.SiteStatus.critical
 
 
 def test_critical_when_crl_expiring_within_48_hours():
     now = datetime.datetime.now(datetime.timezone.utc)
     site = _site(last_seen_at=now, crl_validity_days=30)
-    old_crl = now - datetime.timedelta(days=29, hours=1)  # ~23h of margin left
-    health = fleet_health.evaluate_site(site, None, crl_last_generated_at=old_crl, now=now)
+    health = fleet_health.evaluate_site(
+        site, None, _fresh(hours_remaining=23.0, is_critical=True), now=now,
+    )
     assert health.status == fleet_health.SiteStatus.critical
+
+
+def test_critical_when_site_not_running_latest_crl():
+    """Task N item 2: a site running a stale CRL must show critical on
+    its own, even though the hub's own current CRL is perfectly fresh —
+    this is exactly the "averaged into a fleet-wide green banner" gap."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    site = _site(last_seen_at=now)
+    stale = crl_health.HostCrlFreshness(
+        site_id=site.id, name=site.name, radius_cn=site.radius_cn,
+        reported_sha256="old-hash", is_current=False,
+        hours_remaining=None, is_critical=True,
+    )
+    health = fleet_health.evaluate_site(site, None, stale, now=now)
+    assert health.status == fleet_health.SiteStatus.critical
+    assert health.crl_is_current is False
 
 
 def test_warn_when_cert_inside_renewal_window_but_not_critical():
@@ -88,7 +113,7 @@ def test_warn_when_cert_inside_renewal_window_but_not_critical():
         days_remaining=25,
         issued_at=now - datetime.timedelta(days=65),
     )
-    health = fleet_health.evaluate_site(site, cert, crl_last_generated_at=now, now=now)
+    health = fleet_health.evaluate_site(site, cert, _fresh(), now=now)
     assert health.status == fleet_health.SiteStatus.warn
 
 
@@ -98,7 +123,7 @@ def test_warn_on_one_missed_checkin():
         last_seen_at=now - datetime.timedelta(hours=1, minutes=30),
         checkin_interval_seconds=3600,
     )
-    health = fleet_health.evaluate_site(site, None, crl_last_generated_at=now, now=now)
+    health = fleet_health.evaluate_site(site, None, _fresh(), now=now)
     assert health.status == fleet_health.SiteStatus.warn
 
 

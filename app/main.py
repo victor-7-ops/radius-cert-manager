@@ -7,6 +7,7 @@ a correlation ID. Raw tracebacks must never reach a client.
 from __future__ import annotations
 
 import contextvars
+import hashlib
 import json
 import logging
 import time
@@ -314,7 +315,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         next_update = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
             days=settings.crl_validity_days
         )
-        crl_health.record_generation(session, next_update)
+        crl_health.record_generation(session, next_update, sha256=hashlib.sha256(pem).hexdigest())
 
         def _do_push():
             with session_factory() as push_session:
@@ -502,6 +503,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(get_web_router(deps, templates))
     app.state.regenerate_and_push_crl = regenerate_and_push_crl
     app.state.run_fleet_watch = run_fleet_watch
+    app.state.check_expiry_alerts = check_expiry_alerts
     app.state.send_heartbeat = send_heartbeat
     app.state.settings = settings
     app.state.get_db_session = request_scoped_db

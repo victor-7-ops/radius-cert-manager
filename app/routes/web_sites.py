@@ -28,13 +28,16 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     def sites_list(request: Request, admin: db.Admin = Depends(deps.require_super_admin)):
         session = deps.get_db_session()
         sites = session.scalars(select(db.Site).order_by(db.Site.name)).all()
-        crl_last_generated_at = crl_health.get_health(session).last_generated_at
+        active_sites = [s for s in sites if s.is_active]
+        freshness_by_site = {
+            f.site_id: f for f in crl_health.per_host_crl_freshness(session, active_sites)
+        }
 
         rows = []
         for site in sites:
             if site.is_active:
                 cert = session.get(db.Certificate, site.server_cert_id) if site.server_cert_id else None
-                health = fleet_health.evaluate_site(site, cert, crl_last_generated_at)
+                health = fleet_health.evaluate_site(site, cert, freshness_by_site.get(site.id))
                 rows.append({"site": site, "status": health.status.value, "minutes_since_checkin": health.minutes_since_checkin})
             else:
                 rows.append({"site": site, "status": "INACTIVE", "minutes_since_checkin": None})

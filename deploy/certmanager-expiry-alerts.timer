@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily certmanager certificate expiry alert check
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target
