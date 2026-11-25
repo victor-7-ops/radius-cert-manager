@@ -220,6 +220,97 @@ def test_fetch_and_install_crl_restarts_not_reloads(tmp_path, monkeypatch):
     assert calls == [True]
 
 
+def test_fetch_and_install_crl_merges_into_ca_chain_file(tmp_path, monkeypatch):
+    # rlm_eap_tls only loads CRLs concatenated into ca_file itself -- a
+    # standalone crl.pem is never read, so check_crl silently never
+    # enforces anything (found live, P1 acceptance test, 25 Nov 2026).
+    cfg = _make_cfg(tmp_path)
+    (cfg.cert_dir / cfg.ca_chain_filename).write_bytes(b"PRISTINE CA CHAIN")
+
+    session = MagicMock()
+    session.get.return_value = MagicMock(status_code=200, content=b"FAKE CRL BYTES")
+
+    def fake_run(cmd, **k):
+        if cmd[0] == "openssl":
+            return _ok(stdout="nextUpdate=Jan  1 00:00:00 2099 GMT")
+        if cmd[0] == "date":
+            return _ok(stdout="4102444800")
+        return _ok()
+
+    monkeypatch.setattr(site_agent, "_run", fake_run)
+    staged_calls = []
+    monkeypatch.setattr(
+        site_agent, "_install_with_safety",
+        lambda cfg, files, label, restart=False: staged_calls.append(files) or True,
+    )
+
+    site_agent.fetch_and_install_crl(cfg, session, reported_etag=None)
+
+    staged = staged_calls[0]
+    assert staged[cfg.cert_dir / cfg.crl_filename] == b"FAKE CRL BYTES"
+    assert staged[cfg.cert_dir / cfg.ca_chain_filename] == b"PRISTINE CA CHAIN" + b"FAKE CRL BYTES"
+    # base file bootstrapped from the (assumed pristine, pre-bug) live chain
+    assert (cfg.cert_dir / (cfg.ca_chain_filename + ".base")).read_bytes() == b"PRISTINE CA CHAIN"
+
+
+def test_fetch_and_install_crl_reuses_existing_base_not_already_merged_chain(tmp_path, monkeypatch):
+    cfg = _make_cfg(tmp_path)
+    (cfg.cert_dir / (cfg.ca_chain_filename + ".base")).write_bytes(b"BASE ONLY")
+    # live chain already has an old CRL merged in -- must not be reused as the base
+    (cfg.cert_dir / cfg.ca_chain_filename).write_bytes(b"BASE ONLY" + b"OLD CRL")
+
+    session = MagicMock()
+    session.get.return_value = MagicMock(status_code=200, content=b"NEW CRL")
+
+    def fake_run(cmd, **k):
+        if cmd[0] == "openssl":
+            return _ok(stdout="nextUpdate=Jan  1 00:00:00 2099 GMT")
+        if cmd[0] == "date":
+            return _ok(stdout="4102444800")
+        return _ok()
+
+    monkeypatch.setattr(site_agent, "_run", fake_run)
+    staged_calls = []
+    monkeypatch.setattr(
+        site_agent, "_install_with_safety",
+        lambda cfg, files, label, restart=False: staged_calls.append(files) or True,
+    )
+
+    site_agent.fetch_and_install_crl(cfg, session, reported_etag=None)
+
+    assert staged_calls[0][cfg.cert_dir / cfg.ca_chain_filename] == b"BASE ONLY" + b"NEW CRL"
+
+
+def test_renew_server_cert_refreshes_base_and_remerges_existing_crl(tmp_path, monkeypatch):
+    # Overwriting ca_chain_filename with the pristine hub chain on every
+    # cert renewal (previous behavior) silently dropped the merged CRL
+    # until the next CRL pull -- a check_crl enforcement gap.
+    cfg = _make_cfg(tmp_path)
+    (cfg.cert_dir / cfg.crl_filename).write_bytes(b"LIVE CRL")
+
+    session = MagicMock()
+    session.post.return_value = MagicMock(
+        status_code=200,
+        json=lambda: {"cert_pem": "CERT", "ca_chain_pem": "NEW CHAIN", "serial": "123"},
+    )
+    monkeypatch.setattr(
+        site_agent, "_generate_key_and_csr",
+        lambda cn, work_dir: _fake_keypair(work_dir),
+    )
+    install_calls = []
+    monkeypatch.setattr(
+        site_agent, "_install_with_safety",
+        lambda cfg, files, label: install_calls.append(files) or True,
+    )
+
+    ok = site_agent.renew_server_cert(cfg, session)
+
+    assert ok is True
+    staged = install_calls[0]
+    assert staged[cfg.cert_dir / (cfg.ca_chain_filename + ".base")] == b"NEW CHAIN"
+    assert staged[cfg.cert_dir / cfg.ca_chain_filename] == b"NEW CHAIN" + b"LIVE CRL"
+
+
 def test_renew_server_cert_rejects_when_hub_rejects_csr(tmp_path, monkeypatch):
     cfg = _make_cfg(tmp_path)
     session = MagicMock()

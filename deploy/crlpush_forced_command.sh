@@ -25,6 +25,16 @@ set -euo pipefail
 CERT_DIR="/etc/freeradius/3.0/certs"
 CRL_DEST="${CERT_DIR}/crl.pem"
 CRL_STAGING="${CERT_DIR}/.crl.pem.staging"
+# rlm_eap_tls only loads CRLs that are concatenated INTO ca_file itself --
+# a standalone crl.pem next to it is never read, so check_crl silently
+# never enforces anything (found live, P1 acceptance test, 25 Nov 2026:
+# a revoked cert kept getting Access-Accept after push+restart, zero
+# CRL-related lines in the eap_tls debug trace). CA_CHAIN_BASE is the
+# pristine chain (no CRL mixed in); CA_FILE is rebuilt as base+CRL on
+# every install so each push fully replaces the previous CRL instead of
+# appending onto itself.
+CA_CHAIN_BASE="${CERT_DIR}/real_ca_chain.pem.base"
+CA_FILE="${CERT_DIR}/real_ca_chain.pem"
 
 case "${SSH_ORIGINAL_COMMAND:-}" in
     scp*)
@@ -76,11 +86,23 @@ case "${SSH_ORIGINAL_COMMAND:-}" in
         # 2026 (certmanager-crl.service alert log, freeradius1).
         rm -f "$CRL_STAGING"
 
+        # Bootstrap the pristine base once: first run after this fix ships,
+        # the live ca_file has never had a CRL merged into it (check_crl
+        # was a no-op before today), so it IS the base.
+        if [[ ! -f "$CA_CHAIN_BASE" ]]; then
+            cp "$CA_FILE" "$CA_CHAIN_BASE"
+        fi
+
+        CA_FILE_BACKUP="${CA_FILE}.prev"
+        cp "$CA_FILE" "$CA_FILE_BACKUP"
+        cat "$CA_CHAIN_BASE" "$CRL_DEST" > "$CA_FILE"
+
         if ! freeradius -XC > /tmp/freeradius_check.$$.log 2>&1; then
-            echo "freeradius -XC failed after installing new CRL. See /tmp/freeradius_check.$$.log" >&2
+            echo "freeradius -XC failed after installing new CRL into ca_file -- rolled back. See /tmp/freeradius_check.$$.log" >&2
+            mv "$CA_FILE_BACKUP" "$CA_FILE"
             exit 1
         fi
-        rm -f /tmp/freeradius_check.$$.log
+        rm -f "$CA_FILE_BACKUP" /tmp/freeradius_check.$$.log
 
         # restart, not reload: a SIGHUP re-reads radiusd.conf but does NOT
         # rebuild eap_tls's X509 CRL store, so a revoked cert keeps

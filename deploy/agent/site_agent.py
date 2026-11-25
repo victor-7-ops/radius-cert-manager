@@ -354,11 +354,27 @@ def fetch_and_install_crl(cfg: Config, session: requests.Session, reported_etag:
         return None
 
     live_path = cfg.cert_dir / cfg.crl_filename
+    # rlm_eap_tls only loads CRLs concatenated INTO ca_file itself -- a
+    # standalone crl.pem next to it is never read, so check_crl silently
+    # never enforces anything (found live, P1 acceptance test, 25 Nov
+    # 2026 -- same bug as crlpush_forced_command.sh's push-side install,
+    # fixed there the same way: rebuild ca_file as pristine-base + CRL on
+    # every install instead of leaving crl.pem unreferenced).
+    ca_chain_path = cfg.cert_dir / cfg.ca_chain_filename
+    ca_chain_base_path = cfg.cert_dir / (cfg.ca_chain_filename + ".base")
+    if not ca_chain_base_path.exists() and ca_chain_path.exists():
+        ca_chain_base_path.write_bytes(ca_chain_path.read_bytes())
+    ca_chain_new = ca_chain_base_path.read_bytes() + crl_bytes if ca_chain_base_path.exists() else None
+
+    staged = {live_path: crl_bytes}
+    if ca_chain_new is not None:
+        staged[ca_chain_path] = ca_chain_new
+
     # restart=True: a reload (SIGHUP) does not rebuild eap_tls's X509 CRL
     # store, so a just-revoked cert keeps authenticating after a reload --
     # confirmed live, 19 Nov 2026 (see crlpush_forced_command.sh for the
     # matching push-side fix and the acceptance test that found this).
-    installed = _install_with_safety(cfg, {live_path: crl_bytes}, label="crl", restart=True)
+    installed = _install_with_safety(cfg, staged, label="crl", restart=True)
     if not installed:
         return None
     return _sha256_bytes(crl_bytes)
@@ -486,7 +502,17 @@ def renew_server_cert(cfg: Config, session: requests.Session) -> bool:
         cfg.cert_dir / cfg.server_cert_filename: new_cert,
     }
     if new_chain:
-        staged[cfg.cert_dir / cfg.ca_chain_filename] = new_chain
+        # ca_chain_filename is also the eap_tls ca_file, which the CRL
+        # pull path (fetch_and_install_crl) keeps rebuilt as base+CRL --
+        # writing the pristine hub chain straight into it here would
+        # silently drop the merged CRL until the next CRL pull. Refresh
+        # the base alongside it and re-merge any CRL already on disk so
+        # check_crl enforcement never has a gap after a cert renewal.
+        ca_chain_base_path = cfg.cert_dir / (cfg.ca_chain_filename + ".base")
+        staged[ca_chain_base_path] = new_chain
+        crl_path = cfg.cert_dir / cfg.crl_filename
+        live_chain = new_chain + crl_path.read_bytes() if crl_path.exists() else new_chain
+        staged[cfg.cert_dir / cfg.ca_chain_filename] = live_chain
 
     return _install_with_safety(cfg, staged, label="server-cert")
 
