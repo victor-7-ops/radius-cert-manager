@@ -7,6 +7,8 @@ rule_files:
 scrape_configs:
   - job_name: certmanager
     metrics_path: /metrics
-    scheme: http
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true   # self-signed web.crt, internal docker network only
     static_configs:
       - targets: ["certmanager:8443"]
