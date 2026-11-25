@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # RUN ON THE LIVE HUB -- verify with `docker exec certmanager eapol_test`
 # after the next rebuild, before relying on the canary timer.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libssl-dev libnl-3-dev libnl-genl-3-dev pkg-config wget ca-certificates \
+    build-essential libssl-dev libnl-3-dev libnl-genl-3-dev libnl-route-3-dev pkg-config wget ca-certificates \
     && wget -q https://w1.fi/releases/wpa_supplicant-2.10.tar.gz -O /tmp/wpa_supplicant.tar.gz \
     && tar -xzf /tmp/wpa_supplicant.tar.gz -C /tmp \
     && cd /tmp/wpa_supplicant-2.10/wpa_supplicant \
