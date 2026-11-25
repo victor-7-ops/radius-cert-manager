@@ -3,7 +3,11 @@ O2). Run by hand once per site -- this is not a repeated workflow, so it
 gets a script instead of an admin UI form.
 
 Usage:
-    python -m scripts.issue_canary_cert <site_radius_cn> <subsidiary_code> <network_role_code>
+    python -m scripts.issue_canary_cert <site_radius_cn> <subsidiary_code> <network_role_code> [--revoked]
+
+--revoked issues the P1 revoked-cert canary instead (25 Nov 2026): a cert
+revoked immediately at issuance, used to prove check_crl is still enforcing
+revocation rather than that auth itself works.
 
 Also reminds you of the other one-time step this depends on: an
 AccessPoint row named "hub-canary" on that site, with the hub's own
@@ -24,10 +28,12 @@ from app.main import create_app
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
+    args = [a for a in sys.argv[1:] if a != "--revoked"]
+    revoked = "--revoked" in sys.argv[1:]
+    if len(args) != 3:
         print(__doc__)
         return 1
-    radius_cn, subsidiary_code, network_role_code = sys.argv[1:4]
+    radius_cn, subsidiary_code, network_role_code = args
 
     settings = load_settings()
     app = create_app(settings)
@@ -37,7 +43,10 @@ def main() -> int:
     if site is None:
         print(f"no site with radius_cn={radius_cn!r}")
         return 1
-    if site.canary_cert_id:
+    if revoked and site.revoked_canary_cert_id:
+        print(f"{radius_cn} already has a revoked canary cert (certificate id {site.revoked_canary_cert_id}) — nothing to do")
+        return 0
+    if not revoked and site.canary_cert_id:
         print(f"{radius_cn} already has a canary cert (certificate id {site.canary_cert_id}) — nothing to do")
         return 0
 
@@ -59,13 +68,17 @@ def main() -> int:
     inter_cert = pki.load_cert_pem(settings.pki_path / "intermediate.crt")
     inter_key = pki.load_key_pem(settings.pki_path / "private" / "intermediate.key")
 
-    cert = canary.issue_canary_certificate(
+    issue_fn = canary.issue_revoked_canary_certificate if revoked else canary.issue_canary_certificate
+    dir_fn = canary.revoked_canary_dir if revoked else canary.canary_dir
+
+    cert = issue_fn(
         session, settings.pki_path, inter_cert, inter_key, site,
         subsidiary_id=subsidiary.id, network_role_id=role.id, issued_by="cli:issue_canary_cert",
     )
 
-    print(f"issued canary cert serial={cert.serial} cn={cert.cn}")
-    print(f"key+cert written to {canary.canary_dir(settings.pki_path, site)}")
+    label = "revoked canary" if revoked else "canary"
+    print(f"issued {label} cert serial={cert.serial} cn={cert.cn}")
+    print(f"key+cert written to {dir_fn(settings.pki_path, site)}")
     print()
     print("REMAINING ONE-TIME STEP (not automated by this script):")
     print(f"  Add an AccessPoint row named {canary.HUB_CANARY_AP_NAME!r} for this site,")

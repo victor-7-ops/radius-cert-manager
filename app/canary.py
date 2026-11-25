@@ -48,6 +48,14 @@ def canary_dir(pki_path: Path, site: db.Site) -> Path:
     return pki_path / "canary" / site.radius_cn
 
 
+def revoked_canary_cn(site: db.Site) -> str:
+    return f"revoked-canary-{site.radius_cn}"
+
+
+def revoked_canary_dir(pki_path: Path, site: db.Site) -> Path:
+    return pki_path / "revoked-canary" / site.radius_cn
+
+
 def issue_canary_certificate(
     session: Session,
     pki_path: Path,
@@ -103,27 +111,82 @@ def issue_canary_certificate(
     return row
 
 
+def issue_revoked_canary_certificate(
+    session: Session,
+    pki_path: Path,
+    inter_cert,
+    inter_key,
+    site: db.Site,
+    subsidiary_id: str,
+    network_role_id: str,
+    issued_by: str,
+) -> db.Certificate:
+    """Mirrors issue_canary_certificate, but revokes the cert immediately --
+    this identity is never meant to authenticate; its only job is to prove
+    check_crl is still enforcing (P1 acceptance test, 25 Nov 2026, found
+    check_crl was a silent no-op on fr1 for an unknown period -- nothing
+    else in this codebase actually probes revocation itself)."""
+    cn = revoked_canary_cn(site)
+    key = pki.generate_private_key()
+    csr = pki.build_csr(key, cn)
+    serial = cert_service._unique_serial(session)
+    cert = pki.sign_client_cert(
+        csr, inter_cert, inter_key, serial, CANARY_CERT_DAYS,
+        subsidiary_id=subsidiary_id, network_role_id=network_role_id,
+    )
+
+    out_dir = revoked_canary_dir(pki_path, site)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    key_path = out_dir / "client.key"
+    cert_path = out_dir / "client.crt"
+    key_path.write_bytes(pki.private_key_to_pem(key))
+    key_path.chmod(0o600)
+    cert_path.write_bytes(pki.cert_to_pem(cert))
+
+    row = db.Certificate(
+        cn=cn,
+        serial=str(serial),
+        issued_at=cert.not_valid_before_utc,
+        expires_at=cert.not_valid_after_utc,
+        status=db.CertStatus.active,
+        issued_by=issued_by,
+        request_id=f"revoked-canary-{site.id}-{serial}",
+        note=f"Revoked-cert canary for {site.name} ({site.radius_cn}) -- do not revoke during cleanup, this is already revoked below on purpose",
+        employee_name="Synthetic Canary",
+        cert_type="client",
+        is_canary=True,
+        subsidiary_id=subsidiary_id,
+        network_role_id=network_role_id,
+        identity_schema_version=2,
+    )
+    session.add(row)
+    session.flush()
+    site.revoked_canary_cert_id = row.id
+    session.commit()
+
+    cert_service.revoke(session, pki_path, row.serial, "revoked-canary", issued_by)
+    return row
+
+
 @dataclass
 class CanaryResult:
     ok: bool
     detail: str
 
 
-def run_probe(
+def _probe_eapol(
     site: db.Site,
     pki_path: Path,
     secret: str,
-    server_ip: str | None = None,
-    timeout: int = EAPOL_TEST_TIMEOUT_SECONDS,
-) -> CanaryResult:
-    """Runs eapol_test against this site's FreeRADIUS, from the hub --
-    deliberately from here, not from the box itself, since the whole
-    point is to exercise the real network path an AP uses (the 13 Nov
-    incident -- an AP missing from clients.conf, packets silently
-    dropped -- is invisible to a probe run from the box's own loopback).
-    The hub's own IP must be a registered client (AccessPoint row named
-    "hub-canary", task M's clients.conf plumbing) on every probed site."""
-    out_dir = canary_dir(pki_path, site)
+    cn: str,
+    out_dir: Path,
+    server_ip: str | None,
+    timeout: int,
+) -> tuple[bool, str] | CanaryResult:
+    """Shared eapol_test runner for both canaries. Returns a CanaryResult
+    directly on setup failure (missing files, DNS, timeout, missing binary);
+    otherwise returns (succeeded, raw_output) for the caller to interpret --
+    run_probe wants success==ok, run_revoked_probe wants success==not ok."""
     key_path = out_dir / "client.key"
     cert_path = out_dir / "client.crt"
     ca_chain_path = pki_path / "ca-chain.pem"
@@ -152,7 +215,7 @@ def run_probe(
         '    client_cert="{cert}"\n'
         '    private_key="{key}"\n'
         "}}\n"
-    ).format(cn=canary_cn(site), ca=ca_chain_path, cert=cert_path, key=key_path)
+    ).format(cn=cn, ca=ca_chain_path, cert=cert_path, key=key_path)
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".conf", delete=False) as f:
         f.write(config)
@@ -171,8 +234,52 @@ def run_probe(
         Path(config_path).unlink(missing_ok=True)
 
     output = (result.stdout + result.stderr)[-2000:]
-    ok = result.returncode == 0 and "SUCCESS" in result.stdout
-    return CanaryResult(ok=ok, detail=output if not ok else "authenticated successfully")
+    succeeded = result.returncode == 0 and "SUCCESS" in result.stdout
+    return succeeded, output
+
+
+def run_probe(
+    site: db.Site,
+    pki_path: Path,
+    secret: str,
+    server_ip: str | None = None,
+    timeout: int = EAPOL_TEST_TIMEOUT_SECONDS,
+) -> CanaryResult:
+    """Runs eapol_test against this site's FreeRADIUS, from the hub --
+    deliberately from here, not from the box itself, since the whole
+    point is to exercise the real network path an AP uses (the 13 Nov
+    incident -- an AP missing from clients.conf, packets silently
+    dropped -- is invisible to a probe run from the box's own loopback).
+    The hub's own IP must be a registered client (AccessPoint row named
+    "hub-canary", task M's clients.conf plumbing) on every probed site."""
+    raw = _probe_eapol(site, pki_path, secret, canary_cn(site), canary_dir(pki_path, site), server_ip, timeout)
+    if isinstance(raw, CanaryResult):
+        return raw
+    succeeded, output = raw
+    return CanaryResult(ok=succeeded, detail=output if not succeeded else "authenticated successfully")
+
+
+def run_revoked_probe(
+    site: db.Site,
+    pki_path: Path,
+    secret: str,
+    server_ip: str | None = None,
+    timeout: int = EAPOL_TEST_TIMEOUT_SECONDS,
+) -> CanaryResult:
+    """Same probe, inverted cert and inverted expectation: this identity is
+    revoked at issuance (issue_revoked_canary_certificate), so ok=True means
+    it correctly got Access-Reject -- check_crl is enforcing. ok=False (it
+    authenticated) is the alert condition: check_crl silently broke again,
+    the exact failure mode P1's live acceptance test caught on 25 Nov 2026."""
+    raw = _probe_eapol(
+        site, pki_path, secret, revoked_canary_cn(site), revoked_canary_dir(pki_path, site), server_ip, timeout,
+    )
+    if isinstance(raw, CanaryResult):
+        return raw
+    succeeded, output = raw
+    if succeeded:
+        return CanaryResult(ok=False, detail=f"revoked canary cert authenticated successfully -- check_crl is not enforcing. output: {output}")
+    return CanaryResult(ok=True, detail="correctly rejected (revoked cert)")
 
 
 def record_probe_result(session: Session, site: db.Site, result: CanaryResult) -> None:
@@ -181,6 +288,17 @@ def record_probe_result(session: Session, site: db.Site, result: CanaryResult) -
     if not result.ok:
         db.audit(
             session, actor="system", action="canary_probe_failed", target=site.radius_cn,
+            detail=result.detail[:500], subsidiary=site.subsidiary, site_id=site.id,
+        )
+    session.commit()
+
+
+def record_revoked_probe_result(session: Session, site: db.Site, result: CanaryResult) -> None:
+    site.last_revoked_canary_ok = result.ok
+    site.last_revoked_canary_checked_at = datetime.datetime.now(datetime.timezone.utc)
+    if not result.ok:
+        db.audit(
+            session, actor="system", action="revoked_canary_probe_failed", target=site.radius_cn,
             detail=result.detail[:500], subsidiary=site.subsidiary, site_id=site.id,
         )
     session.commit()

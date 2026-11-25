@@ -581,6 +581,19 @@ class Site(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Revoked-cert canary (P1 acceptance test, 25 Nov 2026 -- check_crl was
+    # silently broken on fr1 for an unknown period, caught only by a
+    # manual test). Mirrors canary_cert_id/last_canary_ok above, but this
+    # cert is revoked immediately at issuance and never meant to
+    # authenticate: last_revoked_canary_ok=True means it correctly got
+    # Access-Reject. True is the healthy state here, unlike the canary
+    # above -- fleet_health inverts accordingly.
+    revoked_canary_cert_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_revoked_canary_ok: Mapped[bool | None] = mapped_column(nullable=True)
+    last_revoked_canary_checked_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
 
 class AccessPoint(Base):
     """A NAS/AP client entry for one site's clients.conf (handoff task M,
@@ -768,6 +781,9 @@ _SITE_COLUMN_MIGRATIONS = [
     ("canary_cert_id", "VARCHAR"),
     ("last_canary_ok", "BOOLEAN"),
     ("last_canary_checked_at", "DATETIME"),
+    ("revoked_canary_cert_id", "VARCHAR"),
+    ("last_revoked_canary_ok", "BOOLEAN"),
+    ("last_revoked_canary_checked_at", "DATETIME"),
 ]
 
 _AUDIT_LOG_COLUMN_MIGRATIONS = [

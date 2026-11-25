@@ -41,6 +41,7 @@ class SiteHealth:
     server_cert_days_remaining: float | None
     freeradius_ok: bool | None
     canary_ok: bool | None
+    revoked_canary_ok: bool | None
     agent_version: str | None
 
 
@@ -95,6 +96,11 @@ def evaluate_site(
     # other signal and still reject every real authentication (the six
     # incidents this was built to catch).
     canary_ok = site.last_canary_ok
+    # last_revoked_canary_ok is INVERTED vs canary_ok: True means the
+    # revoked cert correctly got Access-Reject (healthy). False means it
+    # authenticated -- check_crl silently stopped enforcing (P1, 25 Nov
+    # 2026). Same None-is-not-critical opt-in semantics as canary_ok.
+    revoked_canary_ok = site.last_revoked_canary_ok
 
     if missed_intervals is None or missed_intervals > SILENT_MISSED_INTERVALS:
         status = SiteStatus.silent
@@ -106,6 +112,7 @@ def evaluate_site(
         )
         or freeradius_ok is False
         or canary_ok is False
+        or revoked_canary_ok is False
     ):
         status = SiteStatus.critical
     elif (
@@ -130,6 +137,7 @@ def evaluate_site(
         server_cert_days_remaining=server_cert_days_remaining,
         freeradius_ok=freeradius_ok,
         canary_ok=canary_ok,
+        revoked_canary_ok=revoked_canary_ok,
         agent_version=site.agent_version,
     )
 

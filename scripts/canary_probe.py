@@ -54,6 +54,32 @@ def main() -> int:
         result = canary.run_probe(site, settings.pki_path, secret, server_ip=target_host)
         canary.record_probe_result(session, site, result)
 
+    revoked_sites = session.scalars(
+        select(db.Site).where(db.Site.is_active.is_(True), db.Site.revoked_canary_cert_id.is_not(None))
+    ).all()
+
+    for site in revoked_sites:
+        ap = session.scalar(
+            select(db.AccessPoint).where(
+                db.AccessPoint.site_id == site.id,
+                db.AccessPoint.name == canary.HUB_CANARY_AP_NAME,
+                db.AccessPoint.is_active.is_(True),
+            )
+        )
+        if ap is None:
+            db.audit(
+                session, actor="system", action="revoked_canary_probe_skipped", target=site.radius_cn,
+                detail=f"no {canary.HUB_CANARY_AP_NAME!r} AccessPoint configured for this site",
+                subsidiary=site.subsidiary, site_id=site.id,
+            )
+            session.commit()
+            continue
+
+        secret = ap_secrets.decrypt_secret(ap.secret_ciphertext, settings.pki_path)
+        target_host = site.crl_push_host or site.radius_cn
+        result = canary.run_revoked_probe(site, settings.pki_path, secret, server_ip=target_host)
+        canary.record_revoked_probe_result(session, site, result)
+
     # Reuses fleet_watch's own edge-triggered dedup (Site.last_alerted_status)
     # -- a canary-caused status change alerts exactly once, same as any
     # other fleet_health signal, via the webhook already wired in O1.
