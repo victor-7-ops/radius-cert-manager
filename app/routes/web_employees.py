@@ -177,16 +177,28 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
 
         devices, _ = device_service.list_devices(actor=admin, session=session, employee_id=emp.id)
 
-        # Available roles paired with employee's department
+        # Available roles paired with employee's department -- a
+        # department with zero mappings falls back to the subsidiary's
+        # default role (deploy/TENANT-AND-VLAN-PLAN.md §5) instead of an
+        # empty dropdown nobody could ever submit from.
         paired_role_ids = session.scalars(
             select(db.DepartmentRole.network_role_id).where(db.DepartmentRole.department_id == emp.department_id)
         ).all()
-        roles = session.scalars(
-            select(db.NetworkRole).where(
-                db.NetworkRole.id.in_(paired_role_ids),
-                db.NetworkRole.is_active.is_(True),
-            )
-        ).all()
+        if paired_role_ids:
+            roles = session.scalars(
+                select(db.NetworkRole).where(
+                    db.NetworkRole.id.in_(paired_role_ids),
+                    db.NetworkRole.is_active.is_(True),
+                )
+            ).all()
+        else:
+            roles = session.scalars(
+                select(db.NetworkRole).where(
+                    db.NetworkRole.subsidiary_id == emp.subsidiary_id,
+                    db.NetworkRole.is_default_fallback.is_(True),
+                    db.NetworkRole.is_active.is_(True),
+                )
+            ).all()
 
         depts = session.scalars(
             select(db.Department).where(

@@ -198,7 +198,11 @@ def register_device(
     if not role or role.subsidiary_id != emp.subsidiary_id or not role.is_active:
         raise PolicyValidationError("Network role does not belong to employee's subsidiary or is inactive")
 
-    # Validate pairing
+    # Validate pairing -- unless this department has NO mapping at all and
+    # the chosen role is the subsidiary's default fallback (§5: a new hire
+    # in an unmapped department must still get Wi-Fi, fail-safe into
+    # Standard rather than hard-reject). A department WITH mappings that
+    # just doesn't include this particular role is still a real error.
     pairing = session.scalar(
         select(db.DepartmentRole).where(
             db.DepartmentRole.department_id == department_id,
@@ -206,8 +210,18 @@ def register_device(
         )
     )
     if not pairing:
-        raise PolicyValidationError(
-            f"Department '{dept.display_name}' is not paired with network role '{role.display_name}'"
+        dept_has_any_mapping = session.scalar(
+            select(db.DepartmentRole.id).where(db.DepartmentRole.department_id == department_id)
+        ) is not None
+        if dept_has_any_mapping or not role.is_default_fallback:
+            raise PolicyValidationError(
+                f"Department '{dept.display_name}' is not paired with network role '{role.display_name}'"
+            )
+        db.audit(
+            session, actor=actor.username, action="device.default_role_fallback",
+            target=dept.display_name,
+            detail=f"certificate issued under department '{dept.display_name}' with no explicit role mapping -- defaulted to '{role.display_name}'",
+            subsidiary=session.get(db.Subsidiary, emp.subsidiary_id).display_name,
         )
 
     # Check asset tag uniqueness within subsidiary if supplied
@@ -305,8 +319,18 @@ def update_device(
             )
         )
         if not pairing:
-            raise PolicyValidationError(
-                f"Department '{dept.display_name}' is not paired with network role '{role.display_name}'"
+            dept_has_any_mapping = session.scalar(
+                select(db.DepartmentRole.id).where(db.DepartmentRole.department_id == target_dept_id)
+            ) is not None
+            if dept_has_any_mapping or not role.is_default_fallback:
+                raise PolicyValidationError(
+                    f"Department '{dept.display_name}' is not paired with network role '{role.display_name}'"
+                )
+            db.audit(
+                session, actor=actor.username, action="device.default_role_fallback",
+                target=dept.display_name,
+                detail=f"certificate issued under department '{dept.display_name}' with no explicit role mapping -- defaulted to '{role.display_name}'",
+                subsidiary=session.get(db.Subsidiary, device.subsidiary_id).display_name,
             )
 
         device.department_id = target_dept_id

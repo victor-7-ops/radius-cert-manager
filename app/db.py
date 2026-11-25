@@ -243,6 +243,14 @@ class NetworkRole(Base):
     description: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True, index=True)
     is_privileged: Mapped[bool] = mapped_column(default=False)
+    # Fallback role for a department with zero DepartmentRole mappings
+    # (deploy/TENANT-AND-VLAN-PLAN.md §5) -- a new hire in a department
+    # that doesn't exist yet otherwise gets no role, no OU, and
+    # authorize_policy.py rejects the cert, which presents as a Wi-Fi
+    # fault (lost a day to this shape of problem, 29 Oct 2026). At most
+    # one role per subsidiary should carry this; nothing in the schema
+    # enforces that today, it's an admin-UI convention.
+    is_default_fallback: Mapped[bool] = mapped_column(default=False, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=_now
     )
@@ -393,6 +401,13 @@ class Employee(Base):
     department_id: Mapped[str] = mapped_column(
         String, ForeignKey("departments.id"), index=True
     )
+    # Payroll employer (Topline Business, Light Fuels, ...), separate from
+    # subsidiary_id -- a Subsidiary here is a network tenant at an office,
+    # not a legal entity, so 11 employers share one "topline" tenant
+    # (deploy/TENANT-AND-VLAN-PLAN.md §1). Without this, "which Light
+    # Fuels staff hold certificates?" is unanswerable once they're all
+    # filed under one tenant.
+    legal_entity: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     status: Mapped[str] = mapped_column(String, default="active", index=True)  # active, offboarding, offboarded
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=_now
@@ -796,6 +811,14 @@ _CRL_STATE_COLUMN_MIGRATIONS = [
     ("current_sha256", "VARCHAR"),
 ]
 
+_EMPLOYEE_COLUMN_MIGRATIONS = [
+    ("legal_entity", "VARCHAR"),
+]
+
+_NETWORK_ROLE_COLUMN_MIGRATIONS = [
+    ("is_default_fallback", "BOOLEAN DEFAULT 0"),
+]
+
 
 def _migrate_columns(engine, table: str, migrations: list[tuple[str, str]]) -> None:
     with engine.begin() as conn:
@@ -814,6 +837,8 @@ def init_db(engine) -> None:
     _migrate_columns(engine, "sites", _SITE_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "audit_log", _AUDIT_LOG_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "crl_state", _CRL_STATE_COLUMN_MIGRATIONS)
+    _migrate_columns(engine, "employees", _EMPLOYEE_COLUMN_MIGRATIONS)
+    _migrate_columns(engine, "network_roles", _NETWORK_ROLE_COLUMN_MIGRATIONS)
     run_once(engine, "audit_log_subsidiary_backfill", lambda: backfill_audit_log_subsidiary(engine))
     run_once(engine, "certificate_employee_key_backfill", lambda: backfill_employee_key(engine))
     from app.network_migrations import run_network_migrations

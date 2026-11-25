@@ -673,3 +673,71 @@ def test_delete_employee_requires_exact_name_match(test_db_session: Session, bas
 def json_loads(data: str):
     import json
     return json.loads(data)
+
+
+def test_register_device_falls_back_to_default_role_for_unmapped_department(
+    test_db_session: Session, baseline_setup: dict,
+):
+    """deploy/TENANT-AND-VLAN-PLAN.md §5: a department with zero
+    DepartmentRole mappings must not hard-reject a new hire -- it
+    resolves to the subsidiary's default-fallback role instead, and
+    the fallback is audited."""
+    session = test_db_session
+    setup = baseline_setup
+
+    unmapped_dept = db.Department(subsidiary_id=setup["sub_a"].id, code="new_dept", display_name="New Department")
+    default_role = db.NetworkRole(
+        subsidiary_id=setup["sub_a"].id, code="standard", display_name="Standard", is_default_fallback=True,
+    )
+    session.add_all([unmapped_dept, default_role])
+    session.flush()
+
+    emp = employee_service.create_employee(
+        actor=setup["admin_sub_a"], subsidiary_id=setup["sub_a"].id,
+        display_name="New Hire", department_id=unmapped_dept.id,
+        employee_number="NEW-001", session=session,
+    )
+    session.commit()
+
+    dev = device_service.register_device(
+        actor=setup["admin_sub_a"], employee_id=emp.id,
+        display_name="New Hire's Laptop", department_id=unmapped_dept.id,
+        network_role_id=default_role.id, session=session,
+    )
+    session.commit()
+
+    assert dev.network_role_id == default_role.id
+    audit_rows = session.query(db.AuditLog).filter_by(action="device.default_role_fallback").all()
+    assert len(audit_rows) == 1
+    assert "New Department" in audit_rows[0].detail
+
+
+def test_register_device_fallback_does_not_bypass_real_mismatch(
+    test_db_session: Session, baseline_setup: dict,
+):
+    """The default-fallback exception applies ONLY when the department has
+    NO mapping at all -- a department that has real mappings but just not
+    to this role must still hard-reject, default_fallback flag or not."""
+    session = test_db_session
+    setup = baseline_setup
+
+    default_role = db.NetworkRole(
+        subsidiary_id=setup["sub_a"].id, code="standard", display_name="Standard", is_default_fallback=True,
+    )
+    session.add(default_role)
+    session.flush()
+
+    emp = employee_service.create_employee(
+        actor=setup["admin_sub_a"], subsidiary_id=setup["sub_a"].id,
+        display_name="Mapped Dept Employee", department_id=setup["dept_a"].id,
+        employee_number="MAPPED-001", session=session,
+    )
+    session.commit()
+
+    # dept_a is mapped to role_a1/role_a2, not default_role
+    with pytest.raises(PolicyValidationError, match="not paired"):
+        device_service.register_device(
+            actor=setup["admin_sub_a"], employee_id=emp.id,
+            display_name="Should Fail", department_id=setup["dept_a"].id,
+            network_role_id=default_role.id, session=session,
+        )

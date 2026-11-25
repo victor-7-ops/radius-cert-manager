@@ -111,6 +111,60 @@ TOPLINE_DEPARTMENT_ROLE_MAP: dict[str, str] = {
     "topline_consultant": "topline_external",
 }
 
+# Real 124-person main-office org chart (deploy/TENANT-AND-VLAN-PLAN.md,
+# 25 Nov 2026), superseding the wrong ten-department list above. Additive
+# only -- the original TOPLINE_DEPARTMENTS above stay (0 certs/0 employees
+# attached when checked live on the hub, confirmed harmless to leave) and
+# this list adds the real departments that were missing, under distinct
+# codes that don't collide with "it"/"ops" (pre-existing live departments
+# with real certs attached) or with the topline_* placeholders already
+# seeded. Reuses the five existing TOPLINE_NETWORK_ROLES -- the plan's
+# five VLANs are the same five roles, just with the real department
+# membership this time.
+#
+# Procurement -> Standard (not Finance): confirmed with Victor 25 Nov
+# 2026 -- Procurement raises POs that Accounting pays, it doesn't touch
+# banking portals, so it doesn't need PLDT session pinning. Finance is
+# 31 people, not 39, as a result.
+TOPLINE_DEPARTMENTS_V2: list[dict[str, str]] = [
+    {"code": "topline_internal_audit", "display_name": "Internal Audit"},
+    {"code": "topline_construction", "display_name": "Construction"},
+    {"code": "topline_compliance", "display_name": "Compliance"},
+    {"code": "topline_legal_compliance", "display_name": "Legal/Compliance"},
+    {"code": "topline_impex", "display_name": "Impex"},
+    {"code": "topline_leasing", "display_name": "Leasing"},
+    {"code": "topline_procurement", "display_name": "Procurement"},
+    {"code": "topline_investment", "display_name": "Investment"},
+    {"code": "topline_top_management", "display_name": "Top Management"},
+    {"code": "topline_ircc", "display_name": "IRCC"},
+]
+
+TOPLINE_DEPARTMENT_ROLE_MAP_V2: dict[str, str] = {
+    "topline_internal_audit": "topline_standard",
+    "topline_construction": "topline_standard",
+    "topline_compliance": "topline_standard",
+    "topline_legal_compliance": "topline_standard",
+    "topline_impex": "topline_standard",
+    "topline_leasing": "topline_standard",
+    "topline_procurement": "topline_standard",
+    "topline_investment": "topline_finance",
+    "topline_top_management": "topline_finance",
+    "topline_ircc": "topline_marketing_role",
+}
+
+# VLAN per role (deploy/TENANT-AND-VLAN-PLAN.md §3, §7). Identical across
+# both sites -- they're a failover pair, a device must land on the same
+# VLAN whichever box answers -- and the plan's own convention for any
+# future office (§8: "keep the VLAN numbers identical across offices").
+TOPLINE_ROLE_VLAN: dict[str, int] = {
+    "topline_standard": 20,
+    "topline_finance": 30,
+    "topline_marketing_role": 70,
+    "topline_it_role": 80,
+    "topline_external": 90,
+}
+TOPLINE_FALLBACK_VLAN = 99
+
 _NETWORK_CERTIFICATE_MIGRATIONS = [
     ("subsidiary_id", "VARCHAR"),
     ("department_id", "VARCHAR"),
@@ -239,6 +293,147 @@ def seed_topline_network_roles(engine) -> dict[str, list[str]]:
     return inserted
 
 
+def seed_topline_real_org_v2(engine) -> dict[str, list[str]]:
+    """Adds the real 124-person org chart's missing departments on top of
+    the (wrong) ten seeded by seed_topline_network_roles above -- additive
+    only, no deletions (deploy/TENANT-AND-VLAN-PLAN.md: don't delete an
+    existing department without showing what's attached to it first; the
+    ten old ones had 0 certs/0 employees live on the hub when checked, so
+    they're left in place rather than risk a destructive migration).
+    Reuses the five existing network roles -- the plan's five VLANs are
+    the same five roles with the real department membership."""
+    inserted = {"departments": [], "department_roles": []}
+    with Session(engine) as session:
+        sub = session.scalar(
+            select(db.Subsidiary).where(db.Subsidiary.code == TOPLINE_SUBSIDIARY_CODE)
+        )
+        if not sub:
+            return inserted
+
+        existing_dept_codes = set(
+            session.scalars(
+                select(db.Department.code).where(db.Department.subsidiary_id == sub.id)
+            ).all()
+        )
+        dept_by_code: dict[str, db.Department] = {
+            d.code: d
+            for d in session.scalars(
+                select(db.Department).where(db.Department.subsidiary_id == sub.id)
+            ).all()
+        }
+        for item in TOPLINE_DEPARTMENTS_V2:
+            if item["code"] not in existing_dept_codes:
+                dept = db.Department(
+                    subsidiary_id=sub.id, code=item["code"], display_name=item["display_name"],
+                )
+                session.add(dept)
+                session.flush()
+                dept_by_code[item["code"]] = dept
+                inserted["departments"].append(item["code"])
+
+        role_by_code: dict[str, db.NetworkRole] = {
+            r.code: r
+            for r in session.scalars(
+                select(db.NetworkRole).where(db.NetworkRole.subsidiary_id == sub.id)
+            ).all()
+        }
+
+        existing_links = {
+            (link.department_id, link.network_role_id)
+            for link in session.scalars(
+                select(db.DepartmentRole).where(
+                    db.DepartmentRole.department_id.in_(d.id for d in dept_by_code.values())
+                )
+            ).all()
+        }
+        for dept_code, role_code in TOPLINE_DEPARTMENT_ROLE_MAP_V2.items():
+            dept = dept_by_code[dept_code]
+            role = role_by_code[role_code]
+            if (dept.id, role.id) not in existing_links:
+                session.add(db.DepartmentRole(department_id=dept.id, network_role_id=role.id))
+                inserted["department_roles"].append(f"{dept_code}->{role_code}")
+
+        if any(inserted.values()):
+            session.commit()
+            logger.info("Seeded Topline real org v2: %s", inserted)
+    return inserted
+
+
+def seed_topline_site_role_bindings(engine) -> list[str]:
+    """Binds every site authorized for the topline subsidiary to all five
+    network roles, at the VLANs deploy/TENANT-AND-VLAN-PLAN.md §3/§7
+    specifies, with the shared fallback VLAN 99. Both fr1 and fr2 are a
+    failover pair for the same office -- a device must land on the same
+    VLAN whichever box answers, so they get identical bindings. Additive
+    and idempotent: an admin-deleted binding (unique on site+subsidiary+
+    role) is not resurrected, same run_once gating as the seeds above."""
+    inserted = []
+    with Session(engine) as session:
+        sub = session.scalar(
+            select(db.Subsidiary).where(db.Subsidiary.code == TOPLINE_SUBSIDIARY_CODE)
+        )
+        if not sub:
+            return inserted
+
+        sites = session.scalars(
+            select(db.Site).join(
+                db.SiteSubsidiary, db.SiteSubsidiary.site_id == db.Site.id
+            ).where(
+                db.SiteSubsidiary.subsidiary_id == sub.id,
+                db.SiteSubsidiary.is_active.is_(True),
+            )
+        ).all()
+        if not sites:
+            return inserted
+
+        roles = session.scalars(
+            select(db.NetworkRole).where(db.NetworkRole.subsidiary_id == sub.id)
+        ).all()
+
+        existing = {
+            (b.site_id, b.subsidiary_id, b.network_role_id)
+            for b in session.scalars(
+                select(db.SiteRoleBinding).where(db.SiteRoleBinding.subsidiary_id == sub.id)
+            ).all()
+        }
+        for site in sites:
+            for role in roles:
+                vlan_id = TOPLINE_ROLE_VLAN.get(role.code)
+                if vlan_id is None:
+                    continue  # unknown role code, e.g. a future admin-added one -- nothing to bind here
+                if (site.id, sub.id, role.id) not in existing:
+                    session.add(db.SiteRoleBinding(
+                        site_id=site.id, subsidiary_id=sub.id, network_role_id=role.id,
+                        vlan_id=vlan_id, fallback_vlan_id=TOPLINE_FALLBACK_VLAN,
+                    ))
+                    inserted.append(f"{site.radius_cn}:{role.code}->vlan{vlan_id}")
+
+        if inserted:
+            session.commit()
+            logger.info("Seeded Topline site role bindings: %s", inserted)
+    return inserted
+
+
+def mark_topline_standard_as_default(engine) -> bool:
+    """One-time flip of topline_standard.is_default_fallback -- see
+    db.run_once call site for why this can't just be a seed field
+    (an admin's later change here must survive the next boot)."""
+    with Session(engine) as session:
+        role = session.scalar(
+            select(db.NetworkRole).join(
+                db.Subsidiary, db.Subsidiary.id == db.NetworkRole.subsidiary_id
+            ).where(
+                db.Subsidiary.code == TOPLINE_SUBSIDIARY_CODE,
+                db.NetworkRole.code == "topline_standard",
+            )
+        )
+        if role is None:
+            return False
+        role.is_default_fallback = True
+        session.commit()
+    return True
+
+
 def run_network_migrations(engine) -> None:
     """Runs all schema updates, additive column migrations, and baseline data seeding."""
     # Ensure all new and existing tables are created
@@ -259,3 +454,23 @@ def run_network_migrations(engine) -> None:
     # Same gating as above: an admin deleting one of these through the
     # real UI must stay deleted, not get resurrected on the next boot.
     db.run_once(engine, "topline_network_roles_seed", lambda: seed_topline_network_roles(engine))
+
+    # New migration key -- "topline_network_roles_seed" above already
+    # fired live (confirmed via migration_flags on the hub, 25 Nov 2026),
+    # so reusing that key would silently skip this seed forever. Separate
+    # key, same deletion-survives-restart guarantee.
+    db.run_once(engine, "topline_real_org_v2_seed", lambda: seed_topline_real_org_v2(engine))
+
+    # §5's default-role protection: mark topline_standard as the fallback
+    # a department with zero role mappings resolves to. One-time: an
+    # admin can later flip the default to a different role through the
+    # real UI, and a boot must not silently flip it back.
+    db.run_once(engine, "topline_default_fallback_role", lambda: mark_topline_standard_as_default(engine))
+
+    # Requires SiteSubsidiary rows authorizing fr1/fr2 for "topline"
+    # already existing -- a no-op until that authorization is in place
+    # (both sites were authenticate-only as of 20 Nov 2026; this is the
+    # switch-cutover step). Re-running after that authorization lands
+    # picks it up normally since this isn't gated by run_once -- it's
+    # its own idempotency check (unique site+subsidiary+role).
+    seed_topline_site_role_bindings(engine)

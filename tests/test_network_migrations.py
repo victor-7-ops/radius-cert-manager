@@ -19,13 +19,20 @@ from app.network_migrations import (
     INITIAL_SUBSIDIARIES,
     LEGACY_SUBSIDIARY_ALIASES,
     TOPLINE_DEPARTMENT_ROLE_MAP,
+    TOPLINE_DEPARTMENT_ROLE_MAP_V2,
     TOPLINE_DEPARTMENTS,
+    TOPLINE_DEPARTMENTS_V2,
+    TOPLINE_FALLBACK_VLAN,
     TOPLINE_NETWORK_ROLES,
+    TOPLINE_ROLE_VLAN,
     get_deterministic_subsidiary_id,
+    mark_topline_standard_as_default,
     resolve_subsidiary_alias,
     run_network_migrations,
     seed_baseline_subsidiaries,
     seed_topline_network_roles,
+    seed_topline_real_org_v2,
+    seed_topline_site_role_bindings,
 )
 
 
@@ -275,7 +282,10 @@ def test_topline_network_roles_seeded_idempotently(tmp_path):
         roles = {r.code: r for r in session.scalars(
             select(db.NetworkRole).where(db.NetworkRole.subsidiary_id == sub.id)
         ).all()}
-        assert set(depts.keys()) == {d["code"] for d in TOPLINE_DEPARTMENTS}
+        # init_db also runs seed_topline_real_org_v2 now (both gated
+        # run_once calls fire on a fresh DB), so depts is a superset of
+        # the original ten, not an exact match.
+        assert {d["code"] for d in TOPLINE_DEPARTMENTS}.issubset(depts.keys())
         assert set(roles.keys()) == {r["code"] for r in TOPLINE_NETWORK_ROLES}
 
         links = session.scalars(select(db.DepartmentRole)).all()
@@ -330,6 +340,132 @@ def test_topline_network_roles_seed_leaves_existing_placeholder_data_alone(tmp_p
         )
         assert new_it is not None
         assert new_it.id != placeholder_id
+
+
+def test_topline_real_org_v2_adds_without_touching_old_seed(tmp_path):
+    """deploy/TENANT-AND-VLAN-PLAN.md: additive only -- the old ten
+    departments (0 certs/0 employees live on the hub when checked, 25
+    Nov 2026) stay untouched, the real 19-department org chart's missing
+    ten get added next to them under distinct codes. Calls
+    seed_topline_network_roles (the old seed) directly instead of
+    db.init_db, so this exercises seed_topline_real_org_v2 itself from a
+    clean slate rather than the already-seeded state init_db leaves."""
+    db_file = tmp_path / "test_real_org_v2.db"
+    engine = db.make_engine(str(db_file))
+    db.Base.metadata.create_all(engine)
+    seed_baseline_subsidiaries(engine)
+    seed_topline_network_roles(engine)
+
+    with Session(engine) as session:
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+        sub_id = sub.id
+        old_dept_codes = {d.code for d in session.scalars(
+            select(db.Department).where(db.Department.subsidiary_id == sub.id)
+        ).all()}
+
+    inserted = seed_topline_real_org_v2(engine)
+    assert set(inserted["departments"]) == {d["code"] for d in TOPLINE_DEPARTMENTS_V2}
+
+    with Session(engine) as session:
+        all_dept_codes = {d.code for d in session.scalars(
+            select(db.Department).where(db.Department.subsidiary_id == sub_id)
+        ).all()}
+        # old departments still present
+        assert old_dept_codes.issubset(all_dept_codes)
+        # new ones added
+        assert all_dept_codes == old_dept_codes | {d["code"] for d in TOPLINE_DEPARTMENTS_V2}
+
+        depts_by_code = {d.code: d for d in session.scalars(
+            select(db.Department).where(db.Department.subsidiary_id == sub_id)
+        ).all()}
+        roles_by_code = {r.code: r for r in session.scalars(
+            select(db.NetworkRole).where(db.NetworkRole.subsidiary_id == sub_id)
+        ).all()}
+        links = session.scalars(select(db.DepartmentRole)).all()
+        link_pairs = {(link.department_id, link.network_role_id) for link in links}
+        for dept_code, role_code in TOPLINE_DEPARTMENT_ROLE_MAP_V2.items():
+            assert (depts_by_code[dept_code].id, roles_by_code[role_code].id) in link_pairs
+
+    # Re-run is idempotent -- no new inserts
+    again = seed_topline_real_org_v2(engine)
+    assert again["departments"] == []
+    assert again["department_roles"] == []
+
+
+def test_mark_topline_standard_as_default(tmp_path):
+    db_file = tmp_path / "test_default_role.db"
+    engine = db.make_engine(str(db_file))
+    db.Base.metadata.create_all(engine)
+    seed_baseline_subsidiaries(engine)
+    seed_topline_network_roles(engine)
+
+    with Session(engine) as session:
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+        role = session.scalar(
+            select(db.NetworkRole).where(
+                db.NetworkRole.subsidiary_id == sub.id, db.NetworkRole.code == "topline_standard",
+            )
+        )
+        assert role.is_default_fallback is False
+
+    assert mark_topline_standard_as_default(engine) is True
+
+    with Session(engine) as session:
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+        role = session.scalar(
+            select(db.NetworkRole).where(
+                db.NetworkRole.subsidiary_id == sub.id, db.NetworkRole.code == "topline_standard",
+            )
+        )
+        assert role.is_default_fallback is True
+
+
+def test_seed_topline_site_role_bindings_requires_site_authorization(tmp_path):
+    """No-op until SiteSubsidiary authorizes a site for topline -- both
+    boxes were authenticate-only as of 20 Nov 2026, so this seed must not
+    invent authorization that doesn't exist yet."""
+    db_file = tmp_path / "test_site_bindings_seed.db"
+    engine = db.make_engine(str(db_file))
+    db.init_db(engine)
+
+    assert seed_topline_site_role_bindings(engine) == []
+
+    with Session(engine) as session:
+        assert session.query(db.SiteRoleBinding).count() == 0
+
+
+def test_seed_topline_site_role_bindings_binds_authorized_sites(tmp_path):
+    db_file = tmp_path / "test_site_bindings_seed2.db"
+    engine = db.make_engine(str(db_file))
+    db.init_db(engine)
+
+    with Session(engine) as session:
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+        site = db.Site(name="HQ", radius_cn="radius-hq.internal", auth_token_hash="x")
+        session.add(site)
+        session.flush()
+        session.add(db.SiteSubsidiary(site_id=site.id, subsidiary_id=sub.id, is_active=True))
+        session.commit()
+        site_id, sub_id = site.id, sub.id
+
+    inserted = seed_topline_site_role_bindings(engine)
+    assert len(inserted) == len(TOPLINE_ROLE_VLAN)
+
+    with Session(engine) as session:
+        bindings = session.scalars(
+            select(db.SiteRoleBinding).where(db.SiteRoleBinding.site_id == site_id)
+        ).all()
+        assert len(bindings) == len(TOPLINE_ROLE_VLAN)
+        roles_by_id = {r.id: r for r in session.scalars(
+            select(db.NetworkRole).where(db.NetworkRole.subsidiary_id == sub_id)
+        ).all()}
+        for b in bindings:
+            assert b.vlan_id == TOPLINE_ROLE_VLAN[roles_by_id[b.network_role_id].code]
+            assert b.fallback_vlan_id == TOPLINE_FALLBACK_VLAN
+
+    # Idempotent re-run
+    again = seed_topline_site_role_bindings(engine)
+    assert again == []
 
 
 def test_certificate_additive_columns_on_legacy_db(tmp_path):
