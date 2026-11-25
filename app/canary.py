@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import socket
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -131,7 +132,16 @@ def run_probe(
         if not required.is_file():
             return CanaryResult(ok=False, detail=f"missing required file: {required}")
 
-    host = server_ip or site.radius_cn
+    hostname = server_ip or site.radius_cn
+    try:
+        # eapol_test's hostapd_parse_ip_addr() only accepts a numeric
+        # address -- a hostname makes it hit an assert(0) and crash the
+        # whole process (confirmed live 25 Nov 2026: topline-freeradius1
+        # has no crl_push_host set, so it fell back to its hostname CN
+        # and eapol_test aborted every run).
+        host = socket.gethostbyname(hostname)
+    except socket.gaierror as exc:
+        return CanaryResult(ok=False, detail=f"could not resolve {hostname!r} to an IP: {exc}")
     config = (
         "network={{\n"
         '    ssid="radius-canary"\n'

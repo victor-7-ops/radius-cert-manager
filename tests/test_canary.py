@@ -3,6 +3,7 @@ and DB wiring. Every subprocess call is mocked — this must never spawn a
 real eapol_test process (same rule as the rest of this suite)."""
 
 import datetime
+import socket
 import uuid
 from unittest.mock import MagicMock
 
@@ -38,6 +39,7 @@ def test_run_probe_succeeds_on_eapol_test_success(tmp_path, monkeypatch):
     site = _site()
     _write_canary_files(tmp_path, site)
 
+    monkeypatch.setattr(canary.socket, "gethostbyname", lambda h: "192.0.2.1")
     monkeypatch.setattr(
         canary.subprocess, "run",
         lambda cmd, **k: MagicMock(returncode=0, stdout="...\nSUCCESS\n", stderr=""),
@@ -51,6 +53,7 @@ def test_run_probe_fails_on_eapol_test_failure(tmp_path, monkeypatch):
     site = _site()
     _write_canary_files(tmp_path, site)
 
+    monkeypatch.setattr(canary.socket, "gethostbyname", lambda h: "192.0.2.1")
     monkeypatch.setattr(
         canary.subprocess, "run",
         lambda cmd, **k: MagicMock(returncode=1, stdout="FAILURE\n", stderr="TLS handshake failed"),
@@ -68,6 +71,7 @@ def test_run_probe_handles_missing_eapol_test_binary(tmp_path, monkeypatch):
     def _raise(*a, **k):
         raise FileNotFoundError()
 
+    monkeypatch.setattr(canary.socket, "gethostbyname", lambda h: "192.0.2.1")
     monkeypatch.setattr(canary.subprocess, "run", _raise)
 
     result = canary.run_probe(site, tmp_path, secret="s3cret")
@@ -83,11 +87,26 @@ def test_run_probe_handles_timeout(tmp_path, monkeypatch):
     def _raise(*a, **k):
         raise sp.TimeoutExpired(cmd="eapol_test", timeout=15)
 
+    monkeypatch.setattr(canary.socket, "gethostbyname", lambda h: "192.0.2.1")
     monkeypatch.setattr(canary.subprocess, "run", _raise)
 
     result = canary.run_probe(site, tmp_path, secret="s3cret")
     assert result.ok is False
     assert "timed out" in result.detail
+
+
+def test_run_probe_fails_when_hostname_does_not_resolve(tmp_path, monkeypatch):
+    site = _site()
+    _write_canary_files(tmp_path, site)
+
+    def _raise(h):
+        raise socket.gaierror("Name or service not known")
+
+    monkeypatch.setattr(canary.socket, "gethostbyname", _raise)
+
+    result = canary.run_probe(site, tmp_path, secret="s3cret")
+    assert result.ok is False
+    assert "could not resolve" in result.detail
 
 
 def test_record_probe_result_updates_site_and_audits_on_failure(tmp_path):
