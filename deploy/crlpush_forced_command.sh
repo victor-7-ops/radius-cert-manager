@@ -33,8 +33,22 @@ CRL_STAGING="${CERT_DIR}/.crl.pem.staging"
 # pristine chain (no CRL mixed in); CA_FILE is rebuilt as base+CRL on
 # every install so each push fully replaces the previous CRL instead of
 # appending onto itself.
-CA_CHAIN_BASE="${CERT_DIR}/real_ca_chain.pem.base"
-CA_FILE="${CERT_DIR}/real_ca_chain.pem"
+#
+# This same script is deployed identically to every box, but fr1's eap
+# config uses real_ca_chain.pem while fr2's uses ca-chain.pem (the
+# code's own CA_CHAIN_FILENAME default) -- hardcoding one name broke
+# the CRL push on whichever box didn't match (found live, 25 Nov 2026:
+# "cp: cannot stat real_ca_chain.pem" on fr2 right after this script
+# shipped). Autodetect instead of hardcoding so one script works on both.
+if [[ -f "${CERT_DIR}/real_ca_chain.pem" ]]; then
+    CA_FILE="${CERT_DIR}/real_ca_chain.pem"
+elif [[ -f "${CERT_DIR}/ca-chain.pem" ]]; then
+    CA_FILE="${CERT_DIR}/ca-chain.pem"
+else
+    echo "Neither real_ca_chain.pem nor ca-chain.pem exists in ${CERT_DIR} -- cannot determine this box's ca_file." >&2
+    exit 1
+fi
+CA_CHAIN_BASE="${CA_FILE}.base"
 
 case "${SSH_ORIGINAL_COMMAND:-}" in
     scp*)
