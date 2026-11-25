@@ -9,9 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # eapol_test (handoff task O2, synthetic auth canary) -- not packaged by
 # Debian; built from the same hostapd/wpa_supplicant source tree that
 # ships it, same way everyone else gets this binary. Build deps are
-# purged afterward so they don't sit in the final image. NOT YET BUILT OR
-# RUN ON THE LIVE HUB -- verify with `docker exec certmanager eapol_test`
-# after the next rebuild, before relying on the canary timer.
+# purged afterward so they don't sit in the final image. Verified live on
+# the hub 25 Nov 2026 -- `docker exec certmanager eapol_test` prints usage.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libssl-dev libnl-3-dev libnl-genl-3-dev libnl-route-3-dev pkg-config wget ca-certificates \
     && wget -q https://w1.fi/releases/wpa_supplicant-2.10.tar.gz -O /tmp/wpa_supplicant.tar.gz \
