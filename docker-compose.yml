@@ -25,6 +25,28 @@ services:
         limits:
           memory: 512M
           cpus: "0.5"
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: certmanager-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus-alerts.yml:/etc/prometheus/rules/radius-alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"   # localhost only -- no auth on Prometheus's own UI/API
+    networks:
+      - web
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.3"
+
 networks:
   web:
     external: true
+
+volumes:
+  prometheus-data:
