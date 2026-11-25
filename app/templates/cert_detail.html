@@ -18,7 +18,12 @@
 <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
   <div>
     <h1 class="page-title font-mono">{{ cert.cn }}</h1>
-    <div class="mt-2">{{ badge.status_badge(cert.status) }}</div>
+    <div class="mt-2 flex gap-2 items-center">
+      {{ badge.status_badge(cert.status) }}
+      {% if cert.is_canary %}
+      <span class="badge" style="background:#7c3aed;color:#fff" title="Synthetic auth probe identity — see app/canary.py. Not a real employee device.">SYNTHETIC CANARY</span>
+      {% endif %}
+    </div>
   </div>
   <div class="flex gap-2">
     {% if cert.status != "revoked" and can_suspend and not cert.superseded_by_cn %}
@@ -46,7 +51,13 @@
     {% endif %}
     {% if cert.status != "revoked" and can_revoke %}
     <button hx-post="/certs/{{ cert.serial }}/revoke" hx-prompt="Reason for revoking {{ cert.cn }}? (permanent)"
-            hx-confirm="Revoke {{ cert.cn }}? This is permanent." class="btn-danger">
+            {% if cert.is_canary %}
+            hx-vals='{"confirm_canary": "1"}'
+            hx-confirm="{{ cert.cn }} is this site's synthetic auth canary — revoking it stops auth monitoring for the whole site, not just one device. Revoke anyway?"
+            {% else %}
+            hx-confirm="Revoke {{ cert.cn }}? This is permanent."
+            {% endif %}
+            class="btn-danger">
       {{ spin.spinner() }}
       <svg class="w-4 h-4 htmx-hide-on-request" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clip-rule="evenodd"/></svg>
       Revoke

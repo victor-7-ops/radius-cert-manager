@@ -40,6 +40,7 @@ class SiteHealth:
     crl_is_current: bool | None
     server_cert_days_remaining: float | None
     freeradius_ok: bool | None
+    canary_ok: bool | None
     agent_version: str | None
 
 
@@ -86,6 +87,14 @@ def evaluate_site(
         ).total_seconds() / 86400
 
     freeradius_ok = site.last_reported_freeradius_ok
+    # None = never probed yet (no canary cert configured for this site) --
+    # not critical on its own, unlike crl_is_critical's fail-closed
+    # default, since canary coverage is opt-in per site until task O2's
+    # issue_canary_certificate has been run for it. False is the whole
+    # point of this module: a site can look perfectly healthy on every
+    # other signal and still reject every real authentication (the six
+    # incidents this was built to catch).
+    canary_ok = site.last_canary_ok
 
     if missed_intervals is None or missed_intervals > SILENT_MISSED_INTERVALS:
         status = SiteStatus.silent
@@ -96,6 +105,7 @@ def evaluate_site(
             and server_cert_days_remaining <= CRITICAL_CERT_DAYS_REMAINING
         )
         or freeradius_ok is False
+        or canary_ok is False
     ):
         status = SiteStatus.critical
     elif (
@@ -119,6 +129,7 @@ def evaluate_site(
         crl_is_current=crl_freshness.is_current if crl_freshness else None,
         server_cert_days_remaining=server_cert_days_remaining,
         freeradius_ok=freeradius_ok,
+        canary_ok=canary_ok,
         agent_version=site.agent_version,
     )
 

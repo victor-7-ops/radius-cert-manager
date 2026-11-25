@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session, scoped_session
 import datetime
 import urllib.request
 
-from app import auth, cert_service, crl_health, crl_push, db, expiry_alerts, fleet_watch, pki, reconcile, site_auth, site_service
+from app import auth, cert_service, crl_health, crl_push, db, expiry_alerts, fleet_health, fleet_watch, pki, reconcile, site_auth, site_service
 from app.config import Settings, load_settings
 from app.db import init_db, make_engine, make_session_factory
 from app.routes.certs import get_router as get_certs_router
@@ -295,6 +295,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session = request_scoped_db()
         return fleet_watch.check_and_alert(session, _alert)
 
+    def send_daily_digest() -> None:
+        # Deliberately NOT edge-triggered (handoff task O2's "also worth
+        # adding" list) -- fleet_watch only alerts on a status
+        # transition, which is correct for noise but means a site broken
+        # Monday goes silent by Tuesday. One summary a day closes that
+        # gap without reintroducing per-run spam: it always fires,
+        # regardless of whether anything changed.
+        session = request_scoped_db()
+        results = fleet_health.evaluate_fleet(session)
+        not_ok = [h for h in results if h.status != fleet_health.SiteStatus.ok]
+        lines = [f"Daily fleet digest: {len(results)} site(s), {len(not_ok)} not OK."]
+        for h in not_ok:
+            lines.append(f"  {h.name} ({h.radius_cn}): {h.status.value}")
+        _alert("\n".join(lines))
+
     def send_heartbeat() -> None:
         # Deliberately independent of _alert's webhook (handoff §8.2): if
         # the hub itself is down, it can't tell you over its own path —
@@ -504,6 +519,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.regenerate_and_push_crl = regenerate_and_push_crl
     app.state.run_fleet_watch = run_fleet_watch
     app.state.check_expiry_alerts = check_expiry_alerts
+    app.state.send_daily_digest = send_daily_digest
     app.state.send_heartbeat = send_heartbeat
     app.state.settings = settings
     app.state.get_db_session = request_scoped_db

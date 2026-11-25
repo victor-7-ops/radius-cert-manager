@@ -104,6 +104,28 @@ def test_critical_when_site_not_running_latest_crl():
     assert health.crl_is_current is False
 
 
+def test_critical_when_canary_probe_fails():
+    """Task O2: the core gap this closes -- a site can have a fresh CRL,
+    a healthy service, and an OK check-in, and still reject every real
+    authentication. That must not read as OK."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    site = _site(last_seen_at=now, last_canary_ok=False)
+    health = fleet_health.evaluate_site(site, None, _fresh(), now=now)
+    assert health.status == fleet_health.SiteStatus.critical
+    assert health.canary_ok is False
+
+
+def test_ok_when_canary_never_probed():
+    """A site with no canary configured yet (task O2 setup is opt-in per
+    site) must not show critical just because nobody's issued it a
+    canary cert -- that's "not configured", not "failing"."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    site = _site(last_seen_at=now, last_canary_ok=None)
+    health = fleet_health.evaluate_site(site, None, _fresh(), now=now)
+    assert health.status == fleet_health.SiteStatus.ok
+    assert health.canary_ok is None
+
+
 def test_warn_when_cert_inside_renewal_window_but_not_critical():
     now = datetime.datetime.now(datetime.timezone.utc)
     site = _site(last_seen_at=now)

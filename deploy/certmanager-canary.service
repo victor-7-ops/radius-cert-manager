@@ -1,0 +1,14 @@
+[Unit]
+Description=Certmanager synthetic auth canary (handoff task O2)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Deployed hosts run certmanager as a Docker container (docker-compose.yml) —
+# eapol_test must be present in that image (see Dockerfile), not just on
+# the host, since this execs into the running container.
+ExecStart=/usr/bin/docker exec certmanager python -m scripts.canary_probe
+
+[Install]
+WantedBy=multi-user.target

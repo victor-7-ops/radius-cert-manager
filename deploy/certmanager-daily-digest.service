@@ -1,0 +1,11 @@
+[Unit]
+Description=Certmanager daily fleet status digest (handoff task O2)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec certmanager python -m scripts.daily_digest
+
+[Install]
+WantedBy=multi-user.target

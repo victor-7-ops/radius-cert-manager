@@ -1,0 +1,16 @@
+[Unit]
+Description=Run the certmanager synthetic auth canary on a schedule matching fleet_watch
+
+[Timer]
+# Cost: one EAP-TLS handshake per site per run (eapol_test exits in well
+# under a second per site) -- same order of magnitude as a single real
+# device re-authenticating, negligible next to normal AP auth traffic.
+# Same cadence as fleet_watch.timer since canary_probe.py calls
+# run_fleet_watch() itself at the end of every run, so there's no reason
+# for these two to drift apart.
+OnBootSec=3min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

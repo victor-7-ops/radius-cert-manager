@@ -4,6 +4,7 @@ layer (TestClient) since these are thin route wrappers; cert_service
 tests exercise the reissue business logic directly."""
 
 import datetime
+import urllib.parse
 import uuid
 
 import pytest
@@ -857,3 +858,83 @@ def test_issue_warns_on_duplicate_serial_but_not_against_revoked_certs(app_setti
     assert "already on an active certificate" not in resp2.text
     session.expire_all()
     assert session.query(db.Certificate).filter_by(cn="dup-serial-third").one().device_serial == "ASSET-9999"
+
+
+# --- task O2: canary cert revoke-confirm guard + bulk-action skip ---
+
+def _mark_canary(app_settings, cn):
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    cert = session.query(db.Certificate).filter_by(cn=cn).one()
+    cert.is_canary = True
+    session.commit()
+    return cert.serial
+
+
+def test_revoke_canary_cert_without_confirm_is_blocked(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "canary-guard-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={"cn": "canary-guard", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
+    serial = _mark_canary(app_settings, "canary-guard")
+
+    resp = client.post(f"/certs/{serial}/revoke", data={"reason": "cleanup"}, follow_redirects=False)
+    assert resp.status_code == 303
+    assert "flash_kind=warning" in resp.headers["location"]
+
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    assert session.query(db.Certificate).filter_by(cn="canary-guard").one().status == db.CertStatus.active
+
+
+def test_revoke_canary_cert_with_confirm_succeeds(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "canary-confirm-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={"cn": "canary-confirm", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
+    serial = _mark_canary(app_settings, "canary-confirm")
+
+    resp = client.post(f"/certs/{serial}/revoke", data={"reason": "cleanup", "confirm_canary": "1"}, follow_redirects=False)
+    assert resp.status_code == 303
+    assert "flash_kind=danger" in resp.headers["location"]
+
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    assert session.query(db.Certificate).filter_by(cn="canary-confirm").one().status == db.CertStatus.revoked
+
+
+def test_bulk_action_skips_canary_cert_but_processes_others(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "canary-bulk-admin", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    client.post("/certs/issue", data={"cn": "canary-bulk-target", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
+    canary_serial = _mark_canary(app_settings, "canary-bulk-target")
+
+    client.post("/certs/issue", data={"cn": "normal-bulk-target", "request_id": str(uuid.uuid4()), "device_id": create_test_device(app_settings)})
+    session = db.make_session_factory(db.make_engine(str(app_settings.db_path)))()
+    normal_serial = session.query(db.Certificate).filter_by(cn="normal-bulk-target").one().serial
+
+    resp = client.post(
+        "/certs/bulk-action",
+        data={"action": "revoke", "serials": [canary_serial, normal_serial]},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    assert "skipped" in urllib.parse.unquote(resp.headers["location"])
+
+    session.expire_all()
+    assert session.query(db.Certificate).filter_by(cn="canary-bulk-target").one().status == db.CertStatus.active
+    assert session.query(db.Certificate).filter_by(cn="normal-bulk-target").one().status == db.CertStatus.revoked

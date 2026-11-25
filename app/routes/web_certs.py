@@ -949,9 +949,26 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         return RedirectResponse(h.flash(f"/certs/{serial}", f"{cert.cn} unsuspended.", "success"), status_code=303)
 
     @router.post("/certs/{serial}/revoke")
-    def revoke(request: Request, serial: str, reason: str = "", admin: db.Admin = Depends(deps.require_super_admin)):
+    def revoke(
+        request: Request, serial: str, reason: str = "", confirm_canary: str = Form(""),
+        admin: db.Admin = Depends(deps.require_super_admin),
+    ):
         session = deps.get_db_session()
-        _load_cert_or_404_in_scope(session, admin, serial)
+        cert = _load_cert_or_404_in_scope(session, admin, serial)
+        if cert.is_canary and not confirm_canary:
+            # task O2: "marked in the UI so nobody revokes it by accident
+            # during a cleanup" -- this is that guard. cert_list.html's
+            # revoke button sends confirm_canary=1 only after its own
+            # extra JS confirm() for an is_canary row.
+            return RedirectResponse(
+                h.flash(
+                    f"/certs/{serial}",
+                    f"{cert.cn} is the synthetic auth canary for this site — revoking it stops auth monitoring, "
+                    "not just one device. Confirm again to proceed.",
+                    "warning",
+                ),
+                status_code=303,
+            )
         try:
             cert = cert_service.revoke(session, deps.pki_path, serial, reason or "not specified", admin.username)
         except KeyError:
@@ -1004,6 +1021,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         fn = cert_service.suspend if bulk_action == "suspend" else cert_service.revoke
         done = 0
         missing = 0
+        skipped_canary = 0
         for serial in dict.fromkeys(serials):  # de-dupe, preserve order
             cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == serial))
             if cert is None:
@@ -1014,6 +1032,14 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             # this only fires against a hand-crafted request.
             if admin.subsidiary_scope and cert.subsidiary != admin.subsidiary_scope:
                 missing += 1
+                continue
+            if cert.is_canary:
+                # task O2: "marked ... so nobody revokes it by accident
+                # during a cleanup" -- a bulk sweep is exactly that
+                # scenario, so this is a silent skip, not a 400. Single-
+                # cert revoke still allows it, behind the confirm_canary
+                # guard above.
+                skipped_canary += 1
                 continue
             try:
                 fn(session, deps.pki_path, serial, reason or "bulk action", admin.username)
@@ -1028,6 +1054,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         msg = f"{done} certificate{'s' if done != 1 else ''} {verb}."
         if missing:
             msg += f" {missing} not found."
+        if skipped_canary:
+            msg += f" {skipped_canary} synthetic auth canary cert{'s' if skipped_canary != 1 else ''} skipped — revoke individually if you really mean to."
         dest = request.headers.get("referer", "/certs")
         return RedirectResponse(h.flash(dest, msg, kind), status_code=303)
 

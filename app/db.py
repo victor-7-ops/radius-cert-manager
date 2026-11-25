@@ -136,6 +136,13 @@ class Certificate(Base):
     # Excluded from client cert lists/counts/bulk ops by default; see
     # HANDOFF-FLEET.md §3.1.
 
+    is_canary: Mapped[bool] = mapped_column(default=False, index=True)
+    # Synthetic auth probe identity (app/canary.py, handoff task O2).
+    # Still cert_type="client" -- it's issued through the same signing
+    # path as a real device so it carries a real OU=network_role_id --
+    # but must never get swept up in a bulk/offboarding revoke, hence
+    # its own flag rather than relying on employee_name alone.
+
     site_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     # Set for cert_type="server" — which site's RADIUS box this cert
     # belongs to. No FK constraint (SQLite + this project's hand-rolled
@@ -560,6 +567,20 @@ class Site(Base):
     # getting it immediately after regeneration.
     crl_push_host: Mapped[str | None] = mapped_column(String, nullable=True)
 
+    # Synthetic auth canary (app/canary.py, handoff task O2). Mirrors the
+    # server_cert_id FK pattern above -- canary_cert_id is None until an
+    # admin runs scripts/issue_canary_cert.py for this site, at which
+    # point scripts/canary_probe.py's systemd timer starts probing it.
+    # last_canary_ok is the RAW observed result (None = never probed, not
+    # "critical"); fleet_health.evaluate_site folds it into SiteStatus,
+    # and fleet_watch's existing last_alerted_status edge-trigger (above)
+    # covers alerting a canary failure without any new dedup logic.
+    canary_cert_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_canary_ok: Mapped[bool | None] = mapped_column(nullable=True)
+    last_canary_checked_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
 
 class AccessPoint(Base):
     """A NAS/AP client entry for one site's clients.conf (handoff task M,
@@ -673,6 +694,7 @@ _CERTIFICATE_COLUMN_MIGRATIONS = [
     ("identity_schema_version", "INTEGER DEFAULT 1"),
     ("issuance_policy_snapshot", "TEXT"),
     ("request_fingerprint", "VARCHAR"),
+    ("is_canary", "BOOLEAN DEFAULT 0"),
 ]
 
 DEVICE_TYPES = ["Laptop", "Phone", "Tablet", "Desktop", "Other"]
@@ -743,6 +765,9 @@ _SITE_COLUMN_MIGRATIONS = [
     ("vlan_segmentation_enabled", "BOOLEAN DEFAULT 1"),
     ("wifi_ssid", "VARCHAR"),
     ("crl_push_host", "VARCHAR"),
+    ("canary_cert_id", "VARCHAR"),
+    ("last_canary_ok", "BOOLEAN"),
+    ("last_canary_checked_at", "DATETIME"),
 ]
 
 _AUDIT_LOG_COLUMN_MIGRATIONS = [
