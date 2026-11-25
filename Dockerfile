@@ -14,14 +14,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # after the next rebuild, before relying on the canary timer.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libssl-dev libnl-3-dev libnl-genl-3-dev pkg-config wget ca-certificates \
-    && wget -q https://w1.fi/releases/hostapd-2.10.tar.gz -O /tmp/hostapd.tar.gz \
-    && tar -xzf /tmp/hostapd.tar.gz -C /tmp \
-    && cd /tmp/hostapd-2.10/wpa_supplicant \
+    && wget -q https://w1.fi/releases/wpa_supplicant-2.10.tar.gz -O /tmp/wpa_supplicant.tar.gz \
+    && tar -xzf /tmp/wpa_supplicant.tar.gz -C /tmp \
+    && cd /tmp/wpa_supplicant-2.10/wpa_supplicant \
     && cp defconfig .config \
     && echo "CONFIG_EAP_TLS=y" >> .config \
     && make eapol_test \
     && cp eapol_test /usr/local/bin/eapol_test \
-    && cd / && rm -rf /tmp/hostapd.tar.gz /tmp/hostapd-2.10 \
+    && cd / && rm -rf /tmp/wpa_supplicant.tar.gz /tmp/wpa_supplicant-2.10 \
     && apt-get purge -y build-essential wget && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
