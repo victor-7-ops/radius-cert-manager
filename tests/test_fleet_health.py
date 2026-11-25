@@ -139,6 +139,30 @@ def test_warn_when_cert_inside_renewal_window_but_not_critical():
     assert health.status == fleet_health.SiteStatus.warn
 
 
+def test_warn_when_agent_version_behind_hub():
+    now = datetime.datetime.now(datetime.timezone.utc)
+    site = _site(last_seen_at=now, agent_version="0.9.0")
+    health = fleet_health.evaluate_site(site, None, _fresh(), now=now)
+    assert health.status == fleet_health.SiteStatus.warn
+    assert health.agent_behind is True
+
+
+def test_ok_when_agent_version_matches_hub():
+    now = datetime.datetime.now(datetime.timezone.utc)
+    site = _site(last_seen_at=now, agent_version=fleet_health.CURRENT_AGENT_VERSION)
+    health = fleet_health.evaluate_site(site, None, _fresh(), now=now)
+    assert health.status == fleet_health.SiteStatus.ok
+    assert health.agent_behind is False
+
+
+def test_agent_behind_none_when_never_reported():
+    now = datetime.datetime.now(datetime.timezone.utc)
+    site = _site(last_seen_at=now, agent_version=None)
+    health = fleet_health.evaluate_site(site, None, _fresh(), now=now)
+    assert health.status == fleet_health.SiteStatus.ok
+    assert health.agent_behind is False
+
+
 def test_warn_on_one_missed_checkin():
     now = datetime.datetime.now(datetime.timezone.utc)
     site = _site(

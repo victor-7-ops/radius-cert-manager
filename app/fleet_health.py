@@ -19,6 +19,16 @@ CRITICAL_CERT_DAYS_REMAINING = 14
 SILENT_MISSED_INTERVALS = 3
 WARN_MISSED_INTERVALS = 1
 
+# Hub's own idea of "current" -- must be bumped by hand alongside
+# deploy/agent/site_agent.py's AGENT_VERSION. Task P2's whole point is a
+# box silently running stale code because nobody remembered to re-copy
+# it; this constant has the exact same failure mode one level up (forget
+# to bump this and every box looks "current" after a real bump). Kept
+# anyway because the alternative -- the hub fetching version info from
+# git at runtime -- is more moving parts than a 19-site fleet justifies
+# today.
+CURRENT_AGENT_VERSION = "1.0.0"
+
 
 class SiteStatus(str, enum.Enum):
     ok = "OK"
@@ -43,6 +53,7 @@ class SiteHealth:
     canary_ok: bool | None
     revoked_canary_ok: bool | None
     agent_version: str | None
+    agent_behind: bool | None
 
 
 def _aware(dt: datetime.datetime | None) -> datetime.datetime | None:
@@ -102,6 +113,10 @@ def evaluate_site(
     # 2026). Same None-is-not-critical opt-in semantics as canary_ok.
     revoked_canary_ok = site.last_revoked_canary_ok
 
+    agent_behind = (
+        site.agent_version is not None and site.agent_version != CURRENT_AGENT_VERSION
+    )
+
     if missed_intervals is None or missed_intervals > SILENT_MISSED_INTERVALS:
         status = SiteStatus.silent
     elif (
@@ -119,6 +134,7 @@ def evaluate_site(
         (crl_hours_remaining is not None and crl_hours_remaining <= site.crl_validity_days * 24 / 2)
         or (server_cert is not None and cert_service.renewal_due(server_cert, now))
         or missed_intervals > WARN_MISSED_INTERVALS
+        or agent_behind
     ):
         status = SiteStatus.warn
     else:
@@ -139,6 +155,7 @@ def evaluate_site(
         canary_ok=canary_ok,
         revoked_canary_ok=revoked_canary_ok,
         agent_version=site.agent_version,
+        agent_behind=agent_behind,
     )
 
 

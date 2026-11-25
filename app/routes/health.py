@@ -41,6 +41,7 @@ def get_router(deps) -> APIRouter:
                 "server_cert_days_remaining": h.server_cert_days_remaining,
                 "freeradius_ok": h.freeradius_ok,
                 "agent_version": h.agent_version,
+                "agent_behind": h.agent_behind,
             }
             for h in results
         ]

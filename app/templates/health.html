@@ -144,7 +144,7 @@
           <td class="py-1.5 pr-4 text-slate-700 dark:text-slate-300">{{ "%.1f h"|format(h.crl_hours_remaining) if h.crl_hours_remaining is not none else "—" }}</td>
           <td class="py-1.5 pr-4 text-slate-700 dark:text-slate-300">{{ "%.0f d"|format(h.server_cert_days_remaining) if h.server_cert_days_remaining is not none else "—" }}</td>
           <td class="py-1.5 pr-4 {{ 'text-red-600 dark:text-red-400' if h.freeradius_ok is false else 'text-slate-700 dark:text-slate-300' }}">{{ "down" if h.freeradius_ok is false else ("up" if h.freeradius_ok else "—") }}</td>
-          <td class="py-1.5 text-slate-500 dark:text-slate-400">{{ h.agent_version or "—" }}</td>
+          <td class="py-1.5 {{ 'text-amber-600 dark:text-amber-400' if h.agent_behind else 'text-slate-500 dark:text-slate-400' }}">{{ h.agent_version or "—" }}{{ " (behind)" if h.agent_behind else "" }}</td>
         </tr>
         {% endfor %}
       </tbody>

@@ -307,7 +307,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         not_ok = [h for h in results if h.status != fleet_health.SiteStatus.ok]
         lines = [f"Daily fleet digest: {len(results)} site(s), {len(not_ok)} not OK."]
         for h in not_ok:
-            lines.append(f"  {h.name} ({h.radius_cn}): {h.status.value}")
+            suffix = f" [agent {h.agent_version} behind]" if h.agent_behind else ""
+            lines.append(f"  {h.name} ({h.radius_cn}): {h.status.value}{suffix}")
         _alert("\n".join(lines))
 
     def send_heartbeat() -> None:
