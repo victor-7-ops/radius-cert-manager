@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && cp defconfig .config \
     && sed -i '/CONFIG_CTRL_IFACE_DBUS/d' .config \
     && echo "CONFIG_EAP_TLS=y" >> .config \
+    && echo "CONFIG_DRIVER_WIRED=y" >> .config \
     && make eapol_test \
     && cp eapol_test /usr/local/bin/eapol_test \
     && cd / && rm -rf /tmp/wpa_supplicant.tar.gz /tmp/wpa_supplicant-2.10 \
