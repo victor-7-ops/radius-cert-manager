@@ -93,7 +93,13 @@ TOPLINE_DEPARTMENTS: list[dict[str, str]] = [
     # silent mis-assignment of the CEO (should be Top Management ->
     # Finance), and "Properties" is a subsidiary, not a department --
     # Topline Properties has 14 real staff who would have picked it.
-    {"code": "topline_consultant", "display_name": "Consultant"},
+    {
+        "code": "topline_consultant", "display_name": "Consultant",
+        "description": (
+            "Contractors. Shorten validity by hand and record a sponsor "
+            "until default_cert_days and sponsor tracking exist (R3, 26 Nov 2026)."
+        ),
+    },
 ]
 
 TOPLINE_NETWORK_ROLES: list[dict[str, str]] = [
@@ -250,11 +256,21 @@ def seed_topline_network_roles(engine) -> dict[str, list[str]]:
             if item["code"] not in existing_dept_codes:
                 dept = db.Department(
                     subsidiary_id=sub.id, code=item["code"], display_name=item["display_name"],
+                    description=item.get("description"),
                 )
                 session.add(dept)
                 session.flush()
                 dept_by_code[item["code"]] = dept
                 inserted["departments"].append(item["code"])
+            elif item.get("description") and not dept_by_code[item["code"]].description:
+                # Backfill only (R3, 26 Nov 2026) -- this seed's own
+                # run_once gate already fired on the hub before
+                # "description" existed, so a department seeded before
+                # today would otherwise carry this constraint nowhere but
+                # this file. Only fills a blank; never overwrites a
+                # description an admin set by hand later.
+                dept_by_code[item["code"]].description = item["description"]
+                inserted["departments"].append(f"{item['code']} (description backfilled)")
 
         existing_role_codes = set(
             session.scalars(

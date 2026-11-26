@@ -217,6 +217,7 @@ class Department(Base):
     )
     code: Mapped[str] = mapped_column(String, index=True)
     display_name: Mapped[str] = mapped_column(String)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(default=True, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=_now
@@ -819,6 +820,10 @@ _NETWORK_ROLE_COLUMN_MIGRATIONS = [
     ("is_default_fallback", "BOOLEAN DEFAULT 0"),
 ]
 
+_DEPARTMENT_COLUMN_MIGRATIONS = [
+    ("description", "VARCHAR"),
+]
+
 
 def _migrate_columns(engine, table: str, migrations: list[tuple[str, str]]) -> None:
     with engine.begin() as conn:
@@ -839,6 +844,7 @@ def init_db(engine) -> None:
     _migrate_columns(engine, "crl_state", _CRL_STATE_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "employees", _EMPLOYEE_COLUMN_MIGRATIONS)
     _migrate_columns(engine, "network_roles", _NETWORK_ROLE_COLUMN_MIGRATIONS)
+    _migrate_columns(engine, "departments", _DEPARTMENT_COLUMN_MIGRATIONS)
     run_once(engine, "audit_log_subsidiary_backfill", lambda: backfill_audit_log_subsidiary(engine))
     run_once(engine, "certificate_employee_key_backfill", lambda: backfill_employee_key(engine))
     from app.network_migrations import run_network_migrations

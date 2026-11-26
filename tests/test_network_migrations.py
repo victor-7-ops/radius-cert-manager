@@ -308,6 +308,70 @@ def test_topline_network_roles_seeded_idempotently(tmp_path):
         assert session.query(db.DepartmentRole).count() == link_count_before
 
 
+def test_topline_consultant_has_contractor_constraint_description(tmp_path):
+    """R3, 26 Nov 2026: topline_consultant is the only department mapped to
+    topline_external (VLAN 90), the contractor role, and the real
+    sponsor/cert-validity controls don't exist yet. The constraint must be
+    visible at issuance time, not just in a handoff doc."""
+    db_file = tmp_path / "test_consultant_description.db"
+    engine = db.make_engine(str(db_file))
+    db.init_db(engine)
+
+    with Session(engine) as session:
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+        consultant = session.scalar(
+            select(db.Department).where(
+                db.Department.subsidiary_id == sub.id, db.Department.code == "topline_consultant",
+            )
+        )
+        assert consultant is not None
+        assert consultant.description
+        assert "sponsor" in consultant.description.lower()
+
+
+def test_department_description_backfills_on_rerun_without_overwriting(tmp_path):
+    """The run_once gate around seed_topline_network_roles already fired on
+    the live hub before "description" existed -- calling the seed function
+    directly (bypassing run_once, same as a one-off hub fix) must fill a
+    blank description without touching one an admin set by hand."""
+    db_file = tmp_path / "test_description_backfill.db"
+    engine = db.make_engine(str(db_file))
+    db.init_db(engine)
+
+    with Session(engine) as session:
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+        consultant = session.scalar(
+            select(db.Department).where(
+                db.Department.subsidiary_id == sub.id, db.Department.code == "topline_consultant",
+            )
+        )
+        consultant.description = None  # simulate a pre-R3 row, seeded before this column existed
+        other = session.scalar(
+            select(db.Department).where(
+                db.Department.subsidiary_id == sub.id, db.Department.code == "topline_cft",
+            )
+        )
+        other.description = "admin wrote this by hand"
+        session.commit()
+
+    seed_topline_network_roles(engine)
+
+    with Session(engine) as session:
+        sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == "topline"))
+        consultant = session.scalar(
+            select(db.Department).where(
+                db.Department.subsidiary_id == sub.id, db.Department.code == "topline_consultant",
+            )
+        )
+        other = session.scalar(
+            select(db.Department).where(
+                db.Department.subsidiary_id == sub.id, db.Department.code == "topline_cft",
+            )
+        )
+        assert consultant.description  # backfilled
+        assert other.description == "admin wrote this by hand"  # untouched
+
+
 def test_topline_network_roles_seed_leaves_existing_placeholder_data_alone(tmp_path):
     """handoff task K, 20 Nov 2026: the seed must never touch a
     pre-existing department/role that already has real data on it --
