@@ -79,6 +79,15 @@ def main() -> int:
     label = "revoked canary" if revoked else "canary"
     print(f"issued {label} cert serial={cert.serial} cn={cert.cn}")
     print(f"key+cert written to {dir_fn(settings.pki_path, site)}")
+
+    if revoked:
+        # issue_revoked_canary_certificate revokes straight in cert_service,
+        # which (unlike every web revoke path) does not itself trigger a
+        # regen+push -- found live 26 Nov 2026 when a freshly-revoked canary
+        # authenticated on fr2 because its CRL had never been updated.
+        print("regenerating and pushing CRL so this revocation actually takes effect...")
+        app.state.regenerate_and_push_crl(background=False)
+
     print()
     print("REMAINING ONE-TIME STEP (not automated by this script):")
     print(f"  Add an AccessPoint row named {canary.HUB_CANARY_AP_NAME!r} for this site,")
