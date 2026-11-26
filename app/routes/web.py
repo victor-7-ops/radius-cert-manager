@@ -228,6 +228,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             "health.html",
             {
                 "admin": admin,
+                "git_sha": deps.git_sha,
                 "crl": crl,
                 "retention": {
                     "cert_retention_days": deps.settings.cert_retention_days,

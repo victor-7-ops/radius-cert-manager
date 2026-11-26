@@ -31,6 +31,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Baked at build time so the running container can report what code it
+# actually has, not what the deploy script meant to ship it. Defaults to
+# "unknown" so a build command that forgot --build-arg is visibly
+# unlabelled instead of silently reporting nothing.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
+
 RUN useradd --system --home /app --shell /usr/sbin/nologin certmgr
 USER certmgr
 

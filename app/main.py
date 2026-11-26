@@ -10,6 +10,7 @@ import contextvars
 import hashlib
 import json
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -97,6 +98,7 @@ class RouteDeps:
     take_pending_batch: callable
     peek_pending_batch: callable
     settings: Settings
+    git_sha: str
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -104,6 +106,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     from app.logging_conf import setup_logging
     setup_logging(log_format=getattr(settings, "log_format", "text"))
+
+    # P2 built version telemetry for the site agents only -- the hub itself
+    # had none, and it's the component that has gone stale the most (Q4,
+    # 26 Nov 2026: a rebuild was skipped and 124 employees got NULL
+    # legal_entity before anyone noticed). GIT_SHA is baked into the image
+    # at build time (Dockerfile ARG); "unknown" means a build that forgot
+    # --build-arg GIT_SHA, which is exactly the failure this exists to catch.
+    git_sha = os.environ.get("GIT_SHA", "unknown")
+    if git_sha == "unknown":
+        logger.warning("GIT_SHA is unknown -- this image was built without --build-arg GIT_SHA=<sha>")
+    else:
+        logger.info("starting certmanager, GIT_SHA=%s", git_sha)
 
     engine = make_engine(str(settings.db_path))
     session_factory = make_session_factory(engine)
@@ -305,7 +319,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session = request_scoped_db()
         results = fleet_health.evaluate_fleet(session)
         not_ok = [h for h in results if h.status != fleet_health.SiteStatus.ok]
-        lines = [f"Daily fleet digest: {len(results)} site(s), {len(not_ok)} not OK."]
+        sha_note = " [hub build unknown]" if git_sha == "unknown" else ""
+        lines = [f"Daily fleet digest: {len(results)} site(s), {len(not_ok)} not OK.{sha_note}"]
         for h in not_ok:
             suffix = f" [agent {h.agent_version} behind]" if h.agent_behind else ""
             lines.append(f"  {h.name} ({h.radius_cn}): {h.status.value}{suffix}")
@@ -424,6 +439,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         take_pending_batch=take_pending_batch,
         peek_pending_batch=peek_pending_batch,
         settings=settings,
+        git_sha=git_sha,
     )
 
     templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -524,6 +540,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.send_heartbeat = send_heartbeat
     app.state.settings = settings
     app.state.get_db_session = request_scoped_db
+    app.state.git_sha = git_sha
 
     from fastapi import HTTPException
     from fastapi.responses import RedirectResponse

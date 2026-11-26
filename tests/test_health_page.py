@@ -66,6 +66,51 @@ def test_health_page_shows_cert_counts_and_storage(app_settings, throwaway_pki, 
     assert "Active sessions" in resp.text
 
 
+def test_health_page_flags_unknown_git_sha(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.delenv("GIT_SHA", raising=False)
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    super_admin = _seed_admin(app_settings, "health-super-sha-unknown", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    login_as(client, app_settings, super_admin)
+
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert "unknown build" in resp.text
+
+
+def test_health_page_shows_git_sha_when_set(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setenv("GIT_SHA", "abc1234def5678")
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    super_admin = _seed_admin(app_settings, "health-super-sha-known", db.AdminRole.super_admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    login_as(client, app_settings, super_admin)
+
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert "abc1234def56" in resp.text
+
+
+def test_api_health_returns_git_sha(app_settings, throwaway_pki, monkeypatch):
+    monkeypatch.setenv("GIT_SHA", "deadbeef0000")
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "health-api-admin", db.AdminRole.admin)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    login_as(client, app_settings, admin)
+
+    resp = client.get("/api/health")
+    assert resp.status_code == 200
+    assert resp.json()["git_sha"] == "deadbeef0000"
+
+
 def test_health_page_flags_ca_expiry_and_orphans(app_settings, throwaway_pki, monkeypatch):
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
     _write_throwaway_pki(app_settings, throwaway_pki)

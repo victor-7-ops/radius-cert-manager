@@ -1,6 +1,13 @@
 services:
   certmanager:
-    build: .
+    build:
+      context: .
+      args:
+        # Set by the caller: GIT_SHA=$(git rev-parse HEAD) docker compose build
+        # Defaults to "unknown" so a plain `docker compose build` (sha not
+        # exported) builds an image that visibly says so at /health, instead
+        # of looking current while running stale code (R1, 26 Nov 2026).
+        GIT_SHA: ${GIT_SHA:-unknown}
     container_name: certmanager
     extra_hosts:
       - "topline-freeradius1:192.168.13.54"

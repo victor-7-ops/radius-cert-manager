@@ -3,7 +3,12 @@
 {% block content %}
 <div class="page-header">
   <h1 class="page-title">System health</h1>
-  <p class="page-subtitle">Operational status at a glance — Super Admin only.</p>
+  <p class="page-subtitle">
+    Operational status at a glance — Super Admin only.
+    <span class="{{ 'text-amber-600 dark:text-amber-400' if git_sha == 'unknown' else 'text-slate-400 dark:text-slate-500' }}">
+      — hub running {{ git_sha[:12] if git_sha != "unknown" else "unknown build (missing GIT_SHA)" }}
+    </span>
+  </p>
 </div>
 
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

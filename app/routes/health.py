@@ -8,6 +8,10 @@ from app import crl_health, db, fleet_health
 def get_router(deps) -> APIRouter:
     router = APIRouter(prefix="/api/health", tags=["health"])
 
+    @router.get("")
+    def hub_version(admin: db.Admin = Depends(deps.require_admin)):
+        return {"git_sha": deps.git_sha}
+
     @router.get("/crl")
     def crl_status(admin: db.Admin = Depends(deps.require_admin)):
         session = deps.get_db_session()
