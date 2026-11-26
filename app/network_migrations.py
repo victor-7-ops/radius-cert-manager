@@ -78,14 +78,21 @@ TOPLINE_SUBSIDIARY_CODE = "topline"
 
 TOPLINE_DEPARTMENTS: list[dict[str, str]] = [
     {"code": "topline_admin", "display_name": "Admin"},
-    {"code": "topline_head", "display_name": "Head"},
-    {"code": "topline_properties", "display_name": "Properties"},
     {"code": "topline_hr", "display_name": "HR"},
     {"code": "topline_cft", "display_name": "CFT"},
     {"code": "topline_accounting", "display_name": "Accounting"},
     {"code": "topline_treasury", "display_name": "Treasury"},
     {"code": "topline_marketing", "display_name": "Marketing"},
     {"code": "topline_it_dept", "display_name": "IT"},
+    # topline_consultant is kept with nobody in it on purpose (Q2, 26 Nov
+    # 2026): it's the only department mapped to topline_external (VLAN
+    # 90), and contractors -- not on any payroll list, least likely to be
+    # offboarded on time -- are exactly the population that role exists
+    # for. topline_head and topline_properties were removed here (see
+    # HANDOFF-SESSION-2026-11-26-FINAL.md's Q2 entry): "Head" invites a
+    # silent mis-assignment of the CEO (should be Top Management ->
+    # Finance), and "Properties" is a subsidiary, not a department --
+    # Topline Properties has 14 real staff who would have picked it.
     {"code": "topline_consultant", "display_name": "Consultant"},
 ]
 
@@ -100,8 +107,6 @@ TOPLINE_NETWORK_ROLES: list[dict[str, str]] = [
 # department code -> role code
 TOPLINE_DEPARTMENT_ROLE_MAP: dict[str, str] = {
     "topline_admin": "topline_standard",
-    "topline_head": "topline_standard",
-    "topline_properties": "topline_standard",
     "topline_hr": "topline_standard",
     "topline_cft": "topline_standard",
     "topline_accounting": "topline_finance",
@@ -112,10 +117,10 @@ TOPLINE_DEPARTMENT_ROLE_MAP: dict[str, str] = {
 }
 
 # Real 124-person main-office org chart (deploy/TENANT-AND-VLAN-PLAN.md,
-# 25 Nov 2026), superseding the wrong ten-department list above. Additive
-# only -- the original TOPLINE_DEPARTMENTS above stay (0 certs/0 employees
-# attached when checked live on the hub, confirmed harmless to leave) and
-# this list adds the real departments that were missing, under distinct
+# 25 Nov 2026), superseding the wrong ten-department list above (now
+# seven real + topline_consultant, after Q2's removal of the two
+# phantom entries, 26 Nov 2026). Additive only -- this list adds the
+# real departments that were missing, under distinct
 # codes that don't collide with "it"/"ops" (pre-existing live departments
 # with real certs attached) or with the topline_* placeholders already
 # seeded. Reuses the five existing TOPLINE_NETWORK_ROLES -- the plan's
