@@ -39,6 +39,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         department_id: str | None = None,
         q: str | None = None,
         status: str | None = None,
+        legal_entity: str | None = None,
         limit: int = Query(50, ge=1, le=200),
         offset: int = Query(0, ge=0),
         admin: db.Admin = Depends(deps.require_admin),
@@ -67,6 +68,11 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             dept_stmt = dept_stmt.where(db.Department.subsidiary_id == eff_sub_id)
         departments = session.scalars(dept_stmt.order_by(db.Department.display_name.asc())).all()
 
+        legal_entity_stmt = select(db.Employee.legal_entity).where(db.Employee.legal_entity.is_not(None)).distinct()
+        if eff_sub_id:
+            legal_entity_stmt = legal_entity_stmt.where(db.Employee.subsidiary_id == eff_sub_id)
+        legal_entities = sorted(session.scalars(legal_entity_stmt).all())
+
         employees, total = employee_service.list_employees(
             actor=admin,
             session=session,
@@ -74,6 +80,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
             department_id=department_id,
             search=q,
             status_filter=status,
+            legal_entity=legal_entity,
             limit=limit,
             offset=offset,
         )
@@ -94,6 +101,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 "selected_subsidiary_id": eff_sub_id,
                 "selected_department_id": department_id,
                 "selected_status": status,
+                "legal_entities": legal_entities,
+                "selected_legal_entity": legal_entity,
                 "search_query": q,
                 "employees": employees,
                 "total": total,
@@ -136,6 +145,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         subsidiary_id: str = Form(...),
         department_id: str = Form(...),
         employee_number: str | None = Form(None),
+        legal_entity: str | None = Form(None),
         admin: db.Admin = Depends(deps.require_write),
     ):
         session: Session = deps.get_db_session()
@@ -147,6 +157,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 department_id=department_id,
                 employee_number=employee_number,
                 session=session,
+                legal_entity=legal_entity,
             )
             session.commit()
             return RedirectResponse(

@@ -28,12 +28,14 @@ class CreateEmployeeRequest(BaseModel):
     display_name: str
     department_id: str
     employee_number: str | None = None
+    legal_entity: str | None = None
 
 
 class UpdateEmployeeRequest(BaseModel):
     display_name: str | None = None
     department_id: str | None = None
     employee_number: str | None = None
+    legal_entity: str | None = None
 
 
 class RegisterDeviceRequest(BaseModel):
@@ -93,6 +95,7 @@ def get_router(deps) -> APIRouter:
         department_id: str | None = None,
         search: str | None = None,
         status_filter: str | None = None,
+        legal_entity: str | None = None,
         limit: int = Query(50, ge=1, le=200),
         offset: int = Query(0, ge=0),
         admin: db.Admin = Depends(deps.require_admin),
@@ -106,6 +109,7 @@ def get_router(deps) -> APIRouter:
                 department_id=department_id,
                 search=search,
                 status_filter=status_filter,
+                legal_entity=legal_entity,
                 limit=limit,
                 offset=offset,
             )
@@ -132,6 +136,7 @@ def get_router(deps) -> APIRouter:
                 department_id=payload.department_id,
                 employee_number=payload.employee_number,
                 session=session,
+                legal_entity=payload.legal_entity,
             )
             session.commit()
             return {
@@ -140,6 +145,7 @@ def get_router(deps) -> APIRouter:
                 "display_name": emp.display_name,
                 "department_id": emp.department_id,
                 "employee_number": emp.employee_number,
+                "legal_entity": emp.legal_entity,
                 "status": emp.status,
             }
         except Exception as e:
@@ -164,6 +170,7 @@ def get_router(deps) -> APIRouter:
                 "department_id": emp.department_id,
                 "department_name": dept.display_name if dept else "",
                 "employee_number": emp.employee_number,
+                "legal_entity": emp.legal_entity,
                 "status": emp.status,
                 "created_at": emp.created_at.isoformat() if emp.created_at else None,
                 "updated_at": emp.updated_at.isoformat() if emp.updated_at else None,
@@ -187,6 +194,8 @@ def get_router(deps) -> APIRouter:
                 department_id=payload.department_id,
                 employee_number=payload.employee_number,
                 session=session,
+                legal_entity=payload.legal_entity,
+                legal_entity_set="legal_entity" in payload.model_fields_set,
             )
             session.commit()
             return {
@@ -194,6 +203,7 @@ def get_router(deps) -> APIRouter:
                 "display_name": emp.display_name,
                 "department_id": emp.department_id,
                 "employee_number": emp.employee_number,
+                "legal_entity": emp.legal_entity,
                 "status": emp.status,
             }
         except Exception as e:

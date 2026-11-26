@@ -534,6 +534,39 @@ def test_same_name_employees_across_subsidiaries_remain_separate(test_db_session
     assert emp_a.id not in emp_b_ids
 
 
+def test_list_employees_filters_by_legal_entity(test_db_session: Session, baseline_setup: dict):
+    session = test_db_session
+    setup = baseline_setup
+
+    emp_a = employee_service.create_employee(
+        actor=setup["admin_plat"],
+        subsidiary_id=setup["sub_a"].id,
+        display_name="Light Fuels Guy",
+        department_id=setup["dept_a"].id,
+        employee_number="LE-001",
+        session=session,
+        legal_entity="Light Fuels",
+    )
+    emp_b = employee_service.create_employee(
+        actor=setup["admin_plat"],
+        subsidiary_id=setup["sub_a"].id,
+        display_name="Topline Business Guy",
+        department_id=setup["dept_a"].id,
+        employee_number="LE-002",
+        session=session,
+        legal_entity="Topline Business",
+    )
+    session.commit()
+
+    results, total = employee_service.list_employees(
+        actor=setup["admin_plat"], session=session, legal_entity="Light Fuels",
+    )
+    ids = [e["id"] for e in results]
+    assert emp_a.id in ids
+    assert emp_b.id not in ids
+    assert total == 1
+
+
 def test_tenant_scoping_and_cross_tenant_denials(test_db_session: Session, baseline_setup: dict):
     """B12 requirement: Tenant filtering and mutation denial on foreign resources."""
     session = test_db_session

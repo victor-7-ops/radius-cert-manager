@@ -43,6 +43,7 @@ class EmployeeInputRow:
     department_code: str
     display_name: str
     employee_number: str | None = None
+    legal_entity: str | None = None
 
 
 @dataclass
@@ -98,6 +99,11 @@ _EMPLOYEE_HEADER_ALIASES = {
     "department_code": {"department_code", "department", "dept", "dept code"},
     "display_name": {"display_name", "name", "employee_name", "employee name", "full name"},
     "employee_number": {"employee_number", "employee number", "employee #", "emp number", "id"},
+    # "company" is deliberately excluded here -- subsidiary_code already
+    # claims it, and _match_header returns the first dict match, so it
+    # would always resolve to subsidiary_code and silently never hit
+    # legal_entity.
+    "legal_entity": {"legal_entity", "legal entity", "employer", "entity"},
 }
 
 _DEVICE_HEADER_ALIASES = {
@@ -146,8 +152,8 @@ def parse_employee_csv(data: bytes) -> list[EmployeeInputRow]:
                 if field_name:
                     values[field_name] = cell.strip()
         else:
-            # Positional fallback: subsidiary_code, department_code, display_name, employee_number
-            keys = ["subsidiary_code", "department_code", "display_name", "employee_number"]
+            # Positional fallback: subsidiary_code, department_code, display_name, employee_number, legal_entity
+            keys = ["subsidiary_code", "department_code", "display_name", "employee_number", "legal_entity"]
             for i, cell in enumerate(raw):
                 if i < len(keys):
                     values[keys[i]] = cell.strip()
@@ -156,6 +162,7 @@ def parse_employee_csv(data: bytes) -> list[EmployeeInputRow]:
             department_code=values.get("department_code", ""),
             display_name=values.get("display_name", ""),
             employee_number=values.get("employee_number") or None,
+            legal_entity=values.get("legal_entity") or None,
         ))
     return out
 
@@ -256,6 +263,7 @@ def confirm_employees(actor: db.Admin, session: Session, rows: list[EmployeeInpu
                 raise network_policy.PolicyValidationError(f"unknown department_code '{r.department_code}'")
             emp = employee_service.create_employee(
                 actor, sub.id, r.display_name, dept.id, r.employee_number, session,
+                legal_entity=r.legal_entity,
             )
             session.commit()
             result.rows.append(BatchRowResult(label=label, ok=True, detail=emp.id))

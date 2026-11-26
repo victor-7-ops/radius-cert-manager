@@ -51,6 +51,16 @@
       </select>
     </div>
 
+    <div class="w-48">
+      <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1" for="employees_list-legal_entity-9">Legal Entity</label>
+      <select name="legal_entity" onchange="this.form.submit()" class="field-input text-sm py-1.5" id="employees_list-legal_entity-9">
+        <option value="">All legal entities</option>
+        {% for entity in legal_entities %}
+        <option value="{{ entity }}" {{ 'selected' if selected_legal_entity == entity else '' }}>{{ entity }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
     <div class="flex-1 min-w-[200px]">
       <label class="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1" for="employees_list-q-3">Search</label>
       <input type="text" name="q" value="{{ search_query or '' }}" placeholder="Search by name, employee #, asset tag..." class="field-input text-sm py-1.5" id="employees_list-q-3">
@@ -58,7 +68,7 @@
 
     <div class="self-end">
       <button type="submit" class="btn-secondary text-sm py-1.5">Filter</button>
-      {% if search_query or selected_department_id or selected_status or (is_platform_superadmin and selected_subsidiary_id) %}
+      {% if search_query or selected_department_id or selected_status or selected_legal_entity or (is_platform_superadmin and selected_subsidiary_id) %}
       <a href="/employees" class="btn-ghost text-sm ml-2">Clear</a>
       {% endif %}
     </div>
@@ -75,6 +85,7 @@
             <th class="p-3 pl-4">Employee</th>
             <th class="p-3">Subsidiary</th>
             <th class="p-3">Department</th>
+            <th class="p-3">Legal Entity</th>
             <th class="p-3 text-center" title="Distinct linked physical devices">Registered Devices</th>
             <th class="p-3 text-center" title="Active devices holding active, matching, unexpired credentials">Devices with credentials</th>
             <th class="p-3 text-center" title="Active, unexpired client certificates (including renewal overlaps)">Active certificates</th>
@@ -85,7 +96,7 @@
         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
           {% if not employees %}
           <tr>
-            <td colspan="8" class="p-8 text-center text-slate-400 dark:text-slate-500">
+            <td colspan="9" class="p-8 text-center text-slate-400 dark:text-slate-500">
               No employees match these filters. Try another search or clear the filters.
             </td>
           </tr>
@@ -114,6 +125,9 @@
             </td>
             <td class="p-3 text-slate-600 dark:text-slate-300">
               {{ emp.department_name }}
+            </td>
+            <td class="p-3 text-slate-600 dark:text-slate-300">
+              {{ emp.legal_entity or '—' }}
             </td>
             <td class="p-3 text-center font-mono font-medium text-slate-700 dark:text-slate-300">
               {{ emp.registered_devices }}
@@ -155,10 +169,10 @@
       <div>Showing {{ offset + 1 }} to {{ offset + employees|length }} of {{ total }} employees</div>
       <div class="flex gap-2">
         {% if offset > 0 %}
-        <a href="?offset={{ [offset - limit, 0]|max }}&limit={{ limit }}&q={{ search_query or '' }}&subsidiary_id={{ selected_subsidiary_id or '' }}&department_id={{ selected_department_id or '' }}&status={{ selected_status or '' }}" class="btn-secondary text-xs py-1 px-3">Previous</a>
+        <a href="?offset={{ [offset - limit, 0]|max }}&limit={{ limit }}&q={{ search_query or '' }}&subsidiary_id={{ selected_subsidiary_id or '' }}&department_id={{ selected_department_id or '' }}&status={{ selected_status or '' }}&legal_entity={{ selected_legal_entity or '' }}" class="btn-secondary text-xs py-1 px-3">Previous</a>
         {% endif %}
         {% if offset + limit < total %}
-        <a href="?offset={{ offset + limit }}&limit={{ limit }}&q={{ search_query or '' }}&subsidiary_id={{ selected_subsidiary_id or '' }}&department_id={{ selected_department_id or '' }}&status={{ selected_status or '' }}" class="btn-secondary text-xs py-1 px-3">Next</a>
+        <a href="?offset={{ offset + limit }}&limit={{ limit }}&q={{ search_query or '' }}&subsidiary_id={{ selected_subsidiary_id or '' }}&department_id={{ selected_department_id or '' }}&status={{ selected_status or '' }}&legal_entity={{ selected_legal_entity or '' }}" class="btn-secondary text-xs py-1 px-3">Next</a>
         {% endif %}
       </div>
     </div>
@@ -182,6 +196,10 @@
       <div>
         <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="employees_list-employee_number-5">Employee Number (Optional)</label>
         <input type="text" name="employee_number" placeholder="e.g. EMP-1049" class="field-input text-sm font-mono" id="employees_list-employee_number-5">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1" for="employees_list-legal_entity-8">Legal Entity (Optional)</label>
+        <input type="text" name="legal_entity" placeholder="e.g. Topline Business" class="field-input text-sm" id="employees_list-legal_entity-8">
       </div>
       {% if is_platform_superadmin %}
       <div>

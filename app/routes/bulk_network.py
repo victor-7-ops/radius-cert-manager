@@ -30,9 +30,9 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
     @router.get("/bulk/employees/template.csv")
     def employees_template(admin: db.Admin = Depends(deps.require_admin)):
         sample = (
-            "subsidiary_code,department_code,display_name,employee_number\r\n"
-            "topline,ops,Juan Dela Cruz,EMP-001\r\n"
-            "topline,ops,Maria Santos,EMP-002\r\n"
+            "subsidiary_code,department_code,display_name,employee_number,legal_entity\r\n"
+            "topline,ops,Juan Dela Cruz,EMP-001,Topline Business\r\n"
+            "topline,ops,Maria Santos,EMP-002,\r\n"
         )
         return Response(
             content=sample, media_type="text/csv",

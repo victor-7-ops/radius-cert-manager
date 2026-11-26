@@ -27,6 +27,8 @@
         <span>Subsidiary: <strong class="text-slate-700 dark:text-slate-300">{{ subsidiary.display_name }}</strong></span>
         <span>&bull;</span>
         <span>Department: <strong class="text-slate-700 dark:text-slate-300">{{ department.display_name }} ({{ department.code }})</strong></span>
+        <span>&bull;</span>
+        <span>Legal Entity: <strong class="text-slate-700 dark:text-slate-300">{{ employee.legal_entity or 'None' }}</strong></span>
       </div>
     </div>
     <div class="flex items-center gap-3">

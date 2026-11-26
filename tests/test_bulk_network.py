@@ -77,6 +77,52 @@ def test_bulk_employees_preview_and_confirm(app_settings, throwaway_pki, monkeyp
     assert emp.display_name == "Juan Dela Cruz"
 
 
+def test_bulk_employees_import_with_legal_entity(app_settings, throwaway_pki, monkeypatch):
+    client = _client(app_settings, throwaway_pki, monkeypatch)
+    _seed_department_and_role(app_settings)
+
+    csv_text = (
+        "subsidiary_code,department_code,display_name,employee_number,legal_entity\n"
+        "topline,ops,Juan Dela Cruz,EMP-001,Topline Business\n"
+    )
+    resp = client.post(
+        "/bulk/employees/preview",
+        files={"csv_file": ("employees.csv", csv_text, "text/csv")},
+    )
+    assert resp.status_code == 200
+    assert "Valid" in resp.text
+
+    import re
+    token = re.search(r'name="batch_token" value="([^"]+)"', resp.text).group(1)
+    resp = client.post("/bulk/employees/confirm", data={"batch_token": token})
+    assert resp.status_code == 200
+    assert "1 succeeded" in resp.text
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    emp = session.scalar(select(db.Employee).where(db.Employee.employee_number == "EMP-001"))
+    assert emp.legal_entity == "Topline Business"
+
+
+def test_bulk_employees_import_without_legal_entity_leaves_it_null(app_settings, throwaway_pki, monkeypatch):
+    client = _client(app_settings, throwaway_pki, monkeypatch)
+    _seed_department_and_role(app_settings)
+
+    csv_text = "subsidiary_code,department_code,display_name,employee_number\ntopline,ops,Maria Santos,EMP-002\n"
+    resp = client.post(
+        "/bulk/employees/preview",
+        files={"csv_file": ("employees.csv", csv_text, "text/csv")},
+    )
+    import re
+    token = re.search(r'name="batch_token" value="([^"]+)"', resp.text).group(1)
+    client.post("/bulk/employees/confirm", data={"batch_token": token})
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    emp = session.scalar(select(db.Employee).where(db.Employee.employee_number == "EMP-002"))
+    assert emp.legal_entity is None
+
+
 def test_bulk_employees_rejects_unknown_department(app_settings, throwaway_pki, monkeypatch):
     client = _client(app_settings, throwaway_pki, monkeypatch)
 

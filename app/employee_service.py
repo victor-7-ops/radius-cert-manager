@@ -123,6 +123,7 @@ def list_employees(
     department_id: str | None = None,
     search: str | None = None,
     status_filter: str | None = None,
+    legal_entity: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
@@ -150,6 +151,9 @@ def list_employees(
     if status_filter:
         stmt = stmt.where(db.Employee.status == status_filter)
 
+    if legal_entity:
+        stmt = stmt.where(db.Employee.legal_entity == legal_entity)
+
     if search:
         term = f"%{search.strip()}%"
         stmt = stmt.where(
@@ -174,6 +178,7 @@ def list_employees(
             "subsidiary_name": sub.display_name if sub else "",
             "department_id": emp.department_id,
             "department_name": dept.display_name if dept else "",
+            "legal_entity": emp.legal_entity,
             "status": emp.status,
             "created_at": emp.created_at,
             **metrics,
@@ -200,6 +205,7 @@ def create_employee(
     department_id: str,
     employee_number: str | None,
     session: Session,
+    legal_entity: str | None = None,
 ) -> db.Employee:
     assert_can_manage_subsidiary(actor, subsidiary_id, session)
 
@@ -228,6 +234,7 @@ def create_employee(
         display_name=name,
         department_id=department_id,
         status="active",
+        legal_entity=legal_entity.strip() if legal_entity else None,
     )
     session.add(emp)
     session.flush()
@@ -251,6 +258,8 @@ def update_employee(
     department_id: str | None,
     employee_number: str | None,
     session: Session,
+    legal_entity: str | None = None,
+    legal_entity_set: bool = False,
 ) -> db.Employee:
     emp = get_employee(actor, employee_id, session)
     assert_can_manage_subsidiary(actor, emp.subsidiary_id, session)
@@ -280,6 +289,9 @@ def update_employee(
             if existing:
                 raise PolicyValidationError(f"Employee number '{num}' already exists in this subsidiary")
         emp.employee_number = num
+
+    if legal_entity_set:
+        emp.legal_entity = legal_entity.strip() if legal_entity else None
 
     session.flush()
     sub = session.get(db.Subsidiary, emp.subsidiary_id)
