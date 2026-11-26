@@ -1,7 +1,7 @@
 """Bulk onboarding through the real Employee/Device/Certificate chain
 (app/bulk_network_service.py, app/routes/bulk_network.py)."""
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app import auth, crl_push, db, network_policy, pki
 from app.main import create_app
@@ -213,6 +213,87 @@ def test_bulk_devices_rejects_role_not_linked_to_department(app_settings, throwa
     assert resp.status_code == 200
     assert "Malformed" in resp.text
     assert "not linked" in resp.text
+
+
+def test_bulk_devices_reupload_after_partial_failure_does_not_double_issue(app_settings, throwaway_pki, monkeypatch):
+    """Verifies Q3's resume claim for real: re-uploading the whole file after
+    a partial failure must not double-issue a cert for the row that already
+    succeeded. It also surfaces the real gap -- a row whose Device got
+    created but whose cert issuance then failed is "active" in the DB, so
+    the duplicate guard blocks its own retry on re-upload (the device has
+    no cert, and nothing short of deleting/retiring it unblocks that row)."""
+    client = _client(app_settings, throwaway_pki, monkeypatch)
+    sub, dept, role = _seed_department_and_role(app_settings)
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    platform_super = session.scalar(select(db.Admin).where(db.Admin.username == "root-admin"))
+    from app import employee_service
+    employee_service.create_employee(platform_super, sub.id, "Employee One", dept.id, "EMP-101", session)
+    employee_service.create_employee(platform_super, sub.id, "Employee Two", dept.id, "EMP-102", session)
+    session.commit()
+
+    from app import cert_service
+    original_issue = cert_service._issue_one_locked
+    calls = {"n": 0}
+
+    def flaky_issue(*a, **kw):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("simulated cert issuance failure")
+        return original_issue(*a, **kw)
+
+    monkeypatch.setattr(cert_service, "_issue_one_locked", flaky_issue)
+
+    csv_text = (
+        "subsidiary_code,employee_number,role_code,device_type,mac_address\n"
+        "topline,EMP-101,staff,Laptop,aa:bb:cc:dd:ee:01\n"
+        "topline,EMP-102,staff,Laptop,aa:bb:cc:dd:ee:02\n"
+    )
+
+    def run_batch():
+        resp = client.post("/bulk/devices/preview", files={"csv_file": ("devices.csv", csv_text, "text/csv")})
+        import re
+        token_match = re.search(r'name="batch_token" value="([^"]+)"', resp.text)
+        if token_match is None:
+            return resp, None
+        token = token_match.group(1)
+        confirm_resp = client.post(
+            "/bulk/devices/confirm",
+            data={"batch_token": token, "export_password": "correct-horse-battery-staple"},
+            follow_redirects=False,
+        )
+        return resp, confirm_resp
+
+    preview1, confirm1 = run_batch()
+    assert preview1.status_code == 200
+    assert "Valid" in preview1.text
+    assert confirm1.status_code == 303
+    result_resp = client.get(confirm1.headers["location"])
+    assert "1 succeeded" in result_resp.text
+
+    # First call is flaky_issue's real run (EMP-101, succeeds). Second
+    # (EMP-102) raised -- register_device had already committed before the
+    # raise, so EMP-102 has an orphaned Device with no cert.
+    assert session.scalar(select(func.count()).select_from(db.Certificate)) == 1
+    assert session.scalar(select(func.count()).select_from(db.Device)) == 2
+
+    # Re-upload the identical file. The claim: this is the resume procedure.
+    preview2, confirm2 = run_batch()
+    assert preview2.status_code == 200
+    # Both rows are now rejected -- EMP-101 correctly (already has a real
+    # cert, re-running would double-issue), but EMP-102 ALSO rejects, even
+    # though it has no cert, because its orphaned Device is "active" and
+    # carries the same MAC. This is the gap: simple re-upload cannot
+    # recover a row that failed after device registration but before cert
+    # issuance -- the stuck device must be deleted or retired by hand first.
+    assert "Malformed" in preview2.text
+    assert preview2.text.count("already registered to an active device") == 2
+
+    # Whatever happened, no duplicate cert or device was created.
+    assert confirm2 is None or confirm2.status_code != 303 or "0 succeeded" in client.get(confirm2.headers["location"]).text
+    assert session.scalar(select(func.count()).select_from(db.Certificate)) == 1
+    assert session.scalar(select(func.count()).select_from(db.Device)) == 2
 
 
 def test_bulk_devices_rejects_duplicate_mac_within_same_csv(app_settings, throwaway_pki, monkeypatch):
