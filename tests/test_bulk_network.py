@@ -215,6 +215,64 @@ def test_bulk_devices_rejects_role_not_linked_to_department(app_settings, throwa
     assert "not linked" in resp.text
 
 
+def test_bulk_devices_rejects_duplicate_mac_within_same_csv(app_settings, throwaway_pki, monkeypatch):
+    client = _client(app_settings, throwaway_pki, monkeypatch)
+    sub, dept, role = _seed_department_and_role(app_settings)
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    platform_super = session.scalar(select(db.Admin).where(db.Admin.username == "root-admin"))
+    from app import employee_service
+    employee_service.create_employee(platform_super, sub.id, "Maria Santos", dept.id, "EMP-002", session)
+    employee_service.create_employee(platform_super, sub.id, "Juan Dela Cruz", dept.id, "EMP-003", session)
+    session.commit()
+
+    csv_text = (
+        "subsidiary_code,employee_number,role_code,device_type,mac_address\n"
+        "topline,EMP-002,staff,Laptop,aa:bb:cc:dd:ee:ff\n"
+        "topline,EMP-003,staff,Laptop,AA:BB:CC:DD:EE:FF\n"
+    )
+    resp = client.post(
+        "/bulk/devices/preview",
+        files={"csv_file": ("devices.csv", csv_text, "text/csv")},
+    )
+    assert resp.status_code == 200
+    assert "Malformed" in resp.text
+    assert "appears more than once" in resp.text
+
+
+def test_bulk_devices_rejects_mac_already_registered_to_active_device(app_settings, throwaway_pki, monkeypatch):
+    client = _client(app_settings, throwaway_pki, monkeypatch)
+    sub, dept, role = _seed_department_and_role(app_settings)
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    platform_super = session.scalar(select(db.Admin).where(db.Admin.username == "root-admin"))
+    from app import employee_service
+    emp1 = employee_service.create_employee(platform_super, sub.id, "Maria Santos", dept.id, "EMP-002", session)
+    employee_service.create_employee(platform_super, sub.id, "Juan Dela Cruz", dept.id, "EMP-003", session)
+    session.commit()
+
+    from app import device_service
+    device_service.register_device(
+        platform_super, emp1.id, "Maria-Laptop", dept.id, role.id, session,
+        device_type="Laptop", mac_address="aa:bb:cc:dd:ee:ff",
+    )
+    session.commit()
+
+    csv_text = (
+        "subsidiary_code,employee_number,role_code,device_type,mac_address\n"
+        "topline,EMP-003,staff,Laptop,AA:BB:CC:DD:EE:FF\n"
+    )
+    resp = client.post(
+        "/bulk/devices/preview",
+        files={"csv_file": ("devices.csv", csv_text, "text/csv")},
+    )
+    assert resp.status_code == 200
+    assert "Malformed" in resp.text
+    assert "already registered to an active device" in resp.text
+
+
 def test_viewer_can_see_forms_but_cannot_submit(app_settings, throwaway_pki, monkeypatch):
     # Same permission shape as the existing /certs/bulk: require_admin
     # (viewer included) can view the form, require_write (viewer excluded)

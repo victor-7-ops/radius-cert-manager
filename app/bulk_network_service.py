@@ -277,11 +277,45 @@ def classify_devices(session: Session, rows: list[DeviceInputRow]) -> list[Devic
     if len(rows) > MAX_BATCH_SIZE:
         raise BatchTooLargeError(f"batch of {len(rows)} exceeds cap of {MAX_BATCH_SIZE}")
 
+    # ponytail: exact-match after strip+lower, no MAC/serial format normalization.
+    # Catches the common case (same value typed twice); a MAC written as
+    # AA:BB vs aa-bb would still slip past both this and the DB lookup below.
+    seen_macs: set[str] = set()
+    seen_serials: set[str] = set()
+
     out = []
     for r in rows:
         if not r.subsidiary_code.strip() or not r.employee_number.strip() or not r.role_code.strip():
             out.append(DevicePreviewRow(r, "malformed", "missing subsidiary_code, employee_number, or role_code"))
             continue
+
+        mac = r.mac_address.strip().lower() if r.mac_address else None
+        serial = r.serial_number.strip().lower() if r.serial_number else None
+
+        if mac and mac in seen_macs:
+            out.append(DevicePreviewRow(r, "malformed", f"mac_address '{r.mac_address}' appears more than once in this CSV"))
+            continue
+        if serial and serial in seen_serials:
+            out.append(DevicePreviewRow(r, "malformed", f"serial_number '{r.serial_number}' appears more than once in this CSV"))
+            continue
+        if mac:
+            existing = session.scalar(
+                select(db.Device).where(db.Device.status == "active", db.Device.mac_address.ilike(mac))
+            )
+            if existing:
+                out.append(DevicePreviewRow(r, "malformed", f"mac_address '{r.mac_address}' is already registered to an active device"))
+                continue
+        if serial:
+            existing = session.scalar(
+                select(db.Device).where(db.Device.status == "active", db.Device.serial_number.ilike(serial))
+            )
+            if existing:
+                out.append(DevicePreviewRow(r, "malformed", f"serial_number '{r.serial_number}' is already registered to an active device"))
+                continue
+        if mac:
+            seen_macs.add(mac)
+        if serial:
+            seen_serials.add(serial)
         sub = session.scalar(select(db.Subsidiary).where(db.Subsidiary.code == r.subsidiary_code.strip().lower()))
         if not sub:
             out.append(DevicePreviewRow(r, "malformed", f"unknown subsidiary_code '{r.subsidiary_code}'"))
