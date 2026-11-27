@@ -252,6 +252,10 @@ class NetworkRole(Base):
     # one role per subsidiary should carry this; nothing in the schema
     # enforces that today, it's an admin-UI convention.
     is_default_fallback: Mapped[bool] = mapped_column(default=False, index=True)
+    # S2/R3: overrides config.client_cert_days for certs issued under this
+    # role (e.g. a contractor role's shorter validity). None = use the
+    # global default. Read at issuance; see app/routes/web_certs.py.
+    default_cert_days: Mapped[int | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=_now
     )
@@ -818,6 +822,7 @@ _EMPLOYEE_COLUMN_MIGRATIONS = [
 
 _NETWORK_ROLE_COLUMN_MIGRATIONS = [
     ("is_default_fallback", "BOOLEAN DEFAULT 0"),
+    ("default_cert_days", "INTEGER"),
 ]
 
 _DEPARTMENT_COLUMN_MIGRATIONS = [

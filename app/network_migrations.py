@@ -96,8 +96,10 @@ TOPLINE_DEPARTMENTS: list[dict[str, str]] = [
     {
         "code": "topline_consultant", "display_name": "Consultant",
         "description": (
-            "Contractors. Shorten validity by hand and record a sponsor "
-            "until default_cert_days and sponsor tracking exist (R3, 26 Nov 2026)."
+            "Contractors. Certificates already issue short (90 days, not "
+            "365) -- record the sponsor out of band and revoke manually "
+            "when the engagement ends; sponsor tracking isn't built yet "
+            "(S2, 27 Nov 2026)."
         ),
     },
 ]
@@ -107,7 +109,10 @@ TOPLINE_NETWORK_ROLES: list[dict[str, str]] = [
     {"code": "topline_finance", "display_name": "Finance"},
     {"code": "topline_marketing_role", "display_name": "Marketing"},
     {"code": "topline_it_role", "display_name": "IT"},
-    {"code": "topline_external", "display_name": "External"},
+    # S2, 27 Nov 2026: contractors get a shorter cert than the 365-day
+    # global default -- an engagement rarely runs a full year, and the
+    # banner on the employee page (R3) now means this.
+    {"code": "topline_external", "display_name": "External", "default_cert_days": 90},
 ]
 
 # department code -> role code
@@ -287,11 +292,18 @@ def seed_topline_network_roles(engine) -> dict[str, list[str]]:
             if item["code"] not in existing_role_codes:
                 role = db.NetworkRole(
                     subsidiary_id=sub.id, code=item["code"], display_name=item["display_name"],
+                    default_cert_days=item.get("default_cert_days"),
                 )
                 session.add(role)
                 session.flush()
                 role_by_code[item["code"]] = role
                 inserted["network_roles"].append(item["code"])
+            elif item.get("default_cert_days") is not None and role_by_code[item["code"]].default_cert_days is None:
+                # Backfill only (S2, 27 Nov 2026) -- this seed's run_once
+                # gate already fired on the live hub before this column
+                # existed, same situation as R3's department description.
+                role_by_code[item["code"]].default_cert_days = item["default_cert_days"]
+                inserted["network_roles"].append(f"{item['code']} (default_cert_days backfilled)")
 
         existing_links = {
             (link.department_id, link.network_role_id)

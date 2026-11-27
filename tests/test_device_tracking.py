@@ -163,6 +163,32 @@ def test_issue_form_and_employee_drilldown_e2e(app_settings, throwaway_pki, monk
     assert "jordan-phone" in variant_resp.text
 
 
+def test_issue_uses_role_default_cert_days_when_set(app_settings, throwaway_pki, monkeypatch):
+    """S2: a device's NetworkRole.default_cert_days overrides the global
+    client_cert_days -- the plumbing the contractor banner now relies on."""
+    monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
+    _write_throwaway_pki(app_settings, throwaway_pki)
+    admin = _seed_admin(app_settings, "contractor-admin", db.AdminRole.super_admin)
+    device_id = create_test_device(app_settings, role_default_cert_days=90)
+
+    app = create_app(app_settings)
+    client = TestClient(app)
+    _login(client, app_settings, admin)
+
+    resp = client.post(
+        "/certs/issue",
+        data={"cn": "contractor-laptop", "request_id": str(uuid.uuid4()), "device_id": device_id},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    cert = session.query(db.Certificate).filter_by(cn="contractor-laptop").one()
+    delta_days = (cert.expires_at - cert.issued_at).days
+    assert 88 <= delta_days <= 90  # 90-day role override, not the global default
+
+
 def test_issue_rejects_invalid_mac(app_settings, throwaway_pki, monkeypatch):
     monkeypatch.setattr(crl_push, "push_crl", lambda *a, **k: crl_push.PushResult(ok=True, detail="stubbed"))
     _write_throwaway_pki(app_settings, throwaway_pki)

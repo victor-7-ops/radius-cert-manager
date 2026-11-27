@@ -47,7 +47,7 @@ def login_as(client, app_settings, admin):
     client.cookies.set(auth.SESSION_COOKIE, cookie)
 
 
-def create_test_device(app_settings, subsidiary_name: str | None = None, employee_name: str = "Test Employee") -> str:
+def create_test_device(app_settings, subsidiary_name: str | None = None, employee_name: str = "Test Employee", role_default_cert_days: int | None = None) -> str:
     """Minimal employee+device fixture (handoff J, 20 Nov 2026): /certs/issue
     now requires a device, since a device-less cert has no
     department/network_role and authorize_policy.py always Access-Rejects
@@ -64,7 +64,7 @@ def create_test_device(app_settings, subsidiary_name: str | None = None, employe
     dept = db.Department(subsidiary_id=sub.id, code=f"test-{suffix}", display_name="Test Dept")
     session.add(dept)
     session.flush()
-    role = db.NetworkRole(subsidiary_id=sub.id, code=f"test-{suffix}", display_name="Test Role")
+    role = db.NetworkRole(subsidiary_id=sub.id, code=f"test-{suffix}", display_name="Test Role", default_cert_days=role_default_cert_days)
     session.add(role)
     session.flush()
     emp = db.Employee(subsidiary_id=sub.id, display_name=employee_name, department_id=dept.id)

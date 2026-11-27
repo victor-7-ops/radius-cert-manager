@@ -393,7 +393,9 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 )
 
         assignment = None
+        role = None
         if device:
+            role = session.get(db.NetworkRole, device.network_role_id)
             assignment = cert_service.NetworkAssignment(
                 subsidiary_id=device.subsidiary_id,
                 department_id=device.department_id,
@@ -413,7 +415,7 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 request_id=request_id,
                 export_password=None,
                 issued_by=admin.username,
-                days=deps.client_cert_days,
+                days=(role.default_cert_days if role else None) or deps.client_cert_days,
                 device=cert_service.DeviceInfo(
                     employee_name=employee_name.strip() or None,
                     device_type=device_type.strip() or None,
