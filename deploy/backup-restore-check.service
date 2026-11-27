@@ -1,23 +1,32 @@
-# T2 (26 Nov 2026) corrected this unit. It previously targeted
-# /var/backups/certmanager on the hub via a bare-metal venv -- nothing
-# ever writes there. The real backup (deploy/backup_push.sh) is a plain
-# tar.gz pushed from the dockerized hub to BOTH CM4s and landed by
-# deploy/backup_forced_command.sh at ~/certmanager-backups on each. This
-# unit now runs on a CM4 (freeradius1 or freeradius2), checking that
-# box's own copy -- there is no persistent backup location on the hub to
-# point this at; the hub only holds the tarball transiently before push.
-# Deploy identically on BOTH CM4s: they are a failover pair and one
-# box's copy being bad is exactly the kind of drift this exists to catch.
+# T2 (26-27 Nov 2026) corrected this unit, then ran the real drill by
+# hand on topline-freeradius1: "Restore check OK: 27 certificates,
+# chain/key verified." It previously targeted /var/backups/certmanager
+# on the hub via a bare-metal venv -- nothing ever writes there. The
+# real backup (deploy/backup_push.sh) is a plain tar.gz pushed from the
+# dockerized hub to BOTH CM4s and landed by deploy/backup_forced_command
+# .sh at ~/certmanager-backups on each.
+#
+# There is no shared "certmgr" service account on the CM4s -- each box
+# receives its backup under its own SSH-key account name
+# (backup_push.sh's BACKUP_HOSTS): topline-freeradius1 on freeradius1,
+# certmanager-backup on freeradius2. Set User= to that box's actual
+# account before installing -- %h then resolves to its home dir, where
+# the drill script (app/backup.py, app/pki.py, scripts/restore_check.py,
+# copied in under this same layout) and the backups both already live.
+# cryptography is already importable system-wide on both CM4s (verified
+# 27 Nov 2026) -- no venv needed.
+#
+# Deploy on BOTH CM4s with the matching User=: they are a failover pair,
+# and one box's copy being bad is exactly the drift this exists to catch.
 [Unit]
 Description=Certmanager restore drill — prove the latest backup actually restores (HANDOFF-FLEET.md §8.4, T2)
 After=network-online.target
 
 [Service]
 Type=oneshot
-User=certmgr
-Group=certmgr
-WorkingDirectory=/opt/certmanager-restore-check
-ExecStart=/opt/certmanager-restore-check/.venv/bin/python -m scripts.restore_check --latest-in /home/certmgr/certmanager-backups
+User=topline-freeradius1
+WorkingDirectory=%h/cm-restore-check
+ExecStart=/usr/bin/python3 -m scripts.restore_check --latest-in %h/certmanager-backups
 
 # "An untested backup is a belief, not a backup" (HANDOFF-FLEET.md §8.4)
 # — this exits non-zero on any failure (zero certs, mismatched key/cert,
@@ -28,7 +37,7 @@ ExecStart=/opt/certmanager-restore-check/.venv/bin/python -m scripts.restore_che
 NoNewPrivileges=yes
 ProtectHome=read-only
 PrivateTmp=yes
-ReadWritePaths=/opt/certmanager-restore-check
+ReadWritePaths=%h/cm-restore-check
 LimitCORE=0
 
 [Install]
