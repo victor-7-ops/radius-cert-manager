@@ -1,18 +1,29 @@
-"""Restore drill (HANDOFF-FLEET.md §8.4): decrypt a backup archive into a
+"""Restore drill (HANDOFF-FLEET.md §8.4, T2): open a backup archive into a
 scratch directory, open the DB, verify the cert count, and verify the
-restored chain with openssl. Exits non-zero on any failure so a timer
-can run this unattended and page on failure — "an untested backup is a
-belief, not a backup."
+restored chain. Exits non-zero on any failure so a timer can run this
+unattended and page on failure — "an untested backup is a belief, not a
+backup."
+
+T2 finding (26 Nov 2026): the backup this actually drills is
+deploy/backup_push.sh's plain `tar czf` of the hub's /data, pushed to the
+two CM4s and installed by deploy/backup_forced_command.sh as
+~/certmanager-backups/certmanager-<ts>.tar.gz. scripts/backup.py's
+encrypted .cmbk format is NOT what runs live. Both archive layouts place
+certmanager.db and pki/ at the same paths (backup_push.sh tars /data
+whole, which is exactly what build_archive's arcnames target), so this
+script auto-detects by magic bytes and skips decryption for a plain
+gzip tar -- no passphrase needed against the real live backup.
 
 Usage:
-    python -m scripts.restore_check /var/backups/certmanager/certmanager-backup-<ts>.cmbk
-    python -m scripts.restore_check --latest-in /var/backups/certmanager
+    python -m scripts.restore_check /path/to/certmanager-<ts>.tar.gz
+    python -m scripts.restore_check --latest-in ~/certmanager-backups
 
---latest-in picks the most recently modified *.cmbk in that directory —
-what a systemd timer uses, so it doesn't need to know today's backup's
-exact filename.
+--latest-in picks the most recently modified *.tar.gz or *.cmbk in that
+directory -- what a systemd timer uses, so it doesn't need to know
+today's backup's exact filename.
 
-Passphrase comes from $BACKUP_PASSPHRASE if set, otherwise prompted.
+Passphrase (only needed for the legacy .cmbk format) comes from
+$BACKUP_PASSPHRASE if set, otherwise prompted.
 """
 
 from __future__ import annotations
@@ -29,7 +40,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.backup import InvalidPassphraseError, NotABackupArchiveError, decrypt_archive, extract_archive
+from app.backup import MAGIC, InvalidPassphraseError, NotABackupArchiveError, decrypt_archive, extract_archive
 
 
 def _fail(message: str) -> int:
@@ -38,12 +49,18 @@ def _fail(message: str) -> int:
 
 
 def check_restore(archive_path: Path, passphrase: str, scratch_dir: Path) -> int:
-    try:
-        tar_bytes = decrypt_archive(archive_path.read_bytes(), passphrase)
-    except NotABackupArchiveError as e:
-        return _fail(str(e))
-    except InvalidPassphraseError as e:
-        return _fail(str(e))
+    raw = archive_path.read_bytes()
+    if raw.startswith(MAGIC):
+        try:
+            tar_bytes = decrypt_archive(raw, passphrase)
+        except NotABackupArchiveError as e:
+            return _fail(str(e))
+        except InvalidPassphraseError as e:
+            return _fail(str(e))
+    else:
+        # ponytail: the live backup (backup_push.sh) is a plain gzip tar,
+        # not the encrypted .cmbk format -- see module docstring.
+        tar_bytes = raw
 
     extract_archive(tar_bytes, scratch_dir)
 
@@ -121,7 +138,10 @@ def check_restore(archive_path: Path, passphrase: str, scratch_dir: Path) -> int
 
 
 def find_latest_archive(directory: Path) -> Path | None:
-    candidates = sorted(directory.glob("*.cmbk"), key=lambda p: p.stat().st_mtime)
+    candidates = sorted(
+        list(directory.glob("*.cmbk")) + list(directory.glob("*.tar.gz")),
+        key=lambda p: p.stat().st_mtime,
+    )
     return candidates[-1] if candidates else None
 
 
@@ -130,7 +150,7 @@ def main() -> int:
     parser.add_argument("archive", type=Path, nargs="?")
     parser.add_argument(
         "--latest-in", type=Path, metavar="DIR",
-        help="check the most recently modified *.cmbk in DIR, instead of naming one explicitly",
+        help="check the most recently modified *.tar.gz or *.cmbk in DIR, instead of naming one explicitly",
     )
     args = parser.parse_args()
 
@@ -140,15 +160,18 @@ def main() -> int:
     if args.latest_in is not None:
         archive_path = find_latest_archive(args.latest_in)
         if archive_path is None:
-            return _fail(f"no *.cmbk archives found in {args.latest_in}")
+            return _fail(f"no *.tar.gz or *.cmbk archives found in {args.latest_in}")
     else:
         archive_path = args.archive
         if not archive_path.exists():
             return _fail(f"no such archive: {archive_path}")
 
-    passphrase = os.environ.get("BACKUP_PASSPHRASE") or getpass.getpass(
-        "Backup encryption passphrase: "
-    )
+    is_encrypted = archive_path.read_bytes().startswith(MAGIC)
+    passphrase = ""
+    if is_encrypted:
+        passphrase = os.environ.get("BACKUP_PASSPHRASE") or getpass.getpass(
+            "Backup encryption passphrase: "
+        )
 
     with tempfile.TemporaryDirectory(prefix="cm-restore-check-") as scratch:
         return check_restore(archive_path, passphrase, Path(scratch))

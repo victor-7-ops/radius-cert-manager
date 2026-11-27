@@ -1,32 +1,34 @@
-# NOT DEPLOYED on topline-server as of 2026-11-18 (confirmed: absent from
-# `systemctl list-units --all`). Also still points at the bare-metal venv
-# path (/opt/certmanager/.venv) and the old scripts/backup.py output dir
-# (/var/backups/certmanager) — the live backup unit (certmanager-backup
-# .service) actually calls an untracked host script, /srv/data/
-# backup_push.sh, not scripts/backup.py, so this restore-check targets a
-# backup location nothing currently writes to. The restore drill this
-# file describes has never been run against the live backup path.
+# T2 (26 Nov 2026) corrected this unit. It previously targeted
+# /var/backups/certmanager on the hub via a bare-metal venv -- nothing
+# ever writes there. The real backup (deploy/backup_push.sh) is a plain
+# tar.gz pushed from the dockerized hub to BOTH CM4s and landed by
+# deploy/backup_forced_command.sh at ~/certmanager-backups on each. This
+# unit now runs on a CM4 (freeradius1 or freeradius2), checking that
+# box's own copy -- there is no persistent backup location on the hub to
+# point this at; the hub only holds the tarball transiently before push.
+# Deploy identically on BOTH CM4s: they are a failover pair and one
+# box's copy being bad is exactly the kind of drift this exists to catch.
 [Unit]
-Description=Certmanager restore drill — prove the latest backup actually restores (HANDOFF-FLEET.md §8.4)
-After=network-online.target backup.service
+Description=Certmanager restore drill — prove the latest backup actually restores (HANDOFF-FLEET.md §8.4, T2)
+After=network-online.target
 
 [Service]
 Type=oneshot
 User=certmgr
 Group=certmgr
-WorkingDirectory=/opt/certmanager
-EnvironmentFile=/opt/certmanager/.env.backup
-ExecStart=/opt/certmanager/.venv/bin/python scripts/restore_check.py --latest-in /var/backups/certmanager
+WorkingDirectory=/opt/certmanager-restore-check
+ExecStart=/opt/certmanager-restore-check/.venv/bin/python -m scripts.restore_check --latest-in /home/certmgr/certmanager-backups
 
 # "An untested backup is a belief, not a backup" (HANDOFF-FLEET.md §8.4)
-# — this exits non-zero on any failure (wrong passphrase, zero certs,
-# mismatched key/cert), which `systemctl --failed` / any unit-failure
-# monitoring on this host will surface.
+# — this exits non-zero on any failure (zero certs, mismatched key/cert,
+# missing files), which `systemctl --failed` / any unit-failure
+# monitoring on this host will surface. The live backup is an unencrypted
+# plain tar (see scripts/restore_check.py docstring), so no passphrase
+# or EnvironmentFile is needed here.
 NoNewPrivileges=yes
-ProtectHome=yes
+ProtectHome=read-only
 PrivateTmp=yes
-ReadOnlyPaths=/var/backups/certmanager
-ReadWritePaths=/opt/certmanager
+ReadWritePaths=/opt/certmanager-restore-check
 LimitCORE=0
 
 [Install]

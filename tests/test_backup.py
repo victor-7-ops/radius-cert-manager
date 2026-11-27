@@ -175,6 +175,29 @@ def test_restore_check_fails_when_key_does_not_match_cert(tmp_path, throwaway_pk
     assert rc != 0
 
 
+def test_restore_check_accepts_plain_tar_from_live_backup_push(tmp_path, throwaway_pki):
+    """T2: the real live backup (deploy/backup_push.sh) is a plain gzip
+    tar, not the encrypted .cmbk format -- same arcnames, no passphrase."""
+    import tarfile
+
+    pki_dir = _seeded_pki_dir(tmp_path, throwaway_pki)
+    db_path = _seeded_db(tmp_path)
+    # WAL checkpoint before taring -- the live backup_push.sh has no such
+    # step (see T2 note in deploy/RUNBOOK.md): a committed-but-unchecksummed
+    # row can sit in -wal and never make it into a raw tar of the db file.
+    sqlite3.connect(str(db_path)).execute("PRAGMA wal_checkpoint(FULL)").connection.close()
+
+    archive_path = tmp_path / "certmanager-20261126-000000.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as tar:
+        tar.add(db_path, arcname="certmanager.db")
+        tar.add(pki_dir / "intermediate.crt", arcname="pki/intermediate.crt")
+        tar.add(pki_dir / "private" / "intermediate.key", arcname="pki/private/intermediate.key")
+        tar.add(pki_dir / "issued", arcname="pki/issued")
+
+    rc = restore_check.check_restore(archive_path, "", tmp_path / "scratch_plain")
+    assert rc == 0
+
+
 def test_find_latest_archive_picks_most_recently_modified(tmp_path):
     import os
     import time
