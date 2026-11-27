@@ -292,6 +292,9 @@ def classify_devices(session: Session, rows: list[DeviceInputRow]) -> list[Devic
         mac = r.mac_address.strip().lower() if r.mac_address else None
         serial = r.serial_number.strip().lower() if r.serial_number else None
 
+        if not mac and not serial:
+            out.append(DevicePreviewRow(r, "malformed", "mac_address or serial_number is required (a row with neither gets no duplicate protection on re-upload)"))
+            continue
         if mac and mac in seen_macs:
             out.append(DevicePreviewRow(r, "malformed", f"mac_address '{r.mac_address}' appears more than once in this CSV"))
             continue
@@ -395,7 +398,6 @@ def confirm_devices(
                         device_type=r.device_type, device_model=r.device_model,
                         serial_number=r.serial_number, mac_address=r.mac_address,
                     )
-                    session.commit()
 
                     assignment = cert_service.NetworkAssignment(
                         subsidiary_id=sub.id, department_id=emp.department_id,

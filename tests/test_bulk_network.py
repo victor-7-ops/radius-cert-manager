@@ -205,7 +205,7 @@ def test_bulk_devices_rejects_role_not_linked_to_department(app_settings, throwa
     emp = employee_service.create_employee(platform_super, sub.id, "Unlinked Guy", dept.id, "EMP-777", session)
     session.commit()
 
-    csv_text = "subsidiary_code,employee_number,role_code,device_type\ntopline,EMP-777,guest,Phone\n"
+    csv_text = "subsidiary_code,employee_number,role_code,device_type,mac_address\ntopline,EMP-777,guest,Phone,aa:bb:cc:dd:ee:77\n"
     resp = client.post(
         "/bulk/devices/preview",
         files={"csv_file": ("devices.csv", csv_text, "text/csv")},
@@ -218,10 +218,9 @@ def test_bulk_devices_rejects_role_not_linked_to_department(app_settings, throwa
 def test_bulk_devices_reupload_after_partial_failure_does_not_double_issue(app_settings, throwaway_pki, monkeypatch):
     """Verifies Q3's resume claim for real: re-uploading the whole file after
     a partial failure must not double-issue a cert for the row that already
-    succeeded. It also surfaces the real gap -- a row whose Device got
-    created but whose cert issuance then failed is "active" in the DB, so
-    the duplicate guard blocks its own retry on re-upload (the device has
-    no cert, and nothing short of deleting/retiring it unblocks that row)."""
+    succeeded, and the row that failed must be retryable (S1: device+cert
+    commit atomically now, so a failed cert never leaves an orphaned
+    Device behind to block its own retry)."""
     client = _client(app_settings, throwaway_pki, monkeypatch)
     sub, dept, role = _seed_department_and_role(app_settings)
 
@@ -273,27 +272,43 @@ def test_bulk_devices_reupload_after_partial_failure_does_not_double_issue(app_s
     assert "1 succeeded" in result_resp.text
 
     # First call is flaky_issue's real run (EMP-101, succeeds). Second
-    # (EMP-102) raised -- register_device had already committed before the
-    # raise, so EMP-102 has an orphaned Device with no cert.
+    # (EMP-102) raised -- the device+cert commit is atomic now, so EMP-102
+    # has NO device and NO cert, not an orphan.
     assert session.scalar(select(func.count()).select_from(db.Certificate)) == 1
-    assert session.scalar(select(func.count()).select_from(db.Device)) == 2
+    assert session.scalar(select(func.count()).select_from(db.Device)) == 1
 
-    # Re-upload the identical file. The claim: this is the resume procedure.
+    # Re-upload the identical file. EMP-101 rejects as a duplicate (already
+    # has a real cert); EMP-102 is clean and succeeds this time.
     preview2, confirm2 = run_batch()
     assert preview2.status_code == 200
-    # Both rows are now rejected -- EMP-101 correctly (already has a real
-    # cert, re-running would double-issue), but EMP-102 ALSO rejects, even
-    # though it has no cert, because its orphaned Device is "active" and
-    # carries the same MAC. This is the gap: simple re-upload cannot
-    # recover a row that failed after device registration but before cert
-    # issuance -- the stuck device must be deleted or retired by hand first.
     assert "Malformed" in preview2.text
-    assert preview2.text.count("already registered to an active device") == 2
+    assert preview2.text.count("already registered to an active device") == 1
+    assert confirm2.status_code == 303
+    assert "1 succeeded" in client.get(confirm2.headers["location"]).text
 
-    # Whatever happened, no duplicate cert or device was created.
-    assert confirm2 is None or confirm2.status_code != 303 or "0 succeeded" in client.get(confirm2.headers["location"]).text
-    assert session.scalar(select(func.count()).select_from(db.Certificate)) == 1
+    # Exactly one cert/device per employee now -- no double-issue, no orphan.
+    assert session.scalar(select(func.count()).select_from(db.Certificate)) == 2
     assert session.scalar(select(func.count()).select_from(db.Device)) == 2
+
+
+def test_bulk_devices_rejects_row_with_neither_mac_nor_serial(app_settings, throwaway_pki, monkeypatch):
+    client = _client(app_settings, throwaway_pki, monkeypatch)
+    sub, dept, role = _seed_department_and_role(app_settings)
+
+    engine = db.make_engine(str(app_settings.db_path))
+    session = db.make_session_factory(engine)()
+    platform_super = session.scalar(select(db.Admin).where(db.Admin.username == "root-admin"))
+    from app import employee_service
+    employee_service.create_employee(platform_super, sub.id, "No Identifier Guy", dept.id, "EMP-901", session)
+    session.commit()
+
+    csv_text = "subsidiary_code,employee_number,role_code,device_type\ntopline,EMP-901,staff,Laptop\n"
+    resp = client.post(
+        "/bulk/devices/preview",
+        files={"csv_file": ("devices.csv", csv_text, "text/csv")},
+    )
+    assert resp.status_code == 200
+    assert "mac_address or serial_number is required" in resp.text
 
 
 def test_bulk_devices_rejects_duplicate_mac_within_same_csv(app_settings, throwaway_pki, monkeypatch):
