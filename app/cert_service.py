@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import random
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -226,6 +227,15 @@ def _issue_one_locked(
     return IssueResult(certificate=row, bundle=bundle)
 
 
+def jittered_days(base_days: int, jitter: int) -> int:
+    """T3: spreads first-issuance expiry +/- jitter days so a batch of
+    certs issued together doesn't all expire the same week a year later.
+    jitter <= 0 disables it (returns base_days unchanged)."""
+    if jitter <= 0:
+        return base_days
+    return random.randint(base_days - jitter, base_days + jitter)
+
+
 def issue_certificate(
     session: Session,
     pki_path: Path,
@@ -295,10 +305,15 @@ def reissue_certificate(
                 device_id=old.device_id,
             )
 
+        # T3: inherit the old cert's own validity period instead of
+        # re-jittering -- keeps a reissued device on a stable anniversary
+        # rather than resetting it to a new random spot every renewal.
+        inherited_days = (old.expires_at - old.issued_at).days or days
+
         return _issue_one_locked(
             session, pki_path, inter_cert, inter_key,
             cn=old.cn, note=old.note, request_id=request_id,
-            export_password=export_password, issued_by=issued_by, days=days,
+            export_password=export_password, issued_by=issued_by, days=inherited_days,
             batch_id=None, device=device, supersedes_id=old.id, skip_conflict_check=True,
             assignment=assignment,
         )

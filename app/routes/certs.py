@@ -84,7 +84,7 @@ def get_router(deps) -> APIRouter:
                 request_id=body.request_id,
                 export_password=body.export_password,
                 issued_by=admin.username,
-                days=deps.client_cert_days,
+                days=cert_service.jittered_days(deps.client_cert_days, deps.settings.client_cert_days_jitter),
             )
         except cert_service.CNConflictError as e:
             raise HTTPException(status.HTTP_409_CONFLICT, str(e))

@@ -14,7 +14,7 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from app import bulk_network_service as bns
-from app import crl_health, db
+from app import cert_service, crl_health, db
 
 
 def get_router(deps, templates: Jinja2Templates) -> APIRouter:
@@ -161,7 +161,8 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
         batch_id = str(uuid.uuid4())
         result, zip_bytes = bns.confirm_devices(
             admin, session, deps.pki_path, deps.inter_cert, deps.inter_key,
-            valid_rows, batch_id, export_password, deps.client_cert_days,
+            valid_rows, batch_id, export_password,
+            cert_service.jittered_days(deps.client_cert_days, deps.settings.client_cert_days_jitter),
         )
         deps.store_pending_batch(batch_id, result, zip_bytes)
         deps.regenerate_and_push_crl()

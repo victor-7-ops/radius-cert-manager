@@ -186,7 +186,8 @@ def test_issue_uses_role_default_cert_days_when_set(app_settings, throwaway_pki,
     session = db.make_session_factory(engine)()
     cert = session.query(db.Certificate).filter_by(cn="contractor-laptop").one()
     delta_days = (cert.expires_at - cert.issued_at).days
-    assert 88 <= delta_days <= 90  # 90-day role override, not the global default
+    # 90-day role override (+/- the T3 jitter), nowhere near the 365-day global default.
+    assert 50 <= delta_days <= 130
 
 
 def test_issue_rejects_invalid_mac(app_settings, throwaway_pki, monkeypatch):

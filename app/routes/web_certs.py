@@ -415,7 +415,10 @@ def get_router(deps, templates: Jinja2Templates) -> APIRouter:
                 request_id=request_id,
                 export_password=None,
                 issued_by=admin.username,
-                days=(role.default_cert_days if role else None) or deps.client_cert_days,
+                days=cert_service.jittered_days(
+                    (role.default_cert_days if role else None) or deps.client_cert_days,
+                    deps.settings.client_cert_days_jitter,
+                ),
                 device=cert_service.DeviceInfo(
                     employee_name=employee_name.strip() or None,
                     device_type=device_type.strip() or None,

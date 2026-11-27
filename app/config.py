@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     web_ssl_certfile: Path | None = None
 
     client_cert_days: int = 365
+    # T3: spreads first-issuance expiry so a rollout week doesn't become an
+    # annual mass-renewal wall. +/- this many days around client_cert_days.
+    # Reissues inherit the original cert's own days instead of re-rolling
+    # (see cert_service.reissue_certificate) -- a device keeps a stable
+    # anniversary across renewals. Server certs and canaries have their own
+    # separate issuance paths and are never jittered.
+    client_cert_days_jitter: int = 35
     crl_validity_days: int = 7
     crl_regen_hours: int = 24
 
