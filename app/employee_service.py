@@ -312,9 +312,7 @@ def offboard_employee(
     reason: str,
     session: Session,
     pki_path: Path,
-    inter_cert,
-    inter_key,
-    regenerate_crl_fn=None,
+    regenerate_crl_fn,
 ) -> db.OffboardingOperation:
     """Executes reliable multi-certificate employee offboarding.
     
@@ -373,16 +371,7 @@ def offboard_employee(
         session.commit()
 
         # Publish CRL
-        if regenerate_crl_fn:
-            regenerate_crl_fn(background=False)
-        elif inter_cert and inter_key:
-            cert_service.regenerate_crl(
-                session,
-                pki_path,
-                inter_cert,
-                inter_key,
-                validity_days=30,
-            )
+        regenerate_crl_fn(background=False)
 
         op.crl_published_at = datetime.datetime.now(datetime.timezone.utc)
         op.status = "completed"

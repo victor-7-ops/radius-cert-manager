@@ -396,8 +396,6 @@ def get_router(deps) -> APIRouter:
                 reason=payload.reason,
                 session=session,
                 pki_path=deps.pki_path,
-                inter_cert=deps.inter_cert,
-                inter_key=deps.inter_key,
                 regenerate_crl_fn=deps.regenerate_and_push_crl,
             )
             session.commit()
@@ -429,8 +427,6 @@ def get_router(deps) -> APIRouter:
                 reason=payload.reason,
                 session=session,
                 pki_path=deps.pki_path,
-                inter_cert=deps.inter_cert,
-                inter_key=deps.inter_key,
                 regenerate_crl_fn=deps.regenerate_and_push_crl,
             )
             return {

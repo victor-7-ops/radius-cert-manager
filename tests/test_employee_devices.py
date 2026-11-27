@@ -346,8 +346,9 @@ def test_device_credential_revocation_and_status(
         reason="Device lost by user",
         session=session,
         pki_path=throwaway_pki["tmp_path"],
-        inter_cert=throwaway_pki["inter_cert"],
-        inter_key=throwaway_pki["inter_key"],
+        regenerate_crl_fn=lambda background: cert_service.regenerate_crl(
+            session, throwaway_pki["tmp_path"], throwaway_pki["inter_cert"], throwaway_pki["inter_key"], validity_days=30
+        ),
     )
     session.commit()
 
@@ -468,8 +469,9 @@ def test_reliable_multi_certificate_offboarding(
         reason="Resignation effective today",
         session=session,
         pki_path=throwaway_pki["tmp_path"],
-        inter_cert=throwaway_pki["inter_cert"],
-        inter_key=throwaway_pki["inter_key"],
+        regenerate_crl_fn=lambda background: cert_service.regenerate_crl(
+            session, throwaway_pki["tmp_path"], throwaway_pki["inter_cert"], throwaway_pki["inter_key"], validity_days=30
+        ),
     )
 
     assert op.status == "completed"
@@ -485,6 +487,55 @@ def test_reliable_multi_certificate_offboarding(
     for s in ["3001", "3002", "3003"]:
         cert = session.scalar(select(db.Certificate).where(db.Certificate.serial == s))
         assert cert.status == db.CertStatus.revoked
+
+
+def test_offboard_employee_requires_regenerate_crl_fn(
+    test_db_session: Session, baseline_setup: dict, throwaway_pki: dict,
+):
+    """T4: no silent local-only-regenerate fallback left -- omitting the push
+    callback is a TypeError, not a quietly-unpublished CRL."""
+    session = test_db_session
+    setup = baseline_setup
+    emp = employee_service.create_employee(
+        actor=setup["admin_sub_a"],
+        subsidiary_id=setup["sub_a"].id,
+        display_name="No Callback Employee",
+        department_id=setup["dept_a"].id,
+        employee_number="EMP-NOCB",
+        session=session,
+    )
+    session.commit()
+    with pytest.raises(TypeError):
+        employee_service.offboard_employee(
+            actor=setup["admin_sub_a"],
+            employee_id=emp.id,
+            reason="test",
+            session=session,
+            pki_path=throwaway_pki["tmp_path"],
+        )
+
+
+def test_revoke_device_credentials_requires_regenerate_crl_fn(
+    test_db_session: Session, baseline_setup: dict, throwaway_pki: dict,
+):
+    session = test_db_session
+    setup = baseline_setup
+    dev = device_service.register_device(
+        actor=setup["admin_sub_a"],
+        display_name="No Callback Device",
+        department_id=setup["dept_a"].id,
+        network_role_id=setup["role_a1"].id,
+        session=session,
+    )
+    session.commit()
+    with pytest.raises(TypeError):
+        device_service.revoke_device_credentials(
+            actor=setup["admin_sub_a"],
+            device_id=dev.id,
+            reason="test",
+            session=session,
+            pki_path=throwaway_pki["tmp_path"],
+        )
 
     # CRL file exists and can be parsed
     crl_path = throwaway_pki["tmp_path"] / "crl.pem"

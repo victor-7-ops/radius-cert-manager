@@ -412,9 +412,7 @@ def revoke_device_credentials(
     reason: str,
     session: Session,
     pki_path: Path,
-    inter_cert=None,
-    inter_key=None,
-    regenerate_crl_fn=None,
+    regenerate_crl_fn,
 ) -> list[str]:
     """Revokes all usable client certificates linked to this device and updates CRL."""
     device = get_device(actor, device_id, session)
@@ -445,16 +443,7 @@ def revoke_device_credentials(
         revoked_serials.append(c.serial)
 
     if revoked_serials:
-        if regenerate_crl_fn:
-            regenerate_crl_fn(background=False)
-        elif inter_cert and inter_key:
-            cert_service.regenerate_crl(
-                session,
-                pki_path,
-                inter_cert,
-                inter_key,
-                validity_days=30,
-            )
+        regenerate_crl_fn(background=False)
 
         sub = session.get(db.Subsidiary, device.subsidiary_id)
         db.audit(
