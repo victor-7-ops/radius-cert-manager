@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     # anniversary across renewals. Server certs and canaries have their own
     # separate issuance paths and are never jittered.
     client_cert_days_jitter: int = 35
+    # U1: the current root (CN=Topline Root CA) was generated online with
+    # no offline ceremony, deliberately -- it's a test root, to be
+    # destroyed and replaced before production (deploy/ROOT-CA-ROTATION-
+    # PLAN.md). This is an operational fact, not something derivable from
+    # the cert itself, so it's a flag someone flips to False the day the
+    # real root ships -- not auto-detected. Default True until then.
+    root_ca_is_test: bool = True
     crl_validity_days: int = 7
     crl_regen_hours: int = 24
 

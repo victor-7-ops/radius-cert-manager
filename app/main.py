@@ -119,6 +119,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     else:
         logger.info("starting certmanager, GIT_SHA=%s", git_sha)
 
+    # U1, 27 Nov 2026: same reasoning as GIT_SHA above -- a fact that's
+    # easy to mean to fix and then just never see again. Every cert issued
+    # under a test root has to be re-issued at rotation, so the cost of
+    # missing this grows every day it's not front-of-mind.
+    if settings.root_ca_is_test:
+        logger.warning(
+            "root_ca_is_test is True -- the current root CA has no offline "
+            "ceremony behind it (deploy/ROOT-CA-ROTATION-PLAN.md). Every "
+            "cert issued now must be re-issued at rotation."
+        )
+
     engine = make_engine(str(settings.db_path))
     session_factory = make_session_factory(engine)
     init_db(engine)
@@ -320,7 +331,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         results = fleet_health.evaluate_fleet(session)
         not_ok = [h for h in results if h.status != fleet_health.SiteStatus.ok]
         sha_note = " [hub build unknown]" if git_sha == "unknown" else ""
-        lines = [f"Daily fleet digest: {len(results)} site(s), {len(not_ok)} not OK.{sha_note}"]
+        root_note = " [TEST ROOT CA -- rotation required before production]" if settings.root_ca_is_test else ""
+        lines = [f"Daily fleet digest: {len(results)} site(s), {len(not_ok)} not OK.{sha_note}{root_note}"]
         for h in not_ok:
             suffix = f" [agent {h.agent_version} behind]" if h.agent_behind else ""
             lines.append(f"  {h.name} ({h.radius_cn}): {h.status.value}{suffix}")

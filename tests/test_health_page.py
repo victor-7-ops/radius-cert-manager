@@ -251,3 +251,9 @@ def test_api_health_fleet_returns_seeded_site(app_settings, throwaway_pki, monke
     data = resp.json()
     assert len(data) == 1
     assert data[0]["status"] == "SILENT"
+
+
+def test_root_ca_is_test_defaults_true(app_settings):
+    """U1: the test-root gate defaults on -- it's an operational fact
+    someone flips off the day the real rotation ships, never auto-detected."""
+    assert app_settings.root_ca_is_test is True
